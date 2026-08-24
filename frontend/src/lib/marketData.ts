@@ -477,6 +477,7 @@ export interface GridLevelItem {
   allocationUsd: number;
   side: 'BUY' | 'SELL';
   status: 'PENDING' | 'FILLED';
+  entryPrice?: number;
 }
 
 export interface OrderBookItem {

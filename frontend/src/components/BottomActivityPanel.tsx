@@ -503,7 +503,16 @@ export const BottomActivityPanel = ({
                             </span>
                           </td>
                           <td className="font-bold text-white tabular-nums">
-                            {formatDynamicPrice(lvl.price, currentPrice >= 1 ? 2 : 6, currencyMode, penRate)}
+                            <div>{formatDynamicPrice(lvl.price, currentPrice >= 1 ? 2 : 6, currencyMode, penRate)}</div>
+                            {lvl.side === 'SELL' && lvl.entryPrice ? (
+                              <div className="text-[9px] text-slate-400 font-normal">
+                                Entrada: {formatDynamicPrice(lvl.entryPrice, currentPrice >= 1 ? 2 : 6, currencyMode, penRate)}
+                              </div>
+                            ) : lvl.side === 'BUY' ? (
+                              <div className="text-[9px] text-emerald-400/80 font-normal">
+                                Venta: {formatDynamicPrice(lvl.price * 1.025, currentPrice >= 1 ? 2 : 6, currencyMode, penRate)}
+                              </div>
+                            ) : null}
                           </td>
                           <td className="text-slate-300 tabular-nums">
                             {formatDynamicPrice(lvl.allocationUsd, 2, currencyMode, penRate)}

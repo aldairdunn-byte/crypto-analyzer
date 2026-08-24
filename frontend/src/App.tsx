@@ -472,6 +472,7 @@ export function App() {
             const decimals = orderCoin?.decimals || 2;
             const profitPct = 2.50; // 2.50% neto por escalón
             const profitUsd = order.side === 'SELL' ? Number((order.allocationUsd * (profitPct / 100)).toFixed(2)) : 0;
+            const actualEntryPrice = order.side === 'BUY' ? order.price : (order.entryPrice || Number((order.price / (1 + profitPct / 100)).toFixed(decimals)));
 
             if (profitUsd > 0) {
               setUsdtCash((prev) => prev + profitUsd);
@@ -482,7 +483,7 @@ export function App() {
               id: crypto.randomUUID(),
               coin_id: orderCoinId,
               side: order.side,
-              entry_price: order.side === 'BUY' ? order.price : Number((order.price / (1 + profitPct / 100)).toFixed(decimals)),
+              entry_price: actualEntryPrice,
               exit_price: order.side === 'SELL' ? order.price : undefined,
               amount_usd: order.allocationUsd,
               units: order.allocationUsd / order.price,
@@ -509,7 +510,7 @@ export function App() {
             const symbol = orderCoin?.symbol || orderCoinId.toUpperCase();
 
             // Continuous Grid Recycling:
-            // BUY filled -> convert to SELL at next upper price (+2.5%)
+            // BUY filled -> convert to SELL at next upper price (+2.5%), remembering the exact buy price
             // SELL filled -> convert to BUY at lower price (-2.5%)
             const nextSide = order.side === 'BUY' ? ('SELL' as const) : ('BUY' as const);
             const nextPrice = Number(
@@ -521,6 +522,7 @@ export function App() {
               side: nextSide,
               price: nextPrice,
               status: 'PENDING',
+              entryPrice: order.side === 'BUY' ? order.price : undefined,
             };
 
             addToast({
@@ -528,8 +530,8 @@ export function App() {
               title: `Orden de Grid Ejecutada: ${order.side} ${symbol}`,
               message:
                 order.side === 'SELL'
-                  ? `Venta completada a ${formatDynamicPrice(order.price, decimals, currencyMode)}. ¡+${formatDynamicPrice(profitUsd, 2, currencyMode)} acreditados! Nueva orden de compra colocada en ${formatDynamicPrice(nextPrice, decimals, currencyMode)}`
-                  : `Compra completada a ${formatDynamicPrice(order.price, decimals, currencyMode)} por $${order.allocationUsd.toFixed(2)} USDT. Nueva orden de venta colocada en ${formatDynamicPrice(nextPrice, decimals, currencyMode)}`,
+                  ? `Venta a ${formatDynamicPrice(order.price, decimals, currencyMode)} (Entrada: ${formatDynamicPrice(actualEntryPrice, decimals, currencyMode)}). ¡+${formatDynamicPrice(profitUsd, 2, currencyMode)} USDT acreditados!`
+                  : `Compra completada a ${formatDynamicPrice(order.price, decimals, currencyMode)} por $${order.allocationUsd.toFixed(2)} USDT. Orden de venta colocada en ${formatDynamicPrice(nextPrice, decimals, currencyMode)}`,
             });
 
             // Despachar notificación a Telegram Bot
@@ -610,6 +612,7 @@ export function App() {
       const levels: GridLevelItem[] = [];
       for (let i = 0; i < cfg.num_grids; i++) {
         const p = cfg.price_low + i * step;
+        const isBuy = p < targetCurrentPrice;
         levels.push({
           id: crypto.randomUUID(),
           botId: newBot.id,
@@ -617,8 +620,9 @@ export function App() {
           level: i + 1,
           price: Number(p.toFixed(targetCoin.decimals)),
           allocationUsd: Number(alloc.toFixed(2)),
-          side: p < targetCurrentPrice ? 'BUY' : 'SELL',
+          side: isBuy ? 'BUY' : 'SELL',
           status: 'PENDING',
+          entryPrice: isBuy ? undefined : Number((p - step).toFixed(targetCoin.decimals)),
         });
       }
       setActiveGridOrders((prev) => [...prev, ...levels]);
