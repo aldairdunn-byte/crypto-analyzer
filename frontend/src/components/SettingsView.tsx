@@ -36,7 +36,7 @@ export const SettingsView = ({ onResetDemoBalance }: SettingsViewProps) => {
   };
 
   return (
-    <div className="flex-1 bg-[#08090C] p-5 lg:p-6 overflow-y-auto select-none space-y-6">
+    <div className="flex-1 bg-[#08090C] p-3.5 sm:p-5 lg:p-6 overflow-y-auto select-none space-y-4 sm:space-y-6 content-bottom-pad">
       {/* Header */}
       <div>
         <h1 className="text-xl font-black text-white tracking-tight flex items-center gap-2">

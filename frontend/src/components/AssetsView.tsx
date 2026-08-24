@@ -335,7 +335,7 @@ export const AssetsView = ({
   };
 
   return (
-    <div className="flex-1 bg-[#08090C] p-4 sm:p-5 lg:p-6 overflow-y-auto select-none space-y-5">
+    <div className="flex-1 bg-[#08090C] p-3.5 sm:p-5 lg:p-6 overflow-y-auto select-none space-y-4 sm:space-y-5 content-bottom-pad">
       {/* ─── 1. HEADER PRINCIPAL ─── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3.5 pb-1 border-b border-white/5">
         <div>
@@ -652,7 +652,120 @@ export const AssetsView = ({
               </span>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* MOBILE VIEW: RESPONSIVE CARDS */}
+            <div className="block md:hidden space-y-2.5">
+              {consolidatedBots
+                .filter(
+                  (b) =>
+                    !searchQuery ||
+                    b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    b.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+                .map((botItem) => {
+                  const allocPct = totalPortfolioValueUsd > 0 ? (botItem.totalValUsd / totalPortfolioValueUsd) * 100 : 0;
+                  return (
+                    <div
+                      key={botItem.id}
+                      className="surface-card p-3.5 space-y-3 border border-white/10 hover:border-amber-500/30 transition-all shadow-md"
+                    >
+                      {/* Header Row */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow shrink-0">
+                            <CryptoIcon symbol={botItem.symbol} size={20} />
+                          </div>
+                          <div>
+                            <div className="font-extrabold text-white text-xs flex items-center gap-1.5">
+                              <span>{botItem.name}</span>
+                              <span className="text-[9px] uppercase text-[#F59E0B] font-mono bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20 font-bold">
+                                {botItem.strategy}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {botItem.numGrids} Mallas · {botItem.tradesCount} Fills
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                            botItem.status === 'ACTIVE'
+                              ? 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
+                              : 'bg-amber-500/15 text-[#F59E0B] border-amber-500/30'
+                          }`}
+                        >
+                          {botItem.status === 'ACTIVE' ? 'Activo 24/7' : 'Pausado'}
+                        </span>
+                      </div>
+
+                      {/* 2x2 Financial Metrics Bento */}
+                      <div className="grid grid-cols-2 gap-2 bg-[#08090C] p-2.5 rounded-xl border border-white/5 text-xs font-mono">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-sans">Capital Asignado</span>
+                          <span className="font-bold text-white tabular-nums">
+                            ${botItem.capitalAllocated.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </span>
+                          <span className="text-[9px] text-slate-500 block">({allocPct.toFixed(1)}% Portafolio)</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 block font-sans">Valorización Total</span>
+                          <span className="font-black text-white tabular-nums">
+                            {formatDynamicPrice(botItem.totalValUsd, 2, currencyMode, penRate)}
+                          </span>
+                          <span className="text-[9px] text-slate-500 block">
+                            ~S/ {(botItem.totalValUsd * penRate).toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-sans">Precio Spot</span>
+                          <span className="font-bold text-white tabular-nums">
+                            {formatDynamicPrice(botItem.currentPrice, botItem.coin.decimals, currencyMode, penRate)}
+                          </span>
+                          <span className={`text-[10px] font-bold block ${botItem.change24h >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                            {botItem.change24h >= 0 ? '+' : ''}{botItem.change24h.toFixed(2)}%
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 block font-sans">Ganancia Realizada</span>
+                          <span className="font-extrabold text-[#0ECB81] tabular-nums">
+                            +{formatDynamicPrice(botItem.profitRealized, 2, currencyMode, penRate)}
+                          </span>
+                          <span className="text-[10px] font-bold text-emerald-400 block">
+                            +{botItem.roiPct.toFixed(2)}% ROI
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Footer Actions */}
+                      <div className="flex items-center justify-end space-x-2 pt-1 border-t border-white/5">
+                        <button
+                          onClick={() => onOpenCoinInTerminal(botItem.coin.id)}
+                          className="px-3 py-1.5 bg-[#F59E0B]/10 hover:bg-[#F59E0B] text-[#F59E0B] hover:text-black rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-[#F59E0B]/20"
+                        >
+                          <ArrowUpRight className="w-3.5 h-3.5" />
+                          <span>Terminal</span>
+                        </button>
+                        {onUpdateBotStatus && (
+                          <button
+                            onClick={() => onUpdateBotStatus(botItem.bot.id, botItem.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+                              botItem.status === 'ACTIVE'
+                                ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-black border-amber-500/20'
+                                : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-black border-emerald-500/20'
+                            }`}
+                          >
+                            {botItem.status === 'ACTIVE' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                            <span>{botItem.status === 'ACTIVE' ? 'Pausar' : 'Reanudar'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* DESKTOP VIEW: MULTI-COLUMN TABLE */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8 bg-[#08090C]">
@@ -791,7 +904,181 @@ export const AssetsView = ({
               </span>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* MOBILE VIEW: RESPONSIVE CARDS FOR SPOT & USDT CASH */}
+            <div className="block md:hidden space-y-2.5">
+              {/* USDT Cash Mobile Card */}
+              {(!searchQuery || 'tether usdt efectivo stablecoin dolares'.includes(searchQuery.toLowerCase())) && (
+                <div className="surface-card p-3.5 space-y-3 border border-emerald-500/30 bg-emerald-500/[0.02] shadow-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow shrink-0">
+                        <CryptoIcon symbol="USDT" size={20} />
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-white text-xs flex items-center gap-1.5">
+                          <span>Tether USD</span>
+                          <span className="text-[9px] uppercase text-[#0ECB81] font-mono bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20 font-bold">
+                            USDT
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400">Efectivo Líquido Disponible</div>
+                      </div>
+                    </div>
+
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-[#0ECB81] border border-emerald-500/30">
+                      Saldo Libre
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 bg-[#08090C] p-2.5 rounded-xl border border-white/5 text-xs font-mono">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-sans">Tenencia Disponible</span>
+                      <span className="font-bold text-white tabular-nums">
+                        ${usdtCash.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 block font-sans">Valor Total</span>
+                      <span className="font-black text-white tabular-nums">
+                        {formatDynamicPrice(usdtCash, 2, currencyMode, penRate)}
+                      </span>
+                      <span className="text-[9px] text-slate-500 block">
+                        ~S/ {(usdtCash * penRate).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                    <span className="text-[10px] font-mono text-emerald-400 font-bold">
+                      {stablePct.toFixed(1)}% del Portafolio
+                    </span>
+                    <button
+                      onClick={() => {
+                        setInputCash(usdtCash);
+                        setIsCashModalOpen(true);
+                      }}
+                      className="px-3 py-1.5 bg-emerald-500/10 hover:bg-[#0ECB81] text-[#0ECB81] hover:text-black rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-emerald-500/20"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                      <span>Ajustar Saldo USDT</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Spot Holdings Mobile Cards */}
+              {consolidatedSpotHoldings
+                .filter(
+                  (s) =>
+                    !searchQuery ||
+                    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    s.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+                .map((item) => {
+                  const allocPct = totalPortfolioValueUsd > 0 ? (item.totalValUsd / totalPortfolioValueUsd) * 100 : 0;
+                  const isPos = item.pnlUsd >= 0;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="surface-card p-3.5 space-y-3 border border-white/10 hover:border-blue-500/30 transition-all shadow-md"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow shrink-0">
+                            <CryptoIcon symbol={item.symbol} size={20} />
+                          </div>
+                          <div>
+                            <div className="font-extrabold text-white text-xs flex items-center gap-1.5">
+                              <span>{item.name}</span>
+                              <span className="text-[9px] uppercase text-[#F59E0B] font-mono bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20 font-bold">
+                                {item.symbol}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {item.units.toFixed(item.units >= 1 ? 2 : 4)} {item.symbol} en Custodia
+                            </div>
+                          </div>
+                        </div>
+
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                          Spot
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 bg-[#08090C] p-2.5 rounded-xl border border-white/5 text-xs font-mono">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-sans">Precio Spot</span>
+                          <span className="font-bold text-white tabular-nums">
+                            {formatDynamicPrice(item.currentPrice, item.coin.decimals, currencyMode, penRate)}
+                          </span>
+                          <span className={`text-[10px] font-bold block ${item.change24h >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                            {item.change24h >= 0 ? '+' : ''}{item.change24h.toFixed(2)}%
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 block font-sans">Valor Total</span>
+                          <span className="font-black text-white tabular-nums">
+                            {formatDynamicPrice(item.totalValUsd, 2, currencyMode, penRate)}
+                          </span>
+                          <span className="text-[9px] text-slate-500 block">
+                            ~S/ {(item.totalValUsd * penRate).toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-sans">Precio Entrada</span>
+                          <span className="text-slate-300 tabular-nums">
+                            {formatDynamicPrice(item.avgEntryPrice, item.coin.decimals, currencyMode, penRate)}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 block font-sans">PnL Flotante</span>
+                          <span className={`font-bold tabular-nums ${isPos ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                            {isPos ? '+' : ''}{formatDynamicPrice(item.pnlUsd, 2, currencyMode, penRate)}
+                          </span>
+                          <span className={`text-[9px] block ${isPos ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            ({isPos ? '+' : ''}{item.pnlPct.toFixed(2)}%)
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                        <span className="text-[10px] font-mono text-slate-400">
+                          {allocPct.toFixed(1)}% Portafolio
+                        </span>
+                        <div className="flex items-center space-x-1.5">
+                          <button
+                            onClick={() => onOpenCoinInTerminal(item.coin.id)}
+                            className="px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-black rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-blue-500/20"
+                          >
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                            <span>Terminal</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenAddModal(item.coin.id)}
+                            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 cursor-pointer transition-all border border-white/5"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`¿Eliminar ${item.coin.name} de tu custodia?`)) {
+                                onRemoveHolding(item.coin.id);
+                              }
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-[#F6465D] rounded-lg hover:bg-rose-500/10 cursor-pointer transition-all border border-white/5"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* DESKTOP VIEW: MULTI-COLUMN TABLE */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8 bg-[#08090C]">

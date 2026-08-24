@@ -47,7 +47,7 @@ export const OrderBook = ({
   const spreadPct = bestAsk > 0 ? (spreadValue / bestAsk) * 100 : 0.01;
 
   return (
-    <div className="w-64 bg-[#08090C] border-r border-white/10 flex flex-col h-full min-h-0 text-xs select-none shadow-xl overflow-hidden shrink-0">
+    <div className="w-full md:w-64 bg-[#08090C] md:border-r border-white/10 flex flex-col h-full min-h-0 text-xs select-none shadow-xl overflow-hidden shrink-0">
       {/* ─── HEADER: TITLE & VIEW MODES ─── */}
       <div className="h-10 border-b border-white/10 px-3 flex items-center justify-between bg-[#0E1118]/90 backdrop-blur-md shrink-0">
         <div className="flex items-center space-x-1.5 font-bold text-white text-[11px]">

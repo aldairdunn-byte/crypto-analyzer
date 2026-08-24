@@ -8,7 +8,6 @@ import {
 import { type PlainSpanishNotification, generatePlainSpanishNotifications } from '../lib/notifications';
 import {
   TrendingUp,
-  Clock,
   Radio,
   Sparkles,
   ArrowUpRight,
@@ -20,7 +19,12 @@ import {
   Layers,
   BarChart3,
   RefreshCw,
+  AlertTriangle,
+  Zap,
 } from 'lucide-react';
+import { MetricCard } from './ui/MetricCard';
+import { DecisionHero } from './ui/DecisionHero';
+import { MobileDataRow } from './ui/MobileDataRow';
 
 interface DashboardViewProps {
   virtualUsdt: number;
@@ -68,7 +72,6 @@ export const DashboardView = ({
   const [feedFilter, setFeedFilter] = useState<'ALL' | 'PROFIT' | 'BUY_OPPORTUNITY' | 'DANGER' | 'DISCOUNT'>('ALL');
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [hasInitialData, setHasInitialData] = useState<boolean>(false);
 
   const coinsList = Object.values(COINS);
 
@@ -78,7 +81,6 @@ export const DashboardView = ({
       const results = await fetchAllCoins24hStats();
       if (results && Object.keys(results).length > 0) {
         setAllStats(results);
-        setHasInitialData(true);
         setLastSyncTime(new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       }
     } catch (err) {
@@ -100,671 +102,437 @@ export const DashboardView = ({
     return generatePlainSpanishNotifications({ statsMap: allStats, penRate });
   }, [propsNotifications, allStats, penRate]);
 
+  // Filtered Notifications Feed
   const filteredEvents = useMemo(() => {
     if (feedFilter === 'ALL') return displayEvents;
-    if (feedFilter === 'DISCOUNT') return displayEvents.filter((e) => e.category === 'DISCOUNT' || e.category === 'GRID_SETUP');
-    return displayEvents.filter((e) => e.category === feedFilter);
+    return displayEvents.filter((ev) => ev.category === feedFilter);
   }, [displayEvents, feedFilter]);
 
-  const profitCount = displayEvents.filter((n) => n.category === 'PROFIT').length;
-  const buyCount = displayEvents.filter((n) => n.category === 'BUY_OPPORTUNITY').length;
-  const dangerCount = displayEvents.filter((n) => n.category === 'DANGER').length;
-  const discountCount = displayEvents.filter((n) => n.category === 'DISCOUNT' || n.category === 'GRID_SETUP').length;
+  // Global Market Sentiment Calculations
+  const marketSentiment = useMemo(() => {
+    const validStats = Object.values(allStats);
+    if (validStats.length === 0) return { rsi: 52, label: 'Neutral / Lateral', color: 'text-amber-400', bg: 'bg-amber-500/10' };
+    const avgRsi = validStats.reduce((acc, c) => acc + c.rsi, 0) / validStats.length;
+    if (avgRsi > 65) return { rsi: avgRsi, label: 'Codicia / Sobrecompra', color: 'text-[#F6465D]', bg: 'bg-rose-500/10' };
+    if (avgRsi < 35) return { rsi: avgRsi, label: 'Miedo / Descuento Extremo', color: 'text-[#0ECB81]', bg: 'bg-emerald-500/10' };
+    return { rsi: avgRsi, label: 'Zona Neutral / Oportunidad Selectiva', color: 'text-[#F59E0B]', bg: 'bg-amber-500/10' };
+  }, [allStats]);
 
-  // Compute market aggregate metrics
-  const statsArray = Object.values(allStats);
-  const meanRsi = statsArray.length ? Math.round(statsArray.reduce((s, a) => s + a.rsi, 0) / statsArray.length) : 52;
-  const meanMom = statsArray.length ? Math.round(statsArray.reduce((s, a) => s + a.momentum, 0) / statsArray.length) : 50;
+  // Compute Live Performance
+  const pnl24hPct = useMemo(() => {
+    if (propsPnl24hPct !== undefined) return propsPnl24hPct;
+    const coins = Object.values(allStats);
+    if (coins.length === 0) return 3.45;
+    return coins.reduce((acc, c) => acc + c.change24h, 0) / coins.length;
+  }, [propsPnl24hPct, allStats]);
 
-  // Best buy opportunity (highest momentum with positive 24h change)
-  const buyCandidates = coinsList
-    .map((c) => ({ coin: c, stats: allStats[c.id] }))
-    .filter((x) => x.stats && x.stats.change24h > 0)
-    .sort((a, b) => (b.stats?.momentum ?? 0) - (a.stats?.momentum ?? 0));
+  const pnl24hUsd = useMemo(() => {
+    if (propsPnl24hUsd !== undefined) return propsPnl24hUsd;
+    return (virtualUsdt * pnl24hPct) / 100;
+  }, [propsPnl24hUsd, virtualUsdt, pnl24hPct]);
 
-  const bestBuy = buyCandidates[0] || { coin: COINS.solana, stats: allStats.solana };
+  const pnlTotalUsd = useMemo(() => {
+    if (propsPnlTotalUsd !== undefined) return propsPnlTotalUsd;
+    return virtualUsdt - 1000;
+  }, [propsPnlTotalUsd, virtualUsdt]);
 
-  // Best wait candidate (consolidation)
-  const waitCandidates = coinsList
-    .filter((c) => c.id !== bestBuy.coin?.id)
-    .map((c) => ({ coin: c, stats: allStats[c.id] }))
-    .sort((a, b) => Math.abs(a.stats?.change24h ?? 0) - Math.abs(b.stats?.change24h ?? 0));
+  const pnlTotalPct = useMemo(() => {
+    if (propsPnlTotalPct !== undefined) return propsPnlTotalPct;
+    return (pnlTotalUsd / 1000) * 100;
+  }, [propsPnlTotalPct, pnlTotalUsd]);
 
-  const bestWait = waitCandidates[0] || { coin: COINS.ethereum, stats: allStats.ethereum };
+  // Find Top Buy & Top Wait candidates for Decision Heroes
+  const { bestBuy, bestWait } = useMemo(() => {
+    const buyCoins = coinsList
+      .map((c) => ({ coin: c, stats: allStats[c.id] }))
+      .filter((item) => (item.stats?.change24h ?? 0) > 0)
+      .sort((a, b) => (b.stats?.momentum ?? 50) - (a.stats?.momentum ?? 50));
 
+    const waitCoins = coinsList
+      .map((c) => ({ coin: c, stats: allStats[c.id] }))
+      .filter((item) => Math.abs(item.stats?.change24h ?? 0) <= 2.5)
+      .sort((a, b) => (a.stats?.rsi ?? 50) - (b.stats?.rsi ?? 50));
 
+    return {
+      bestBuy: buyCoins[0] || { coin: COINS.solana, stats: allStats.solana },
+      bestWait: waitCoins[0] || { coin: COINS.bitcoin, stats: allStats.bitcoin },
+    };
+  }, [coinsList, allStats]);
 
-  // Calculate actual ledger PnL
-  const pnl24hUsd = propsPnl24hUsd !== undefined ? propsPnl24hUsd : virtualUsdt * 0.0142;
-  const pnl24hPct = propsPnl24hPct !== undefined ? propsPnl24hPct : 1.42;
-  const pnlTotalUsd = propsPnlTotalUsd !== undefined ? propsPnlTotalUsd : virtualUsdt - 1000.0;
-  const pnlTotalPct = propsPnlTotalPct !== undefined ? propsPnlTotalPct : (pnlTotalUsd / 1000.0) * 100;
-
-  // Helper to generate dynamic SVG Sparkline path
-  const renderSparkline = (isPositive: boolean) => {
-    const strokeColor = isPositive ? '#0ECB81' : '#F6465D';
-    const points = isPositive
-      ? '0,20 8,16 16,18 24,12 32,14 40,8 48,10 56,4 64,2'
-      : '0,4 8,6 16,12 24,10 32,16 40,14 48,18 56,16 64,22';
-
-    return (
-      <svg className="w-16 h-6 overflow-visible" viewBox="0 0 64 24">
-        <polyline
-          fill="none"
-          stroke={strokeColor}
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          points={points}
-        />
-      </svg>
-    );
+  // Generate SVG Sparkline Points for Coins
+  const getSparkline = (_coinId: string, change: number) => {
+    const base = [12, 11, 13, 10, 14, 12, 15, 13, 14, 16];
+    const trend = change >= 0 ? 1 : -1;
+    const pts = base.map((y, i) => {
+      const x = i * 7;
+      const modY = Math.max(2, Math.min(22, y - (trend * (i * 0.7))));
+      return `${x},${modY}`;
+    });
+    return pts.join(' ');
   };
 
   return (
-    <div className="flex-1 bg-[#08090C] p-3.5 sm:p-5 lg:p-6 overflow-y-auto select-none space-y-4 sm:space-y-6">
-      {/* ─── 1. TOP 5 BENTO KPI CARDS CON ILUMINACIÓN AMBIENTAL ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-        {/* KPI 1: Total Portfolio */}
-        <div className="glass-card rounded-2xl p-4.5 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 relative overflow-hidden group">
-          <div className="flex justify-between items-start">
-            <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Valor del Portafolio</span>
-            <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/25 flex items-center justify-center text-blue-400 group-hover:bg-blue-500/20 transition-colors">
-              <Wallet className="w-4 h-4" />
-            </div>
+    <div className="flex-1 bg-[#08090C] p-3.5 sm:p-5 lg:p-6 overflow-y-auto select-none space-y-4 sm:space-y-6 content-bottom-pad">
+      {/* ─── 1. DECISION HEROES FIRST (PRIMARY DECISION VIEWPORT) ─── */}
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Sparkles className="w-4.5 h-4.5 text-[#F59E0B]" />
+            <h2 className="text-sm sm:text-base font-black text-white tracking-tight">
+              ¿Qué Haría Hoy? · Oportunidades Cuantitativas
+            </h2>
           </div>
-          <div className="my-2">
-            <div className="text-2xl font-black font-mono tracking-tight text-white tabular-nums">
-              {formatDynamicPrice(virtualUsdt, 2, currencyMode, penRate)}
-            </div>
-            <div className="text-xs font-mono text-slate-400 font-medium mt-0.5 tabular-nums">
-              {currencyMode === 'USD'
-                ? formatDynamicPrice(virtualUsdt, 2, 'PEN', penRate)
-                : formatDynamicPrice(virtualUsdt, 2, 'USD', penRate)}
-            </div>
-          </div>
-          <div className="flex items-center justify-between text-[10px] pt-2 border-t border-white/5">
-            <span className="text-emerald-400 font-bold flex items-center gap-1">
-              <TrendingUp className="w-3 h-3 text-emerald-400" />
-              <span>Cuenta Demo Pro</span>
-            </span>
-            <span className="font-mono text-slate-500">TC: {penRate.toFixed(2)}</span>
-          </div>
+          <span className="text-[10px] font-mono text-slate-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
+            Algorítmico 24/7
+          </span>
         </div>
 
-        {/* KPI 2: Capital Disponible */}
-        <div className="glass-card rounded-2xl p-4.5 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 relative overflow-hidden group">
-          <div className="flex justify-between items-start">
-            <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Capital Disponible</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-[#F59E0B] group-hover:bg-amber-500/20 transition-colors">
-              <DollarSign className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="my-2">
-            <div className="text-2xl font-black font-mono tracking-tight text-[#0ECB81] tabular-nums">
-              {formatDynamicPrice(availableUsdt, 2, currencyMode, penRate)}
-            </div>
-            <div className="text-xs font-mono text-[#F59E0B] font-semibold mt-0.5 tabular-nums">
-              En Bots: {formatDynamicPrice(capitalInBots, 2, currencyMode, penRate)}
-            </div>
-          </div>
-          <div className="text-[10px] text-slate-400 font-medium pt-2 border-t border-white/5">
-            Fondos 100% libres para operar
-          </div>
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          {/* Decision Hero 1: Best Buy */}
+          {bestBuy.coin && (
+            <DecisionHero
+              type="BUY"
+              coinSymbol={bestBuy.coin.symbol}
+              coinName={bestBuy.coin.name}
+              priceFormatted={formatDynamicPrice(bestBuy.stats?.price ?? bestBuy.coin.basePrice, bestBuy.coin.decimals, currencyMode, penRate)}
+              change24h={bestBuy.stats?.change24h ?? 3.2}
+              badgeText="Mejor Opción de Entrada"
+              rationale={`Rebote técnico en EMA-20 con RSI en ${(bestBuy.stats?.rsi ?? 48).toFixed(0)} puntos y momentum de ${bestBuy.stats?.momentum ?? 65}/100. Relación riesgo/beneficio favorable para Spot o Grid Bot.`}
+              actionLabel={`Operar ${bestBuy.coin.symbol}`}
+              onAction={() => onOpenCoinInTerminal(bestBuy.coin.id)}
+            />
+          )}
 
-        {/* KPI 3: PnL 24H */}
-        <div className="glass-card rounded-2xl p-4.5 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 relative overflow-hidden group">
-          <div className="flex justify-between items-start">
-            <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Rendimiento 24H</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-400 group-hover:bg-emerald-500/20 transition-colors">
-              <Activity className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="my-2">
-            <div
-              className={`text-2xl font-black font-mono tracking-tight tabular-nums ${
-                pnl24hUsd >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'
-              }`}
-            >
-              {pnl24hUsd >= 0 ? '+' : ''}
-              {formatDynamicPrice(pnl24hUsd, 2, currencyMode, penRate)}
-            </div>
-            <div
-              className={`text-xs font-mono font-bold mt-0.5 tabular-nums ${
-                pnl24hPct >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'
-              }`}
-            >
-              {pnl24hPct >= 0 ? '+' : ''}
-              {pnl24hPct.toFixed(2)}%
-            </div>
-          </div>
-          <div className="text-[10px] text-slate-400 font-medium pt-2 border-t border-white/5">
-            Variación ponderada de activos
-          </div>
+          {/* Decision Hero 2: Best Wait / Consolidating */}
+          {bestWait.coin && (
+            <DecisionHero
+              type="WAIT"
+              coinSymbol={bestWait.coin.symbol}
+              coinName={bestWait.coin.name}
+              priceFormatted={formatDynamicPrice(bestWait.stats?.price ?? bestWait.coin.basePrice, bestWait.coin.decimals, currencyMode, penRate)}
+              change24h={bestWait.stats?.change24h ?? 0.4}
+              badgeText="Líder en Consolidación"
+              rationale={`Comprimiendo volatilidad en rango lateral. Ideal para desplegar Asistente Grid Bot de captura de rango o esperar confirmación de ruptura alcista.`}
+              actionLabel={`Ver Gráfico ${bestWait.coin.symbol}`}
+              onAction={() => onOpenCoinInTerminal(bestWait.coin.id)}
+            />
+          )}
         </div>
+      </div>
 
-        {/* KPI 4: PnL Total */}
-        <div className="glass-card rounded-2xl p-4.5 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 relative overflow-hidden group">
-          <div className="flex justify-between items-start">
-            <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">P&L Histórico</span>
-            <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/25 flex items-center justify-center text-purple-400 group-hover:bg-purple-500/20 transition-colors">
-              <Layers className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="my-2">
-            <div
-              className={`text-2xl font-black font-mono tracking-tight tabular-nums ${
-                pnlTotalUsd >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'
-              }`}
-            >
-              {pnlTotalUsd >= 0 ? '+' : ''}
-              {formatDynamicPrice(pnlTotalUsd, 2, currencyMode, penRate)}
-            </div>
-            <div
-              className={`text-xs font-mono font-bold mt-0.5 tabular-nums ${
-                pnlTotalPct >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'
-              }`}
-            >
-              {pnlTotalPct >= 0 ? '+' : ''}
-              {pnlTotalPct.toFixed(2)}%
-            </div>
-          </div>
-          <div className="text-[10px] text-slate-400 font-medium pt-2 border-t border-white/5">
-            Base inicial: $1,000 USDT
-          </div>
-        </div>
+      {/* ─── 2. TOP 5 BENTO KPI STRIP ─── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3.5">
+        <MetricCard
+          label="Valor del Portafolio"
+          value={formatDynamicPrice(virtualUsdt, 2, currencyMode, penRate)}
+          subValue={currencyMode === 'USD' ? `≈ S/ ${(virtualUsdt * penRate).toFixed(2)} PEN` : `≈ $${virtualUsdt.toFixed(2)} USD`}
+          footnote="Cuenta Demo Institucional"
+          icon={Wallet}
+          variant="blue"
+        />
 
-        {/* KPI 5: Live Feed Status & Time */}
-        <div className="glass-card rounded-2xl p-4.5 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 relative overflow-hidden group">
+        <MetricCard
+          label="Capital Disponible"
+          value={formatDynamicPrice(availableUsdt, 2, currencyMode, penRate)}
+          subValue={`En Bots: ${formatDynamicPrice(capitalInBots, 2, currencyMode, penRate)}`}
+          footnote="100% fondos libres para operar"
+          icon={DollarSign}
+          variant="green"
+        />
+
+        <MetricCard
+          label="Rendimiento 24H"
+          value={`${pnl24hUsd >= 0 ? '+' : ''}${formatDynamicPrice(pnl24hUsd, 2, currencyMode, penRate)}`}
+          subValue={`${pnl24hPct >= 0 ? '+' : ''}${pnl24hPct.toFixed(2)}%`}
+          footnote="Variación de mercado"
+          icon={Activity}
+          variant={pnl24hUsd >= 0 ? 'green' : 'red'}
+          isPositive={pnl24hUsd >= 0}
+        />
+
+        <MetricCard
+          label="P&L Histórico"
+          value={`${pnlTotalUsd >= 0 ? '+' : ''}${formatDynamicPrice(pnlTotalUsd, 2, currencyMode, penRate)}`}
+          subValue={`${pnlTotalPct >= 0 ? '+' : ''}${pnlTotalPct.toFixed(2)}%`}
+          footnote="Base inicial: $1,000 USDT"
+          icon={Layers}
+          variant="purple"
+          isPositive={pnlTotalUsd >= 0}
+        />
+
+        <div className="col-span-2 sm:col-span-1 glass-card rounded-2xl p-4 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 relative overflow-hidden group">
           <div className="flex justify-between items-start">
-            <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Sincronización Live</span>
+            <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Sync Live</span>
             <button
               onClick={loadMarketStats}
-              title="Refrescar cotizaciones en vivo"
+              title="Refrescar cotizaciones"
               className="text-slate-400 hover:text-white transition-colors cursor-pointer p-0.5"
             >
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-[#F59E0B]' : ''}`} />
             </button>
           </div>
-          <div className="my-2">
-            <div className="text-xl font-black font-mono text-white tracking-tight flex items-center gap-2">
-              <span>{lastSyncTime || 'Conectando...'}</span>
-              <span className="w-2.5 h-2.5 rounded-full bg-[#0ECB81] animate-ping" />
+          <div className="my-2 min-w-0">
+            <div className="text-lg sm:text-xl font-black font-mono text-white tracking-tight flex items-center gap-1.5 truncate">
+              <span>{lastSyncTime || 'Conectado'}</span>
+              <span className="w-2 h-2 rounded-full bg-[#0ECB81] animate-ping shrink-0" />
             </div>
-            <div className="text-xs text-emerald-400 font-semibold flex items-center gap-1.5 mt-0.5">
-              <Radio className="w-3.5 h-3.5 text-[#0ECB81]" />
-              <span>Binance Public WebSocket</span>
+            <div className="text-xs text-emerald-400 font-semibold flex items-center gap-1 mt-0.5 truncate">
+              <Radio className="w-3 h-3 text-[#0ECB81] shrink-0" />
+              <span>Binance Public API</span>
             </div>
           </div>
-          <div className="text-[10px] text-slate-400 font-medium pt-2 border-t border-white/5">
+          <div className="text-[10px] text-slate-400 font-medium pt-2 border-t border-white/5 truncate">
             Auto-refresh cada 30s
           </div>
         </div>
       </div>
 
-      {/* ─── 2. DOS COLUMNAS PRINCIPALES (IZQUIERDA 68% / DERECHA 32%) ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* COLUMNA IZQUIERDA (8 COLS = 67%): "¿Qué Haría Hoy?" + Tabla de Mercado */}
-        <div className="lg:col-span-8 space-y-6">
-          {/* SECCIÓN "¿QUÉ HARÍA HOY?" */}
-          <div>
-            <div className="flex justify-between items-center mb-3.5">
-              <div>
-                <h2 className="text-base font-extrabold text-white tracking-tight flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#F59E0B]" />
-                  <span>¿Qué Haría Hoy? · Recomendaciones Cuantitativas</span>
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Decisiones algorítmicas de entrada y espera basadas en RSI, EMA-20 y Volatilidad ATR.
-                </p>
-              </div>
+      {/* ─── 3. RESUMEN DE MERCADO (MOBILE ROWS & DESKTOP TABLE) ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Left: Market Overview (7 Cols) */}
+        <div className="lg:col-span-7 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <BarChart3 className="w-4 h-4 text-[#0ECB81]" />
+              <h2 className="text-sm sm:text-base font-black text-white tracking-tight">
+                Cotizaciones en Vivo ({coinsList.length} Activos)
+              </h2>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* HERO CARD 1: PARA COMPRAR HOY (VERDE ESMERALDA) */}
-              {bestBuy.coin && (
-                <div className="rounded-2xl p-5 border border-emerald-500/40 bg-gradient-to-br from-[#0B1510] via-[#0E1713] to-[#121620] shadow-xl flex flex-col justify-between relative overflow-hidden transition-all duration-200 hover:-translate-y-0.5">
-                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#0ECB81] to-transparent opacity-80" />
-
-                  <div>
-                    <div className="flex justify-between items-start mb-2.5">
-                      <span className="bg-[#0ECB81] text-black font-extrabold text-[10px] px-2.5 py-1 rounded-md uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Mejor Opción de Compra</span>
-                      </span>
-                      <span className="text-xs font-mono text-[#0ECB81] font-black bg-emerald-500/15 px-2.5 py-0.5 rounded-full border border-emerald-500/30 tabular-nums">
-                        +{(bestBuy.stats?.change24h ?? 0).toFixed(2)}%
-                      </span>
-                    </div>
-
-                    <div className="flex items-center space-x-2.5 my-1.5">
-                      <CryptoIcon symbol={bestBuy.coin.symbol} size={28} />
-                      <div className="flex items-baseline space-x-2">
-                        <span className="text-xl font-black text-white">{bestBuy.coin.name}</span>
-                        <span className="text-xs text-[#F59E0B] font-mono font-bold">{bestBuy.coin.symbol}/USDT</span>
-                      </div>
-                    </div>
-
-                    {/* Visual Momentum Bar */}
-                    <div className="my-2 bg-[#08090C]/80 p-2.5 rounded-xl border border-white/5 space-y-1.5">
-                      <div className="flex justify-between text-[10px]">
-                        <span className="text-slate-400 font-medium">Momentum Score</span>
-                        <span className="font-mono font-bold text-[#0ECB81]">{bestBuy.stats?.momentum ?? 65} / 100</span>
-                      </div>
-                      <div className="w-full bg-[#151922] h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-[#F59E0B] to-[#0ECB81] transition-all duration-500"
-                          style={{ width: `${bestBuy.stats?.momentum ?? 65}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Quantitative Pills */}
-                    <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono text-center mb-3">
-                      <div className="bg-[#0E1118] p-1.5 rounded-lg border border-white/5">
-                        <span className="text-slate-500 block text-[9px]">RSI (14)</span>
-                        <span className="font-bold text-white">{(bestBuy.stats?.rsi ?? 50).toFixed(1)}</span>
-                      </div>
-                      <div className="bg-[#0E1118] p-1.5 rounded-lg border border-white/5">
-                        <span className="text-slate-500 block text-[9px]">Precio Spot</span>
-                        <span className="font-bold text-white">
-                          {formatDynamicPrice(bestBuy.stats?.price ?? bestBuy.coin.basePrice, bestBuy.coin.decimals, currencyMode, penRate)}
-                        </span>
-                      </div>
-                      <div className="bg-[#0E1118] p-1.5 rounded-lg border border-white/5">
-                        <span className="text-slate-500 block text-[9px]">Riesgo</span>
-                        <span className="font-bold text-emerald-400">Controlado</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-white/10 flex items-center justify-between">
-                    <span className="text-xs text-[#0ECB81] font-bold">COMPRA CONFIRMADA</span>
-                    <button
-                      onClick={() => onOpenCoinInTerminal(bestBuy.coin.id)}
-                      className="bg-[#0ECB81] hover:bg-emerald-400 text-black font-extrabold px-3.5 py-2 rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-500/20 active:scale-95"
-                    >
-                      <span>Operar {bestBuy.coin.symbol}</span>
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* HERO CARD 2: LÍDER EN ESPERA (DORADO ÁMBAR) */}
-              {bestWait.coin && (
-                <div className="rounded-2xl p-5 border border-amber-500/40 bg-gradient-to-br from-[#161208] via-[#1A160D] to-[#121620] shadow-xl flex flex-col justify-between relative overflow-hidden transition-all duration-200 hover:-translate-y-0.5">
-                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#F59E0B] to-transparent opacity-80" />
-
-                  <div>
-                    <div className="flex justify-between items-start mb-2.5">
-                      <span className="bg-[#F59E0B] text-black font-extrabold text-[10px] px-2.5 py-1 rounded-md uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>Líder en Consolidación</span>
-                      </span>
-                      <span className="text-xs font-mono text-[#F59E0B] font-black bg-amber-500/15 px-2.5 py-0.5 rounded-full border border-amber-500/30 tabular-nums">
-                        {(bestWait.stats?.change24h ?? 0) >= 0 ? '+' : ''}
-                        {(bestWait.stats?.change24h ?? 0).toFixed(2)}% · LATERAL
-                      </span>
-                    </div>
-
-                    <div className="flex items-center space-x-2.5 my-1.5">
-                      <CryptoIcon symbol={bestWait.coin.symbol} size={28} />
-                      <div className="flex items-baseline space-x-2">
-                        <span className="text-xl font-black text-white">{bestWait.coin.name}</span>
-                        <span className="text-xs text-[#F59E0B] font-mono font-bold">{bestWait.coin.symbol}/USDT</span>
-                      </div>
-                    </div>
-
-                    {/* Visual Momentum Bar */}
-                    <div className="my-2 bg-[#08090C]/80 p-2.5 rounded-xl border border-white/5 space-y-1.5">
-                      <div className="flex justify-between text-[10px]">
-                        <span className="text-slate-400 font-medium">Momentum Score</span>
-                        <span className="font-mono font-bold text-[#F59E0B]">{bestWait.stats?.momentum ?? 50} / 100</span>
-                      </div>
-                      <div className="w-full bg-[#151922] h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-[#F59E0B] transition-all duration-500"
-                          style={{ width: `${bestWait.stats?.momentum ?? 50}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Quantitative Pills */}
-                    <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono text-center mb-3">
-                      <div className="bg-[#0E1118] p-1.5 rounded-lg border border-white/5">
-                        <span className="text-slate-500 block text-[9px]">Precio Actual</span>
-                        <span className="font-bold text-white">
-                          {formatDynamicPrice(bestWait.stats?.price ?? bestWait.coin.basePrice, bestWait.coin.decimals, currencyMode, penRate)}
-                        </span>
-                      </div>
-                      <div className="bg-[#0E1118] p-1.5 rounded-lg border border-white/5">
-                        <span className="text-slate-500 block text-[9px]">Entrada Límite</span>
-                        <span className="font-bold text-[#F59E0B]">
-                          {formatDynamicPrice((bestWait.stats?.price ?? bestWait.coin.basePrice) * 0.985, bestWait.coin.decimals, currencyMode, penRate)}
-                        </span>
-                      </div>
-                      <div className="bg-[#0E1118] p-1.5 rounded-lg border border-white/5">
-                        <span className="text-slate-500 block text-[9px]">Acción</span>
-                        <span className="font-bold text-amber-400">Esperar Rebote</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-white/10 flex items-center justify-between">
-                    <span className="text-xs text-[#F59E0B] font-bold">ESPERAR REBOTE</span>
-                    <button
-                      onClick={() => onOpenCoinInTerminal(bestWait.coin.id)}
-                      className="bg-white/10 hover:bg-[#F59E0B] hover:text-black text-white font-extrabold px-3.5 py-2 rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                    >
-                      <span>Ver Gráfico {bestWait.coin.symbol}</span>
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <button
+              onClick={() => onNavigateView('RADAR')}
+              className="text-xs text-[#F59E0B] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <span>Abrir Radar</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
+            </button>
           </div>
 
-          {/* SECCIÓN TABLA RESUMEN DEL MERCADO (16 CRIPTOMONEDAS EN VIVO CON SPARKLINE) */}
-          <div className="glass-card rounded-2xl p-5 shadow-xl">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h3 className="text-sm font-extrabold text-white tracking-tight flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-blue-400" />
-                  <span>Resumen General del Mercado (16 Activos)</span>
-                </h3>
-                <p className="text-xs text-slate-400">Cotizaciones, micro-sparklines 24H y estado algorítmico en vivo.</p>
-              </div>
-              <button
-                onClick={() => onNavigateView('RADAR')}
-                className="text-xs text-[#F59E0B] hover:underline font-bold flex items-center gap-1 cursor-pointer"
-              >
-                <span>Ver Radar Completo</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+          {/* MOBILE LIST OF DATA ROWS */}
+          <div className="block md:hidden space-y-2">
+            {coinsList.map((c) => {
+              const st = allStats[c.id];
+              const price = st?.price ?? c.basePrice;
+              const chg = st?.change24h ?? 0;
+              const isPos = chg >= 0;
+              const sparkPts = getSparkline(c.id, chg);
 
-            {/* Skeleton Loading or Table */}
-            {!hasInitialData ? (
-              <div className="space-y-2 py-4">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <div key={i} className="h-11 rounded-xl skeleton-shimmer w-full" />
-                ))}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-9">
-                      <th className="text-left pl-3 font-mono">#</th>
-                      <th className="text-left">Activo</th>
-                      <th className="text-right">Precio</th>
-                      <th className="text-right">24H %</th>
-                      <th className="text-center hidden sm:table-cell">Tendencia 24H</th>
-                      <th className="text-center hidden md:table-cell">Momentum</th>
-                      <th className="text-center">RSI-14</th>
-                      <th className="text-right">Estado</th>
-                      <th className="text-right pr-3">Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {coinsList.map((coin, index) => {
-                      const st = allStats[coin.id];
-                      const price = st?.price ?? coin.basePrice;
-                      const change24 = st?.change24h ?? 0;
-                      const rsi = st?.rsi ?? 50;
-                      const mom = st?.momentum ?? 50;
+              return (
+                <MobileDataRow
+                  key={c.id}
+                  symbol={c.symbol}
+                  name={c.name}
+                  category={c.category}
+                  priceFormatted={formatDynamicPrice(price, c.decimals, currencyMode, penRate)}
+                  subPriceFormatted={currencyMode === 'USD' ? `≈ S/ ${(price * penRate).toFixed(2)}` : undefined}
+                  change24h={chg}
+                  badge={isPos ? 'Fuerza' : 'Descuento'}
+                  badgeColor={isPos ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}
+                  sparklinePoints={sparkPts}
+                  sparklineColor={isPos ? '#0ECB81' : '#F6465D'}
+                  onClick={() => onOpenCoinInTerminal(c.id)}
+                />
+              );
+            })}
+          </div>
 
-                      const isBuy = change24 > 3.0;
-                      const isSell = change24 < -4.0;
-                      const statusText = isBuy ? 'OPORTUNIDAD' : isSell ? 'PRECAUCIÓN' : 'ESPERAR';
-                      const statusColor = isBuy
-                        ? 'text-[#0ECB81] bg-emerald-500/10 border-emerald-500/30'
-                        : isSell
-                        ? 'text-[#F6465D] bg-rose-500/10 border-rose-500/30'
-                        : 'text-[#F59E0B] bg-amber-500/10 border-amber-500/30';
+          {/* DESKTOP FULL TABLE */}
+          <div className="hidden md:block surface-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 bg-[#08090C] h-9">
+                    <th className="pl-4">Activo</th>
+                    <th>Precio Spot</th>
+                    <th>24h %</th>
+                    <th>Rango 24h</th>
+                    <th>RSI</th>
+                    <th>Tendencia 7D</th>
+                    <th className="text-right pr-4">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 font-mono">
+                  {coinsList.map((c) => {
+                    const st = allStats[c.id];
+                    const price = st?.price ?? c.basePrice;
+                    const chg = st?.change24h ?? 0;
+                    const isPos = chg >= 0;
+                    const rsi = st?.rsi ?? 50;
 
-                      return (
-                        <tr key={coin.id} className="hover:bg-white/[0.03] transition-colors h-12">
-                          <td className="pl-3 font-mono text-slate-500 text-[10px]">{index + 1}</td>
-                          <td>
-                            <div className="flex items-center space-x-2.5">
-                              <CryptoIcon symbol={coin.symbol} size={24} />
-                              <div>
-                                <div className="font-extrabold text-white flex items-center gap-1.5">
-                                  <span>{coin.symbol}</span>
-                                  <span className="text-[9px] uppercase font-mono text-[#F59E0B] bg-[#08090C] border border-white/5 px-1.5 py-0.5 rounded">
-                                    {coin.category}
-                                  </span>
-                                </div>
-                                <div className="text-[10px] text-slate-400 leading-none">{coin.name}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="text-right font-mono font-bold text-white tabular-nums">
-                            {formatDynamicPrice(price, coin.decimals, currencyMode, penRate)}
-                          </td>
-                          <td
-                            className={`text-right font-mono font-bold tabular-nums ${
-                              change24 >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'
+                    return (
+                      <tr
+                        key={c.id}
+                        onClick={() => onOpenCoinInTerminal(c.id)}
+                        className="hover:bg-white/[0.04] transition-colors h-12 cursor-pointer"
+                      >
+                        <td className="pl-4 font-sans font-bold text-white flex items-center space-x-2 py-3">
+                          <CryptoIcon symbol={c.symbol} size={20} />
+                          <div>
+                            <span className="font-mono font-black">{c.symbol}</span>
+                            <span className="text-[10px] text-slate-400 font-sans block">{c.name}</span>
+                          </div>
+                        </td>
+                        <td className="font-bold text-white tabular-nums">
+                          {formatDynamicPrice(price, c.decimals, currencyMode, penRate)}
+                        </td>
+                        <td className="tabular-nums">
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                              isPos ? 'bg-emerald-500/15 text-[#0ECB81]' : 'bg-rose-500/15 text-[#F6465D]'
                             }`}
                           >
-                            {change24 >= 0 ? '+' : ''}
-                            {change24.toFixed(2)}%
-                          </td>
-                          <td className="text-center hidden sm:table-cell">
-                            <div className="inline-flex items-center justify-center">
-                              {renderSparkline(change24 >= 0)}
-                            </div>
-                          </td>
-                          <td className="text-center hidden md:table-cell">
-                            <div className="inline-flex items-center space-x-2">
-                              <span className="font-mono font-bold text-slate-300 text-[11px] tabular-nums">{mom}</span>
-                              <div className="w-12 h-1.5 bg-[#151922] rounded-full overflow-hidden border border-white/5">
-                                <div
-                                  className={`h-full ${mom >= 60 ? 'bg-[#0ECB81]' : mom >= 40 ? 'bg-[#F59E0B]' : 'bg-[#F6465D]'}`}
-                                  style={{ width: `${mom}%` }}
-                                />
-                              </div>
-                            </div>
-                          </td>
-                          <td className="text-center font-mono font-bold text-white text-[11px] tabular-nums">
+                            {isPos ? '+' : ''}
+                            {chg.toFixed(2)}%
+                          </span>
+                        </td>
+                        <td className="text-slate-400 text-[10px] tabular-nums">
+                          <div>H: {formatDynamicPrice(st?.high24h ?? price * 1.03, c.decimals, currencyMode, penRate)}</div>
+                          <div>L: {formatDynamicPrice(st?.low24h ?? price * 0.97, c.decimals, currencyMode, penRate)}</div>
+                        </td>
+                        <td className="tabular-nums">
+                          <span
+                            className={`font-bold ${
+                              rsi > 65 ? 'text-[#F6465D]' : rsi < 38 ? 'text-[#0ECB81]' : 'text-slate-300'
+                            }`}
+                          >
                             {rsi.toFixed(1)}
-                          </td>
-                          <td className="text-right">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${statusColor}`}>
-                              {statusText}
-                            </span>
-                          </td>
-                          <td className="text-right pr-3">
-                            <button
-                              onClick={() => onOpenCoinInTerminal(coin.id)}
-                              className="bg-white/5 hover:bg-[#F59E0B] hover:text-black text-slate-200 px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer inline-flex items-center gap-1 active:scale-95 shadow-sm"
-                            >
-                              <span>Analizar</span>
-                              <ArrowUpRight className="w-3 h-3" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                          </span>
+                        </td>
+                        <td>
+                          <svg className="w-16 h-5 overflow-visible" viewBox="0 0 64 24">
+                            <polyline
+                              fill="none"
+                              stroke={isPos ? '#0ECB81' : '#F6465D'}
+                              strokeWidth="1.75"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              points={getSparkline(c.id, chg)}
+                            />
+                          </svg>
+                        </td>
+                        <td className="text-right pr-4 font-sans">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenCoinInTerminal(c.id);
+                            }}
+                            className="px-2.5 py-1 bg-white/5 hover:bg-[#F59E0B] hover:text-black text-slate-300 rounded-lg text-[11px] font-bold transition-all inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>Operar</span>
+                            <ArrowUpRight className="w-3 h-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        {/* COLUMNA DERECHA (4 COLS = 33%): Notificaciones en Vivo (Live Feed) */}
-        <div className="lg:col-span-4 space-y-6">
-          {/* LIVE FEED PANEL EN CRISTIANO */}
-          <div className="glass-card rounded-2xl p-5 shadow-xl flex flex-col h-full">
-            <div className="flex justify-between items-center mb-3.5">
+        {/* Right: Plain Spanish Feed & Sentiment (5 Cols) */}
+        <div className="lg:col-span-5 space-y-4">
+          {/* Market Sentiment Barometer */}
+          <div className="surface-card p-4 space-y-2.5">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-[#F59E0B]" />
+                <span>Termómetro Cuantitativo</span>
+              </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${marketSentiment.bg} ${marketSentiment.color}`}>
+                {marketSentiment.label}
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex justify-between text-[11px] font-mono text-slate-400">
+                <span>RSI Promedio Mercado:</span>
+                <span className="font-bold text-white">{marketSentiment.rsi.toFixed(1)} / 100</span>
+              </div>
+              <div className="w-full bg-[#08090C] h-2 rounded-full overflow-hidden border border-white/5">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#0ECB81] via-[#F59E0B] to-[#F6465D] transition-all duration-500"
+                  style={{ width: `${Math.min(100, Math.max(10, marketSentiment.rsi))}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Plain Spanish Events Feed */}
+          <div className="surface-card p-4 space-y-3">
+            <div className="flex justify-between items-center pb-2 border-b border-white/5">
               <div className="flex items-center space-x-2">
                 <Bell className="w-4 h-4 text-[#F59E0B]" />
-                <h3 className="text-sm font-extrabold text-white tracking-tight">Notificaciones en Vivo</h3>
+                <h3 className="text-xs sm:text-sm font-black text-white">Alertas en 'Cristiano'</h3>
               </div>
-              <span className="w-2.5 h-2.5 rounded-full bg-[#0ECB81] animate-pulse" />
+              <span className="text-[10px] font-mono text-slate-400">
+                {filteredEvents.length} eventos
+              </span>
             </div>
 
-            {/* Filter buttons with real counts */}
-            <div className="flex items-center bg-[#08090C] p-1 rounded-xl border border-white/5 space-x-1 mb-3.5 overflow-x-auto no-scrollbar">
+            {/* Clean SVG Filter Pills without emojis */}
+            <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar py-0.5">
               {[
-                { id: 'ALL', label: `Todas (${displayEvents.length})` },
-                { id: 'PROFIT', label: `💰 Ganancias (${profitCount})` },
-                { id: 'BUY_OPPORTUNITY', label: `🚀 Compras (${buyCount})` },
-                { id: 'DANGER', label: `⚠️ Peligro (${dangerCount})` },
-                { id: 'DISCOUNT', label: `🏷️ Ofertas (${discountCount})` },
-              ].map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => setFeedFilter(f.id as any)}
-                  className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${
-                    feedFilter === f.id ? 'bg-[#F59E0B] text-black shadow-sm font-black' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
+                { id: 'ALL' as const, label: 'Todas', icon: Layers },
+                { id: 'PROFIT' as const, label: 'Ganancias', icon: TrendingUp },
+                { id: 'BUY_OPPORTUNITY' as const, label: 'Compras', icon: CheckCircle2 },
+                { id: 'DANGER' as const, label: 'Riesgo', icon: AlertTriangle },
+                { id: 'DISCOUNT' as const, label: 'Ofertas', icon: Zap },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = feedFilter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setFeedFilter(tab.id)}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer ${
+                      isActive
+                        ? 'bg-[#F59E0B] text-black shadow font-black'
+                        : 'bg-[#08090C] text-slate-400 hover:text-white border border-white/5'
+                    }`}
+                  >
+                    <Icon className="w-3 h-3" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Plain Spanish Notification Cards List */}
-            <div className="space-y-3 overflow-y-auto max-h-[620px] pr-1">
-              {filteredEvents.map((ev) => (
-                <div
-                  key={ev.id}
-                  onClick={() => {
-                    if (onSelectNotification) onSelectNotification(ev.actionCoinId, ev.id);
-                    else onOpenCoinInTerminal(ev.actionCoinId);
-                  }}
-                  className={`border rounded-2xl p-3.5 space-y-2 transition-all duration-200 hover:-translate-y-0.5 cursor-pointer bg-[#0E1118] border-white/10 hover:border-[#F59E0B]/40 shadow-md relative group`}
-                >
-                  {/* Unread indicator */}
-                  {!ev.isRead && (
-                    <span className="absolute top-3.5 right-3.5 w-2 h-2 rounded-full bg-[#0ECB81] ring-4 ring-emerald-500/20 animate-pulse" />
-                  )}
-
-                  <div className="flex justify-between items-center">
-                    <span
-                      className="text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border font-mono tracking-wide"
-                      style={{
-                        color: ev.badgeColor,
-                        borderColor: ev.badgeBorder,
-                        backgroundColor: ev.badgeBg,
-                      }}
-                    >
-                      {ev.badge}
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-400 mr-3">{ev.timeAgo}</span>
-                  </div>
-
-                  <div className="flex items-center space-x-2 pt-0.5">
-                    <CryptoIcon symbol={ev.coinSymbol} size={18} />
-                    <span className="text-xs font-extrabold text-white leading-snug">{ev.headline}</span>
-                  </div>
-
-                  <p className="text-[11px] text-slate-300 leading-relaxed pl-6">{ev.plainExplanation}</p>
-
-                  <div className="ml-6 bg-[#08090C] rounded-xl p-2 border border-white/5 text-[11px] font-semibold text-[#F59E0B]">
-                    {ev.highlightText}
-                  </div>
-
-                  <div className="pt-1 flex justify-end pl-6">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onSelectNotification) onSelectNotification(ev.actionCoinId, ev.id);
-                        else onOpenCoinInTerminal(ev.actionCoinId);
-                      }}
-                      className="px-3 py-1 bg-white/5 hover:bg-[#F59E0B] hover:text-black text-slate-200 text-[10px] font-extrabold rounded-xl transition-all flex items-center gap-1 cursor-pointer group-hover:bg-[#F59E0B] group-hover:text-black active:scale-95"
-                    >
-                      <span>{ev.actionText}</span>
-                      <ArrowUpRight className="w-3 h-3" />
-                    </button>
-                  </div>
+            {/* Feed Stream */}
+            <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+              {filteredEvents.length === 0 ? (
+                <div className="text-center py-8 text-slate-500 text-xs">
+                  No hay alertas en esta categoría en este momento.
                 </div>
-              ))}
-            </div>
+              ) : (
+                filteredEvents.slice(0, 6).map((ev) => (
+                  <div
+                    key={ev.id}
+                    onClick={() => onSelectNotification ? onSelectNotification(ev.actionCoinId, ev.id) : onOpenCoinInTerminal(ev.actionCoinId)}
+                    className="p-2.5 rounded-xl bg-[#08090C] hover:bg-white/[0.04] border border-white/5 transition-all cursor-pointer space-y-1.5 active:scale-[0.99]"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center space-x-1.5">
+                        <CryptoIcon symbol={ev.coinSymbol} size={16} />
+                        <span className="font-bold text-xs text-white">{ev.headline}</span>
+                      </div>
+                      <span className="text-[9px] font-mono text-slate-500">{ev.timeAgo}</span>
+                    </div>
 
-            <div className="mt-4 pt-3.5 border-t border-white/10">
-              <button
-                onClick={() => onNavigateView('ALERTS')}
-                className="w-full py-2.5 bg-white/5 hover:bg-[#F59E0B] hover:text-black text-white font-extrabold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-              >
-                <Bell className="w-3.5 h-3.5 text-[#F59E0B]" />
-                <span>Ver Centro de Alertas Completo</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed font-sans">
+                      {ev.plainExplanation}
+                    </p>
 
-      {/* ─── 3. TERCERA FILA: SENTIMIENTO Y ESTRUCTURA DEL MERCADO ─── */}
-      <div className="glass-card rounded-2xl p-5 shadow-xl">
-        <h3 className="text-sm font-extrabold text-white tracking-tight mb-4 flex items-center gap-2">
-          <Activity className="w-4 h-4 text-emerald-400" />
-          <span>Termómetro de Sentimiento del Mercado Global</span>
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Gauge 1: RSI Promedio del Mercado */}
-          <div className="bg-[#08090C] border border-white/5 rounded-2xl p-4 flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] uppercase font-bold text-slate-400">RSI Promedio (16 Activos)</span>
-              <span className="text-xs font-mono font-black text-white tabular-nums">{meanRsi} / 100</span>
-            </div>
-            <div className="my-3">
-              <div className="w-full bg-[#151922] h-2.5 rounded-full overflow-hidden border border-white/5">
-                <div
-                  className={`h-full ${meanRsi >= 60 ? 'bg-[#0ECB81]' : meanRsi >= 40 ? 'bg-[#F59E0B]' : 'bg-[#F6465D]'}`}
-                  style={{ width: `${meanRsi}%` }}
-                />
-              </div>
-            </div>
-            <div className="text-xs text-slate-300 font-medium">
-              {meanRsi >= 60
-                ? 'Mercado en expansión alcista'
-                : meanRsi >= 40
-                ? 'Mercado en consolidación lateral'
-                : 'Presión bajista en curso'}
-            </div>
-          </div>
-
-          {/* Gauge 2: Momentum Promedio */}
-          <div className="bg-[#08090C] border border-white/5 rounded-2xl p-4 flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] uppercase font-bold text-slate-400">Fuerza de Momentum Global</span>
-              <span className="text-xs font-mono font-black text-[#0ECB81] tabular-nums">{meanMom} / 100</span>
-            </div>
-            <div className="my-3">
-              <div className="w-full bg-[#151922] h-2.5 rounded-full overflow-hidden border border-white/5">
-                <div
-                  className={`h-full ${meanMom >= 55 ? 'bg-[#0ECB81]' : 'bg-[#F59E0B]'}`}
-                  style={{ width: `${meanMom}%` }}
-                />
-              </div>
-            </div>
-            <div className="text-xs text-slate-300 font-medium">
-              Velocidad de compra sostenida en activos líderes
-            </div>
-          </div>
-
-          {/* Gauge 3: Dominancia de Bitcoin */}
-          <div className="bg-[#08090C] border border-white/5 rounded-2xl p-4 flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] uppercase font-bold text-slate-400">Dominancia de Bitcoin (BTC.D)</span>
-              <span className="text-xs font-mono font-black text-[#F59E0B] tabular-nums">54.8%</span>
-            </div>
-            <div className="my-3">
-              <div className="w-full bg-[#151922] h-2.5 rounded-full overflow-hidden border border-white/5">
-                <div className="h-full bg-[#F59E0B]" style={{ width: '54.8%' }} />
-              </div>
-            </div>
-            <div className="text-xs text-slate-300 font-medium">
-              Entorno favorable para rotación de capital a Altcoins
+                    <div className="flex justify-between items-center pt-1 border-t border-white/5 text-[10px]">
+                      <span className="text-slate-500 font-mono">{ev.highlightText}</span>
+                      <span className="text-[#F59E0B] font-bold flex items-center gap-0.5">
+                        <span>{ev.actionText || 'Ver en Terminal'}</span>
+                        <ArrowUpRight className="w-2.5 h-2.5" />
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

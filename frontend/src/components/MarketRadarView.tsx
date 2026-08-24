@@ -249,7 +249,7 @@ export const MarketRadarView = ({
     .sort((a, b) => Math.abs(a.change) - Math.abs(b.change))[0];
 
   return (
-    <div className="flex-1 bg-[#08090C] p-3.5 sm:p-5 lg:p-6 overflow-y-auto select-none space-y-4 sm:space-y-5">
+    <div className="flex-1 bg-[#08090C] p-3.5 sm:p-5 lg:p-6 overflow-y-auto select-none space-y-4 sm:space-y-5 content-bottom-pad">
       {/* ─── 1. HEADER & CONTROLS ROW ─── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
         <div>
@@ -271,16 +271,16 @@ export const MarketRadarView = ({
         </div>
 
         {/* Search, Sort, View Toggle & Refresh */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           {/* Search Box */}
-          <div className="relative">
+          <div className="relative flex-1 sm:flex-initial">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
-              placeholder="Buscar activo (SOL, BTC)..."
+              placeholder="Buscar activo..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-[#0E1118] border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#F59E0B] font-medium w-44 sm:w-48"
+              className="w-full sm:w-48 bg-[#0E1118] border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#F59E0B] font-medium"
             />
           </div>
 

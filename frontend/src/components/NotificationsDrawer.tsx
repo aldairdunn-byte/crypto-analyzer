@@ -7,6 +7,11 @@ import {
   CheckCheck,
   ArrowUpRight,
   Sparkles,
+  TrendingUp,
+  AlertTriangle,
+  Zap,
+  CheckCircle2,
+  Layers,
 } from 'lucide-react';
 
 interface NotificationsDrawerProps {
@@ -48,10 +53,10 @@ export const NotificationsDrawer = ({
         className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 transition-opacity animate-in fade-in duration-200"
       />
 
-      {/* Drawer Panel */}
-      <div className="fixed inset-y-0 right-0 w-[440px] max-w-full bg-[#08090C] border-l border-white/10 z-50 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 select-none">
+      {/* Drawer Panel (Responsive 100vw on mobile, 420px on desktop) */}
+      <div className="fixed inset-y-0 right-0 w-full sm:w-[420px] max-w-full bg-[#08090C] border-l border-white/10 z-50 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 select-none">
         {/* Drawer Header */}
-        <div className="h-16 px-5 border-b border-white/10 bg-[#0E1118] flex items-center justify-between">
+        <div className="h-16 px-4 sm:px-5 border-b border-white/10 bg-[#0E1118] flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
             <div className="relative">
               <div className="w-8 h-8 rounded-xl bg-[#F59E0B]/15 border border-[#F59E0B]/30 flex items-center justify-center text-[#F59E0B]">
@@ -93,27 +98,39 @@ export const NotificationsDrawer = ({
           </div>
         </div>
 
-        {/* Filter Pills */}
-        <div className="p-3 bg-[#08090C] border-b border-white/5 flex items-center space-x-1.5 overflow-x-auto no-scrollbar">
+        {/* Filter Pills (Clean Vector SVG Icons without emojis) */}
+        <div className="p-2.5 bg-[#08090C] border-b border-white/5 flex items-center space-x-1.5 overflow-x-auto no-scrollbar">
           {[
-            { id: 'ALL', label: `Todas (${notifications.length})` },
-            { id: 'PROFIT', label: `💰 Ganancias (${profitCount})` },
-            { id: 'BUY_OPPORTUNITY', label: `🚀 Compras (${buyCount})` },
-            { id: 'DANGER', label: `⚠️ Peligro (${dangerCount})` },
-            { id: 'DISCOUNT', label: `🏷️ Ofertas (${discountCount})` },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setFilter(tab.id as any)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                filter === tab.id
-                  ? 'bg-[#F59E0B] text-black shadow-md shadow-amber-500/20 font-black'
-                  : 'bg-[#0E1118] text-slate-400 hover:text-white border border-white/5'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+            { id: 'ALL', label: 'Todas', count: notifications.length, icon: Layers },
+            { id: 'PROFIT', label: 'Ganancias', count: profitCount, icon: TrendingUp },
+            { id: 'BUY_OPPORTUNITY', label: 'Compras', count: buyCount, icon: CheckCircle2 },
+            { id: 'DANGER', label: 'Peligro', count: dangerCount, icon: AlertTriangle },
+            { id: 'DISCOUNT', label: 'Ofertas', count: discountCount, icon: Zap },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = filter === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setFilter(tab.id as any)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isActive
+                    ? 'bg-[#F59E0B] text-black shadow-md shadow-amber-500/20 font-black'
+                    : 'bg-[#0E1118] text-slate-400 hover:text-white border border-white/5'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                    isActive ? 'bg-black/20 text-black' : 'bg-white/5 text-slate-400'
+                  }`}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Notifications Bubble Stream */}

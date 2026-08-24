@@ -94,9 +94,10 @@ export interface TelegramBotStatusChangeParams {
   penRate?: number;
 }
 
-/**
- * Función base para enviar mensajes HTML con reply_markup a Telegram Bot API
- */
+// In-memory queue & rate-limiting to prevent hitting Telegram rate limits (429)
+let lastSentTimestamp = 0;
+const MIN_SEND_INTERVAL_MS = 1200; // 1.2 seconds between messages
+
 export async function sendTelegramMessage(
   text: string,
   replyMarkup?: any
@@ -105,6 +106,14 @@ export async function sendTelegramMessage(
     console.warn('Telegram Bot no configurado (falta Token o Chat ID)');
     return { success: false, error: 'Credenciales de Telegram no configuradas' };
   }
+
+  // Throttle consecutive messages
+  const now = Date.now();
+  const timeSinceLast = now - lastSentTimestamp;
+  if (timeSinceLast < MIN_SEND_INTERVAL_MS) {
+    await new Promise((r) => setTimeout(r, MIN_SEND_INTERVAL_MS - timeSinceLast));
+  }
+  lastSentTimestamp = Date.now();
 
   const endpoint = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
   const payload: Record<string, any> = {
@@ -127,14 +136,14 @@ export async function sendTelegramMessage(
 
     const data = await response.json();
     if (response.ok && data.ok) {
-      console.log('✅ Notificación dopamínica enviada a Telegram:', data.result.message_id);
+      console.log('✅ Notificación enviada a Telegram:', data.result?.message_id);
       return { success: true };
     } else {
-      console.error('❌ Error de Telegram Bot API:', data);
+      console.warn('⚠️ Respuesta de Telegram Bot API:', data);
       return { success: false, error: data.description || 'Error de API de Telegram' };
     }
   } catch (err: any) {
-    console.error('❌ Excepción de red contactando Telegram API:', err);
+    console.warn('⚠️ Excepción contactando Telegram API:', err);
     return { success: false, error: err.message || 'Error de conexión' };
   }
 }

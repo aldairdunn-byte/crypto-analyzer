@@ -216,10 +216,8 @@ export const BottomActivityPanel = ({
                   // Trades & Arbitrage metrics
                   const botTrades = trades.filter((t) => t.coin_id === coinInfo.id || bot.name.toLowerCase().includes(t.coin_id));
                   const closedTrades = botTrades.filter((t) => t.status === 'CLOSED');
-                  const arbitrajesCount = closedTrades.length > 0 ? closedTrades.length : 16;
-                  const estimatedPnLUsd = closedTrades.length > 0
-                    ? closedTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0)
-                    : bot.capital_allocated_usd * 0.025; // +2.50%
+                  const arbitrajesCount = closedTrades.length;
+                  const estimatedPnLUsd = closedTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0);
                   const pnlRoiPct = (estimatedPnLUsd / (bot.capital_allocated_usd || 1)) * 100;
                   const pnlPen = estimatedPnLUsd * penRate;
                   const capitalPen = bot.capital_allocated_usd * penRate;

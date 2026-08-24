@@ -31,7 +31,7 @@ export const BottomNavMobile: React.FC<BottomNavMobileProps> = ({
   return (
     <nav
       aria-label="Navegación Móvil"
-      className="fixed bottom-0 left-0 right-0 z-40 bg-[#08090C]/95 backdrop-blur-xl border-t border-white/10 flex md:hidden items-center justify-around px-1.5 py-1 select-none shadow-2xl safe-area-bottom"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-[#08090C]/98 backdrop-blur-2xl border-t border-white/10 flex md:hidden items-center justify-between px-1 py-1 select-none shadow-2xl safe-area-bottom"
     >
       {navItems.map((item) => {
         const Icon = item.icon;
@@ -39,8 +39,12 @@ export const BottomNavMobile: React.FC<BottomNavMobileProps> = ({
         return (
           <button
             key={item.id}
+            id={`nav-btn-${item.id.toLowerCase()}`}
+            data-testid={`nav-btn-${item.id.toLowerCase()}`}
+            type="button"
+            aria-label={item.label}
             onClick={() => onSelectView(item.id)}
-            className={`relative flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all cursor-pointer min-w-[50px] min-h-[46px] active:scale-90 ${
+            className={`flex-1 relative flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all cursor-pointer min-h-[48px] active:scale-90 ${
               isActive
                 ? 'text-[#F59E0B] font-black'
                 : 'text-slate-400 hover:text-slate-200'
@@ -53,23 +57,23 @@ export const BottomNavMobile: React.FC<BottomNavMobileProps> = ({
                 }`}
               />
               {item.badge && item.badge > 0 ? (
-                <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-0.5 bg-[#F6465D] text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-md animate-pulse ring-1 ring-[#08090C]">
+                <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] px-0.5 bg-[#F6465D] text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-md animate-pulse ring-1 ring-[#08090C]">
                   {item.badge > 99 ? '99+' : item.badge}
                 </span>
               ) : null}
             </div>
 
             <span
-              className={`text-[9px] tracking-tight mt-0.5 ${
+              className={`text-[9px] tracking-tight mt-0.5 font-sans leading-none ${
                 isActive ? 'font-black text-[#F59E0B]' : 'font-semibold text-slate-400'
               }`}
             >
               {item.label}
             </span>
 
-            {/* Subtle active pill indicator */}
+            {/* Active golden indicator bar */}
             {isActive && (
-              <span className="absolute bottom-0 w-4 h-0.5 bg-[#F59E0B] rounded-full shadow-[0_0_8px_#F59E0B]" />
+              <span className="absolute bottom-0.5 w-5 h-0.5 bg-[#F59E0B] rounded-full shadow-[0_0_8px_#F59E0B]" />
             )}
           </button>
         );

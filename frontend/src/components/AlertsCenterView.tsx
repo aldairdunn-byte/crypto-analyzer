@@ -241,7 +241,7 @@ export const AlertsCenterView = ({
   };
 
   return (
-    <div className="flex-1 bg-[#08090C] p-4 lg:p-6 overflow-y-auto select-none space-y-5">
+    <div className="flex-1 bg-[#08090C] p-3.5 sm:p-5 lg:p-6 overflow-y-auto select-none space-y-4 sm:space-y-5 content-bottom-pad">
       {/* ─── 1. HEADER WITH BENTO KPI SUMMARY BAR ─── */}
       <div className="space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">

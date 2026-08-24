@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { HeaderTickerBar } from './components/HeaderTickerBar';
 import { TradingViewChart } from './components/TradingViewChart';
 import { OrderBook } from './components/OrderBook';
@@ -242,6 +242,8 @@ export function App() {
     setIsNotificationsDrawerOpen(false);
   };
 
+  const prevPricesRef = useRef<Record<string, number>>({});
+
   // ─── LEDGER MATHEMATICS & DERIVED VALUATION ───
   const capitalInBots = bots
     .filter((b) => b.status === 'ACTIVE' || b.status === 'PAUSED')
@@ -431,7 +433,7 @@ export function App() {
     fetchSupabaseData();
   }, []);
 
-  // 3. Live Simulation Engine: Check Grid Order Fills & Credit Realized Profit on SELL
+  // 3. Continuous Grid Arbitrage Engine: Check Grid Order Fills, Recycle Levels & Credit Profit
   useEffect(() => {
     if (activeGridOrders.length === 0) return;
 
@@ -446,16 +448,22 @@ export function App() {
 
           if (!orderPrice || orderPrice <= 0) return order;
 
+          const prevP = prevPricesRef.current[orderCoinId];
+          if (!prevP) {
+            // First tick: initialize without instant cascade
+            return order;
+          }
+
+          // Trigger condition: price crossed the grid level
           const isTriggered =
-            (order.side === 'BUY' && orderPrice <= order.price) ||
-            (order.side === 'SELL' && orderPrice >= order.price);
+            (order.side === 'BUY' && (orderPrice <= order.price || (prevP > order.price && orderPrice <= order.price))) ||
+            (order.side === 'SELL' && (orderPrice >= order.price || (prevP < order.price && orderPrice >= order.price)));
 
           if (isTriggered) {
             updated = true;
-            const filledOrder = { ...order, status: 'FILLED' as const };
-
-            // Calculate profit if SELL fill (typically ~2.5% net of allocation)
-            const profitUsd = order.side === 'SELL' ? Number((order.allocationUsd * 0.025).toFixed(2)) : 0;
+            const decimals = orderCoin?.decimals || 2;
+            const profitPct = 2.50; // 2.50% neto por escalón
+            const profitUsd = order.side === 'SELL' ? Number((order.allocationUsd * (profitPct / 100)).toFixed(2)) : 0;
 
             if (profitUsd > 0) {
               setUsdtCash((prev) => prev + profitUsd);
@@ -466,7 +474,8 @@ export function App() {
               id: crypto.randomUUID(),
               coin_id: orderCoinId,
               side: order.side,
-              entry_price: order.price,
+              entry_price: order.side === 'BUY' ? order.price : Number((order.price / (1 + profitPct / 100)).toFixed(decimals)),
+              exit_price: order.side === 'SELL' ? order.price : undefined,
               amount_usd: order.allocationUsd,
               units: order.allocationUsd / order.price,
               status: order.side === 'BUY' ? 'OPEN' : 'CLOSED',
@@ -476,33 +485,48 @@ export function App() {
 
             setTrades((prev) => [executedTrade, ...prev]);
 
-            const symbol = orderCoin?.symbol || orderCoinId.toUpperCase();
-            const decimals = orderCoin?.decimals || 2;
-
-            addToast({
-              type: order.side,
-              title: `Orden de Grid Ejecutada: ${order.side} ${symbol}`,
-              message:
-                order.side === 'SELL'
-                  ? `Nivel ${order.level} completado a ${formatDynamicPrice(order.price, decimals, currencyMode)}. ¡+${formatDynamicPrice(profitUsd, 2, currencyMode)} USDT de ganancia acreditada!`
-                  : `Nivel ${order.level} de compra completado a ${formatDynamicPrice(order.price, decimals, currencyMode)} por $${order.allocationUsd.toFixed(2)} USDT`,
-            });
-
-            // Persist trade asynchronously
+            // Persist trade asynchronously to Supabase
             supabase.from('bot_trades').insert({
               id: executedTrade.id,
               coin_id: executedTrade.coin_id,
               side: executedTrade.side,
               entry_price: executedTrade.entry_price,
+              exit_price: executedTrade.exit_price,
               amount_usd: executedTrade.amount_usd,
               units: executedTrade.units,
               status: executedTrade.status,
               pnl_usd: executedTrade.pnl_usd,
             }).then();
 
-            // Despachar notificación instantánea y dopamínica a Telegram Bot
+            const symbol = orderCoin?.symbol || orderCoinId.toUpperCase();
+
+            // Continuous Grid Recycling:
+            // BUY filled -> convert to SELL at next upper price (+2.5%)
+            // SELL filled -> convert to BUY at lower price (-2.5%)
+            const nextSide = order.side === 'BUY' ? ('SELL' as const) : ('BUY' as const);
+            const nextPrice = Number(
+              (order.side === 'BUY' ? order.price * (1 + profitPct / 100) : order.price / (1 + profitPct / 100)).toFixed(decimals)
+            );
+
+            const recycledOrder: GridLevelItem = {
+              ...order,
+              side: nextSide,
+              price: nextPrice,
+              status: 'PENDING',
+            };
+
+            addToast({
+              type: order.side,
+              title: `Orden de Grid Ejecutada: ${order.side} ${symbol}`,
+              message:
+                order.side === 'SELL'
+                  ? `Venta completada a ${formatDynamicPrice(order.price, decimals, currencyMode)}. ¡+${formatDynamicPrice(profitUsd, 2, currencyMode)} acreditados! Nueva orden de compra colocada en ${formatDynamicPrice(nextPrice, decimals, currencyMode)}`
+                  : `Compra completada a ${formatDynamicPrice(order.price, decimals, currencyMode)} por $${order.allocationUsd.toFixed(2)} USDT. Nueva orden de venta colocada en ${formatDynamicPrice(nextPrice, decimals, currencyMode)}`,
+            });
+
+            // Despachar notificación a Telegram Bot
             const closedTradesCount = trades.filter((t) => t.side === 'SELL' && t.status === 'CLOSED').length + 1;
-            const currentTotalBotPnl = trades.reduce((sum, t) => sum + (t.pnl_usd || 0), 0);
+            const currentTotalBotPnl = trades.reduce((sum, t) => sum + (t.pnl_usd || 0), 0) + profitUsd;
             const totalBotRoiPct = capitalInBots > 0 ? (currentTotalBotPnl / capitalInBots) * 100 : 0;
 
             sendTelegramGridOrderFilled({
@@ -515,9 +539,9 @@ export function App() {
               allocationUsd: order.allocationUsd,
               profitUsd: profitUsd > 0 ? profitUsd : undefined,
               profitPct: 2.50,
-              nextTargetPrice: order.price * 1.025,
+              nextTargetPrice: nextPrice,
               nextTargetProfitPct: 2.50,
-              discountPct: 2.85,
+              discountPct: 2.50,
               cycleCount: closedTradesCount,
               totalBotPnlUsd: currentTotalBotPnl,
               totalBotRoiPct: totalBotRoiPct,
@@ -525,10 +549,18 @@ export function App() {
               penRate: 3.75,
             }).catch((err) => console.warn('Error enviando alerta de Grid a Telegram:', err));
 
-            return filledOrder;
+            return recycledOrder;
           }
         }
         return order;
+      });
+
+      // Update price ref
+      if (currentPrice > 0) {
+        prevPricesRef.current[activeCoin] = currentPrice;
+      }
+      Object.entries(livePrices).forEach(([cId, p]) => {
+        if (p > 0) prevPricesRef.current[cId] = p;
       });
 
       return updated ? nextOrders : prevOrders;
@@ -582,6 +614,7 @@ export function App() {
         });
       }
       setActiveGridOrders((prev) => [...prev, ...levels]);
+      prevPricesRef.current[botData.coinId] = targetCurrentPrice;
     }
 
     addToast({
@@ -836,17 +869,30 @@ export function App() {
     });
   };
 
-  // Reset Demo Balance
+  // Reset Demo Balance & Deep Purge of Supabase test rows
   const handleResetDemoBalance = () => {
     setUsdtCash(1000.0);
     setHoldings({});
     setBots([]);
     setTrades([]);
     setActiveGridOrders([]);
+    localStorage.removeItem('crypto_analyzer_active_grid_orders');
+    localStorage.removeItem('crypto_analyzer_trades');
+    localStorage.removeItem('crypto_analyzer_bots');
+    localStorage.removeItem('crypto_paper_trading_state_v2');
+
+    // Asynchronously delete test data from Supabase PostgreSQL
+    try {
+      supabase.from('bot_trades').delete().neq('id', '00000000-0000-0000-0000-000000000000').then();
+      supabase.from('bots').delete().neq('id', '00000000-0000-0000-0000-000000000000').then();
+    } catch (err) {
+      console.warn('Supabase purge async:', err);
+    }
+
     addToast({
       type: 'INFO',
       title: 'Cuenta Demo Reiniciada',
-      message: 'Saldo restaurado a $1,000.00 USDT y bots reiniciados.',
+      message: 'Saldo restaurado a $1,000.00 USDT, órdenes y datos purgados.',
     });
   };
 

@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { type BotRow, type TradeRow } from '../lib/supabase';
 import { CryptoIcon } from './CryptoIcon';
 import { formatDynamicPrice, resolveBotCoin } from '../lib/marketData';
@@ -70,22 +69,20 @@ export const BotDetailModal = ({
   const rangePct = Math.max(0, Math.min(100, highPrice > lowPrice ? ((currentP - lowPrice) / (highPrice - lowPrice)) * 100 : 50));
 
   // Generate the list of grid order levels
-  const gridOrders = useMemo(() => {
-    const step = (highPrice - lowPrice) / Math.max(1, numGrids - 1);
-    const list = [];
-    for (let i = 0; i < numGrids; i++) {
-      const price = Number((lowPrice + i * step).toFixed(coinInfo.decimals));
-      const isBuy = price < currentP;
-      list.push({
-        level: i + 1,
-        price,
-        side: isBuy ? 'BUY' : 'SELL',
-        capitalUsd: capPerGrid,
-        status: isBuy ? 'COLOCADA (ESPERANDO CAÍDA)' : 'COLOCADA (ESPERANDO SUBIDA)',
-      });
-    }
-    return list.reverse(); // highest price first
-  }, [lowPrice, highPrice, numGrids, currentP, capPerGrid, coinInfo.decimals]);
+  const step = (highPrice - lowPrice) / Math.max(1, numGrids - 1);
+  const gridOrdersList = [];
+  for (let i = 0; i < numGrids; i++) {
+    const price = Number((lowPrice + i * step).toFixed(coinInfo.decimals));
+    const isBuy = price < currentP;
+    gridOrdersList.push({
+      level: i + 1,
+      price,
+      side: isBuy ? ('BUY' as const) : ('SELL' as const),
+      capitalUsd: capPerGrid,
+      status: isBuy ? 'COLOCADA (ESPERANDO CAÍDA)' : 'COLOCADA (ESPERANDO SUBIDA)',
+    });
+  }
+  const gridOrders = gridOrdersList.reverse(); // highest price first
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 select-none animate-fadeIn">

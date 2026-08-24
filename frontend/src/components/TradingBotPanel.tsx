@@ -227,7 +227,7 @@ export const TradingBotPanel = ({
   };
 
   return (
-    <div className="w-84 bg-[#0E1118] flex flex-col h-full min-h-0 text-xs select-none border-l border-white/10 overflow-hidden shrink-0">
+    <div className="w-full md:w-84 bg-[#0E1118] flex flex-col h-full min-h-0 text-xs select-none md:border-l border-white/10 overflow-hidden shrink-0">
       {/* Top Main Mode Tabs (4 Modes with Clean SVGs) */}
       <div className="flex border-b border-white/10 bg-[#08090C] shrink-0">
         <button
