@@ -149,10 +149,14 @@ crypto-analyzer/
 
 ---
 
-## 6. Estado del Roadmap
+## 6. Estado del Roadmap & Despliegue en Producción
 
-- [x] **Fase A — Persistencia en Nube (Supabase Cloud):** 100% Completada.
-- [x] **Fase B — Motor de Bots y Paper Trading:** 100% Completada con ejecución en vivo.
-- [x] **Fase C — Notificaciones Telegram con Dopamina + Terminal React 19:** 100% Completada.
-- [ ] **Fase D — Live Trading Real (Binance API HMAC):** Preparada para ejecución.
-- [ ] **Fase E — Modelos Predictivos y Optimización Cuantitativa:** En backlog para iteraciones futuras.
+- [x] **Fase A — Persistencia en Nube (Supabase Cloud):** 100% Completada (7 tablas activas).
+- [x] **Fase B — Motor de Bots y Paper Trading:** 100% Completada con ejecución matemática de Grids y DCA.
+- [x] **Fase C — Notificaciones Telegram con Dopamina + Terminal React 19:** 100% Completada con UI/UX Pro Max.
+- [x] **Fase D — Despliegue a Producción & CI/CD Cloud:** 100% COMPLETADA Y EN VIVO:
+  - 🌐 **Frontend Web (Vercel):** [https://frontend-two-lyart-49.vercel.app](https://frontend-two-lyart-49.vercel.app)
+  - ⚙️ **Worker 24/7 (Render):** [https://crypto-analyzer-bot-plri.onrender.com](https://crypto-analyzer-bot-plri.onrender.com)
+  - 🐙 **Repositorio GitHub:** [https://github.com/aldairdunn-byte/crypto-analyzer](https://github.com/aldairdunn-byte/crypto-analyzer)
+  - 📱 **Canal de Alertas:** `@CryptoDunnAlerts_bot`
+- [ ] **Fase E — Live Trading Real (Binance API HMAC):** Preparada para activación de llaves cuando se complete la verificación documental.
