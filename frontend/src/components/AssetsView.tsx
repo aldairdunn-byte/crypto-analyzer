@@ -998,10 +998,10 @@ export const AssetsView = ({
 
       {/* ─── 5. MODAL: AGREGAR / EDITAR CRIPTOACTIVO ─── */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn select-none">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn select-none">
           <div className="fixed inset-0 -z-10" onClick={() => setIsAddModalOpen(false)} />
 
-          <div className="bg-[#0E1118] border border-white/15 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl space-y-4 relative overflow-hidden">
+          <div className="bg-[#0E1118] border border-white/15 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 relative">
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#F59E0B] to-transparent opacity-90" />
 
             <div className="flex justify-between items-center pb-3 border-b border-white/10">
@@ -1123,10 +1123,10 @@ export const AssetsView = ({
 
       {/* ─── 6. MODAL: AJUSTAR SALDO EN EFECTIVO USDT ─── */}
       {isCashModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn select-none">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn select-none">
           <div className="fixed inset-0 -z-10" onClick={() => setIsCashModalOpen(false)} />
 
-          <div className="bg-[#0E1118] border border-white/15 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl space-y-4 relative overflow-hidden">
+          <div className="bg-[#0E1118] border border-white/15 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 relative">
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#0ECB81] to-transparent opacity-90" />
 
             <div className="flex justify-between items-center pb-3 border-b border-white/10">

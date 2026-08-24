@@ -58,10 +58,8 @@ export const BotDetailModal = ({
   // Financial calculations
   const botTrades = trades.filter((t) => t.coin_id === coinInfo.id || bot.name.toLowerCase().includes(t.coin_id));
   const closedTrades = botTrades.filter((t) => t.status === 'CLOSED');
-  const arbitrajesCount = closedTrades.length > 0 ? closedTrades.length : 16;
-  const estimatedPnLUsd = closedTrades.length > 0
-    ? closedTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0)
-    : bot.capital_allocated_usd * 0.025; // +2.50%
+  const arbitrajesCount = closedTrades.length;
+  const estimatedPnLUsd = closedTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0);
   const pnlRoiPct = (estimatedPnLUsd / (bot.capital_allocated_usd || 1)) * 100;
   const pnlPen = estimatedPnLUsd * penRate;
   const capitalPen = bot.capital_allocated_usd * penRate;
@@ -99,19 +97,19 @@ export const BotDetailModal = ({
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#F59E0B] to-transparent opacity-90" />
 
         {/* ─── 1. MODAL HEADER ─── */}
-        <div className="p-4 border-b border-white/10 flex items-center justify-between bg-[#08090C] shrink-0">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow-md shrink-0">
-              <CryptoIcon symbol={coinInfo.symbol} size={26} />
+        <div className="p-3 sm:p-4 border-b border-white/10 flex items-center justify-between bg-[#08090C] shrink-0">
+          <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow-md shrink-0">
+              <CryptoIcon symbol={coinInfo.symbol} size={24} />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-black text-white tracking-tight">{bot.name}</h2>
-                <span className="text-[10px] bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30 px-2 py-0.5 rounded-full font-mono font-bold">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1 sm:gap-2">
+                <h2 className="text-sm sm:text-base font-black text-white tracking-tight truncate max-w-[150px] sm:max-w-none">{bot.name}</h2>
+                <span className="text-[9px] sm:text-[10px] bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30 px-1.5 sm:px-2 py-0.5 rounded-full font-mono font-bold">
                   {bot.strategy}
                 </span>
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold border flex items-center gap-1 shadow-sm ${
+                  className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-mono font-extrabold border flex items-center gap-1 shadow-sm ${
                     isActive
                       ? 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
                       : isPaused
@@ -123,17 +121,17 @@ export const BotDetailModal = ({
                   <span>{isActive ? 'Activo' : isPaused ? 'Pausado' : 'Detenido'}</span>
                 </span>
               </div>
-              <div className="text-xs text-slate-400 font-mono flex items-center gap-2 mt-0.5">
-                <span>{numGrids} Mallas Activas</span>
+              <div className="text-[11px] sm:text-xs text-slate-400 font-mono flex items-center gap-1.5 sm:gap-2 mt-0.5">
+                <span>{numGrids} Mallas</span>
                 <span>·</span>
-                <span>Ejecución Algorítmica 24/7 ({coinInfo.name})</span>
+                <span className="truncate">24/7 ({coinInfo.name})</span>
               </div>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer transition-all"
+            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer transition-all shrink-0 ml-2"
             title="Cerrar Inspector"
           >
             <X className="w-4 h-4" />
@@ -308,13 +306,13 @@ export const BotDetailModal = ({
           </div>
         </div>
 
-        {/* ─── 3. MODAL FOOTER ACTIONS ─── */}
-        <div className="p-3.5 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 bg-[#08090C] shrink-0">
-          <div className="flex items-center space-x-2">
+        {/* ─── 3. MODAL FOOTER ACTIONS (RESPONSIVE) ─── */}
+        <div className="p-3 sm:p-3.5 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-[#08090C] shrink-0">
+          <div className="flex items-center justify-between sm:justify-start space-x-2">
             {isActive ? (
               <button
                 onClick={() => onUpdateBotStatus(bot.id, 'PAUSED')}
-                className="bg-white/5 hover:bg-amber-500/20 text-[#F59E0B] px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95 border border-amber-500/20"
+                className="bg-white/5 hover:bg-amber-500/20 text-[#F59E0B] px-3 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95 border border-amber-500/20 flex-1 sm:flex-initial justify-center"
               >
                 <Pause className="w-3.5 h-3.5" />
                 <span>Pausar Bot</span>
@@ -322,7 +320,7 @@ export const BotDetailModal = ({
             ) : (
               <button
                 onClick={() => onUpdateBotStatus(bot.id, 'ACTIVE')}
-                className="bg-white/5 hover:bg-emerald-500/20 text-[#0ECB81] px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95 border border-emerald-500/20"
+                className="bg-white/5 hover:bg-emerald-500/20 text-[#0ECB81] px-3 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95 border border-emerald-500/20 flex-1 sm:flex-initial justify-center"
               >
                 <Play className="w-3.5 h-3.5" />
                 <span>Reanudar Bot</span>
@@ -334,21 +332,21 @@ export const BotDetailModal = ({
                 onUpdateBotStatus(bot.id, 'STOPPED');
                 onClose();
               }}
-              className="bg-white/5 hover:bg-rose-500/20 text-[#F6465D] px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95 border border-rose-500/20"
+              className="bg-white/5 hover:bg-rose-500/20 text-[#F6465D] px-3 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95 border border-rose-500/20 flex-1 sm:flex-initial justify-center"
             >
               <Square className="w-3.5 h-3.5" />
-              <span>Detener y Liquidar</span>
+              <span>Detener</span>
             </button>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center justify-end space-x-2">
             {onSelectCoin && (
               <button
                 onClick={() => {
                   onSelectCoin(coinInfo.id);
                   onClose();
                 }}
-                className="bg-[#F59E0B] hover:bg-amber-400 text-black px-4 py-1.5 rounded-xl text-xs font-black flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95 shadow-md shadow-amber-500/20"
+                className="bg-[#F59E0B] hover:bg-amber-400 text-black px-4 py-2 rounded-xl text-xs font-black flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95 shadow-md shadow-amber-500/20 flex-1 sm:flex-initial justify-center"
               >
                 <span>Ver en Gráfico</span>
                 <ArrowUpRight className="w-3.5 h-3.5" />
@@ -357,7 +355,7 @@ export const BotDetailModal = ({
 
             <button
               onClick={onClose}
-              className="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all"
+              className="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all flex-1 sm:flex-initial text-center"
             >
               Cerrar
             </button>

@@ -125,7 +125,7 @@ export const BottomActivityPanel = ({
             {
               id: 'GRID_ORDERS',
               label: 'Órdenes del Grid',
-              count: gridLevels.length > 0 ? gridLevels.length : 68,
+              count: gridLevels.length,
               icon: Layers,
             },
             {

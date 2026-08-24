@@ -249,12 +249,12 @@ export const MarketRadarView = ({
     .sort((a, b) => Math.abs(a.change) - Math.abs(b.change))[0];
 
   return (
-    <div className="flex-1 bg-[#08090C] p-5 lg:p-6 overflow-y-auto select-none space-y-5">
+    <div className="flex-1 bg-[#08090C] p-3.5 sm:p-5 lg:p-6 overflow-y-auto select-none space-y-4 sm:space-y-5">
       {/* ─── 1. HEADER & CONTROLS ROW ─── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <div className="flex items-center space-x-3">
-            <h1 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+          <div className="flex items-center space-x-2.5 sm:space-x-3">
+            <h1 className="text-lg sm:text-xl font-black text-white tracking-tight flex items-center gap-2">
               <BarChart2 className="w-5 h-5 text-[#0ECB81]" />
               <span>Radar Cuantitativo de Oportunidades</span>
             </h1>

@@ -10,6 +10,7 @@ import { SettingsView } from './components/SettingsView';
 import { DashboardView } from './components/DashboardView';
 import { AlertsCenterView } from './components/AlertsCenterView';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
+import { BottomNavMobile } from './components/BottomNavMobile';
 import {
   COINS,
   type GridLevelItem,
@@ -30,7 +31,7 @@ import {
   sendTelegramSpotTrade,
   sendTelegramBotStatusChange,
 } from './lib/telegram';
-import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, TrendingUp, Bot, ListOrdered, Activity } from 'lucide-react';
 
 interface ToastAlert {
   id: string;
@@ -53,6 +54,7 @@ export function App() {
     return (localStorage.getItem('crypto_analyzer_currency_mode') as any) || 'USD';
   });
   const [isPaperMode, setIsPaperMode] = useState<boolean>(true);
+  const [mobileTerminalTab, setMobileTerminalTab] = useState<'CHART' | 'BOT' | 'BOOK' | 'ACTIVITY'>('CHART');
 
   // ─── UNIFIED FINANCIAL LEDGER & ASSET CUSTODY STATE (HYDRATED) ───
   const [usdtCash, setUsdtCash] = useState<number>(() => {
@@ -849,13 +851,13 @@ export function App() {
   };
 
   return (
-    <div className="h-screen w-screen bg-bybit-bg flex flex-col overflow-hidden font-sans text-white">
+    <div className="h-screen w-screen bg-bybit-bg flex flex-col overflow-hidden font-sans text-white pb-14 md:pb-0">
       {/* Universal Floating Toast Notifications */}
-      <div className="fixed top-16 right-5 z-50 flex flex-col space-y-2 pointer-events-none">
+      <div className="fixed top-16 right-3 sm:right-5 z-50 flex flex-col space-y-2 pointer-events-none max-w-[90vw] sm:max-w-sm">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto flex items-start space-x-3 p-3.5 rounded-xl border shadow-2xl backdrop-blur-md max-w-sm animate-fadeIn ${
+            className={`pointer-events-auto flex items-start space-x-3 p-3.5 rounded-xl border shadow-2xl backdrop-blur-md animate-fadeIn ${
               t.type === 'BUY'
                 ? 'bg-emerald-950/90 border-bybit-green/50 text-white'
                 : t.type === 'SELL'
@@ -925,56 +927,149 @@ export function App() {
         />
       )}
 
-      {/* VIEW 2: TERMINAL PRO */}
+      {/* VIEW 2: TERMINAL PRO (RESPONSIVE MÓVIL / DESKTOP) */}
       {activeView === 'TERMINAL' && (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <div className="flex-1 flex min-h-0 overflow-hidden">
-            <div className="flex-1 flex flex-col min-w-0 min-h-0 border-r border-bybit-border overflow-hidden">
-              <TradingViewChart
-                candles={candles}
+          {/* Mobile Terminal Sub-Tabs */}
+          <div className="flex md:hidden items-center justify-around bg-[#0E1118] border-b border-white/10 px-1 py-1.5 shrink-0 select-none">
+            {[
+              { id: 'CHART' as const, label: 'Gráfico Pro', icon: TrendingUp },
+              { id: 'BOT' as const, label: 'Crear Bot', icon: Bot },
+              { id: 'BOOK' as const, label: 'Libro Órdenes', icon: ListOrdered },
+              { id: 'ACTIVITY' as const, label: 'Mis Bots', icon: Activity },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isTabActive = mobileTerminalTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setMobileTerminalTab(tab.id)}
+                  className={`flex items-center space-x-1.5 py-1 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    isTabActive
+                      ? 'bg-[#F59E0B] text-black shadow-md font-black'
+                      : 'text-slate-400 hover:text-white bg-white/5'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* MOBILE VIEWPORT ONLY */}
+          <div className="flex-1 flex flex-col md:hidden min-h-0 overflow-hidden">
+            {mobileTerminalTab === 'CHART' && (
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <TradingViewChart
+                  candles={candles}
+                  coinSymbol={coin.symbol}
+                  activeInterval={activeInterval}
+                  onSelectInterval={(tf) => setActiveInterval(tf)}
+                  gridLevels={
+                    activeGridOrders.filter((o) => (o.coinId || activeCoin) === activeCoin).length > 0
+                      ? activeGridOrders.filter((o) => (o.coinId || activeCoin) === activeCoin)
+                      : gridPreviewLevels
+                  }
+                  onRefresh={loadRealMarketData}
+                />
+              </div>
+            )}
+
+            {mobileTerminalTab === 'BOT' && (
+              <div className="flex-1 overflow-y-auto p-2 bg-[#08090C]">
+                <TradingBotPanel
+                  currentPrice={currentPrice}
+                  coinSymbol={coin.symbol}
+                  coinId={activeCoin}
+                  analysis={analysis}
+                  currencyMode={currencyMode}
+                  penRate={3.75}
+                  onGridPreviewChange={(lvls) => setGridPreviewLevels(lvls)}
+                  onCreateBot={handleCreateBot}
+                  onExecuteSpotTrade={handleExecuteSpotTrade}
+                />
+              </div>
+            )}
+
+            {mobileTerminalTab === 'BOOK' && (
+              <div className="flex-1 overflow-y-auto p-2 bg-[#08090C]">
+                <OrderBook
+                  bids={orderBook.bids}
+                  asks={orderBook.asks}
+                  currentPrice={currentPrice}
+                  change24h={change24h}
+                />
+              </div>
+            )}
+
+            {mobileTerminalTab === 'ACTIVITY' && (
+              <div className="flex-1 overflow-y-auto bg-[#08090C]">
+                <BottomActivityPanel
+                  bots={bots}
+                  trades={trades}
+                  gridLevels={activeGridOrders}
+                  currentPrice={currentPrice}
+                  livePrices={livePrices}
+                  currencyMode={currencyMode}
+                  penRate={3.75}
+                  onUpdateBotStatus={handleUpdateBotStatus}
+                  onSelectCoin={(cId) => setActiveCoin(cId)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* DESKTOP VIEWPORT ONLY (3 COLUMNS + BOTTOM PANEL) */}
+          <div className="hidden md:flex flex-1 flex-col min-h-0 overflow-hidden">
+            <div className="flex-1 flex min-h-0 overflow-hidden">
+              <div className="flex-1 flex flex-col min-w-0 min-h-0 border-r border-bybit-border overflow-hidden">
+                <TradingViewChart
+                  candles={candles}
+                  coinSymbol={coin.symbol}
+                  activeInterval={activeInterval}
+                  onSelectInterval={(tf) => setActiveInterval(tf)}
+                  gridLevels={
+                    activeGridOrders.filter((o) => (o.coinId || activeCoin) === activeCoin).length > 0
+                      ? activeGridOrders.filter((o) => (o.coinId || activeCoin) === activeCoin)
+                      : gridPreviewLevels
+                  }
+                  onRefresh={loadRealMarketData}
+                />
+              </div>
+
+              <OrderBook
+                bids={orderBook.bids}
+                asks={orderBook.asks}
+                currentPrice={currentPrice}
+                change24h={change24h}
+              />
+
+              <TradingBotPanel
+                currentPrice={currentPrice}
                 coinSymbol={coin.symbol}
-                activeInterval={activeInterval}
-                onSelectInterval={(tf) => setActiveInterval(tf)}
-                gridLevels={
-                  activeGridOrders.filter((o) => (o.coinId || activeCoin) === activeCoin).length > 0
-                    ? activeGridOrders.filter((o) => (o.coinId || activeCoin) === activeCoin)
-                    : gridPreviewLevels
-                }
-                onRefresh={loadRealMarketData}
+                coinId={activeCoin}
+                analysis={analysis}
+                currencyMode={currencyMode}
+                penRate={3.75}
+                onGridPreviewChange={(lvls) => setGridPreviewLevels(lvls)}
+                onCreateBot={handleCreateBot}
+                onExecuteSpotTrade={handleExecuteSpotTrade}
               />
             </div>
 
-            <OrderBook
-              bids={orderBook.bids}
-              asks={orderBook.asks}
+            <BottomActivityPanel
+              bots={bots}
+              trades={trades}
+              gridLevels={activeGridOrders}
               currentPrice={currentPrice}
-              change24h={change24h}
-            />
-
-            <TradingBotPanel
-              currentPrice={currentPrice}
-              coinSymbol={coin.symbol}
-              coinId={activeCoin}
-              analysis={analysis}
+              livePrices={livePrices}
               currencyMode={currencyMode}
               penRate={3.75}
-              onGridPreviewChange={(lvls) => setGridPreviewLevels(lvls)}
-              onCreateBot={handleCreateBot}
-              onExecuteSpotTrade={handleExecuteSpotTrade}
+              onUpdateBotStatus={handleUpdateBotStatus}
+              onSelectCoin={(cId) => setActiveCoin(cId)}
             />
           </div>
-
-          <BottomActivityPanel
-            bots={bots}
-            trades={trades}
-            gridLevels={activeGridOrders}
-            currentPrice={currentPrice}
-            livePrices={livePrices}
-            currencyMode={currencyMode}
-            penRate={3.75}
-            onUpdateBotStatus={handleUpdateBotStatus}
-            onSelectCoin={(cId) => setActiveCoin(cId)}
-          />
         </div>
       )}
 
@@ -1040,6 +1135,13 @@ export function App() {
         unreadCount={unreadNotificationsCount}
         onMarkAllAsRead={handleMarkAllAsRead}
         onSelectNotification={handleSelectNotification}
+      />
+
+      {/* ─── 4. BOTTOM MOBILE NAVIGATION DOCK (FIXED ON SMARTPHONES/TABLETS) ─── */}
+      <BottomNavMobile
+        activeView={activeView}
+        onSelectView={(v) => setActiveView(v)}
+        unreadNotificationsCount={unreadNotificationsCount}
       />
     </div>
   );

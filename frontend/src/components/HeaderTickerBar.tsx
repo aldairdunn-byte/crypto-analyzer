@@ -101,8 +101,8 @@ export const HeaderTickerBar = ({
           </div>
         </div>
 
-        {/* 6 View Segmented Tabs */}
-        <div className="flex items-center bg-[#0E1118] rounded-xl p-0.5 border border-white/10 space-x-0.5 shadow-inner">
+        {/* 6 View Segmented Tabs (Desktop/Tablet Only - Mobile uses BottomNav) */}
+        <div className="hidden md:flex items-center bg-[#0E1118] rounded-xl p-0.5 border border-white/10 space-x-0.5 shadow-inner">
           {[
             { id: 'DASHBOARD', label: 'Dashboard', icon: LayoutDashboard, color: 'text-amber-400' },
             { id: 'TERMINAL', label: 'Terminal', icon: Zap, color: 'text-amber-400' },
@@ -124,7 +124,7 @@ export const HeaderTickerBar = ({
                 }`}
               >
                 <Icon className={`w-3.5 h-3.5 ${isActive ? tab.color : 'text-slate-400'}`} />
-                <span className="hidden sm:inline">{tab.label}</span>
+                <span>{tab.label}</span>
               </button>
             );
           })}
@@ -135,29 +135,31 @@ export const HeaderTickerBar = ({
       <div className="relative">
         <button
           onClick={() => setIsSearchOpen(!isSearchOpen)}
-          className="flex items-center space-x-2.5 bg-[#0E1118] hover:bg-[#151922] border border-white/10 hover:border-[#F59E0B]/50 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white transition-all cursor-pointer shadow-sm group"
+          className="flex items-center space-x-1.5 sm:space-x-2.5 bg-[#0E1118] hover:bg-[#151922] border border-white/10 hover:border-[#F59E0B]/50 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold text-white transition-all cursor-pointer shadow-sm group"
         >
-          <CryptoIcon symbol={coin.symbol} size={20} />
-          <div className="flex items-baseline space-x-1.5">
-            <span className="text-white font-black font-mono tracking-tight">{coin.symbol}/USDT</span>
-            <span className="font-mono font-bold tabular-nums text-slate-200">
+          <CryptoIcon symbol={coin.symbol} size={18} />
+          <div className="flex items-baseline space-x-1 sm:space-x-1.5">
+            <span className="text-white font-black font-mono tracking-tight text-[11px] sm:text-xs">
+              {coin.symbol}
+            </span>
+            <span className="font-mono font-bold tabular-nums text-slate-200 text-[11px] sm:text-xs">
               {formatDynamicPrice(currentPrice, coin.decimals, currencyMode, penRate)}
             </span>
             <span
-              className={`font-mono font-extrabold text-[11px] tabular-nums ${
+              className={`font-mono font-extrabold text-[10px] sm:text-[11px] tabular-nums ${
                 isPositive ? 'text-[#0ECB81]' : 'text-[#F6465D]'
               }`}
             >
               {isPositive ? '+' : ''}
-              {change24h.toFixed(2)}%
+              {change24h.toFixed(1)}%
             </span>
           </div>
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-colors" />
+          <ChevronDown className="w-3 h-3 text-slate-400 group-hover:text-white transition-colors" />
         </button>
 
-        {/* Search Popover Modal */}
+        {/* Search Popover Modal (Responsive for mobile viewports) */}
         {isSearchOpen && (
-          <div className="absolute top-12 left-1/2 -translate-x-1/2 w-88 bg-[#0E1118] border border-white/15 rounded-2xl shadow-2xl p-3.5 z-50 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-xl">
+          <div className="fixed sm:absolute top-14 sm:top-12 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-88 bg-[#0E1118] border border-white/15 rounded-2xl shadow-2xl p-3.5 z-50 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-xl">
             <div className="relative mb-2.5">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
@@ -240,23 +242,23 @@ export const HeaderTickerBar = ({
         <div className="relative">
           <button
             onClick={() => setIsWalletOpen(!isWalletOpen)}
-            className="flex items-center space-x-2 bg-[#0E1118] hover:bg-[#151922] border border-white/10 hover:border-white/20 px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer shadow-sm"
+            className="flex items-center space-x-1.5 sm:space-x-2 bg-[#0E1118] hover:bg-[#151922] border border-white/10 hover:border-white/20 px-2 sm:px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer shadow-sm"
           >
-            <Wallet className="w-3.5 h-3.5 text-blue-400" />
-            <div className="flex items-baseline space-x-1.5">
-              <span className="font-mono font-black text-white tabular-nums">
+            <Wallet className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <div className="flex items-baseline space-x-1 sm:space-x-1.5">
+              <span className="font-mono font-black text-white tabular-nums text-[11px] sm:text-xs">
                 {formatDynamicPrice(virtualUsdt, 2, currencyMode, penRate)}
               </span>
-              <span className="text-[10px] font-mono text-[#0ECB81] font-bold">
+              <span className="text-[10px] font-mono text-[#0ECB81] font-bold hidden sm:inline">
                 (Disp: {formatDynamicPrice(availableUsdt, 0, currencyMode, penRate)})
               </span>
             </div>
             <ChevronDown className="w-3 h-3 text-slate-400" />
           </button>
 
-          {/* Wallet Dropdown Popover */}
+          {/* Wallet Dropdown Popover (Responsive) */}
           {isWalletOpen && (
-            <div className="absolute top-12 right-0 w-64 bg-[#0E1118] border border-white/15 rounded-2xl shadow-2xl p-3.5 z-50 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-xl">
+            <div className="fixed sm:absolute top-14 sm:top-12 left-3 right-3 sm:left-auto sm:right-0 sm:w-64 bg-[#0E1118] border border-white/15 rounded-2xl shadow-2xl p-3.5 z-50 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-xl">
               <div className="text-xs font-extrabold text-white mb-2.5 flex items-center justify-between">
                 <span>Resumen de Cuenta</span>
                 <span className="text-[10px] text-slate-400 font-normal font-mono">Demo Paper</span>

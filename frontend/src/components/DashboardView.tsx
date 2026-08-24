@@ -162,9 +162,9 @@ export const DashboardView = ({
   };
 
   return (
-    <div className="flex-1 bg-[#08090C] p-5 lg:p-6 overflow-y-auto select-none space-y-6">
+    <div className="flex-1 bg-[#08090C] p-3.5 sm:p-5 lg:p-6 overflow-y-auto select-none space-y-4 sm:space-y-6">
       {/* ─── 1. TOP 5 BENTO KPI CARDS CON ILUMINACIÓN AMBIENTAL ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         {/* KPI 1: Total Portfolio */}
         <div className="glass-card rounded-2xl p-4.5 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 relative overflow-hidden group">
           <div className="flex justify-between items-start">
