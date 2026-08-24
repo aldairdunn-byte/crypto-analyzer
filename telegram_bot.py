@@ -588,3 +588,38 @@ def get_telegram_notifier() -> TelegramNotifier:
     if _telegram_notifier_instance is None:
         _telegram_notifier_instance = TelegramNotifier()
     return _telegram_notifier_instance
+
+
+if __name__ == "__main__":
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status":"healthy","service":"Crypto Analyzer Pro 2.0 24/7 Service"}')
+
+        def log_message(self, format, *args):
+            pass  # Silenciar logs de healthcheck
+
+    port = int(os.getenv("PORT", "10000"))
+    try:
+        httpd = HTTPServer(("0.0.0.0", port), HealthHandler)
+        server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        server_thread.start()
+        print(f"🚀 Crypto Analyzer Pro Web Service iniciado en puerto {port} (Render Free Tier)")
+    except Exception as e:
+        print(f"⚠️ Aviso del servidor HTTP: {e}")
+
+    notifier = get_telegram_notifier()
+    print(f"✅ Bot de Telegram conectado: {notifier.is_configured}. Escaneando mercado 24/7...")
+
+    # Bucle continuo
+    while True:
+        try:
+            time.sleep(60)
+        except (KeyboardInterrupt, SystemExit):
+            print("🛑 Deteniendo servicio...")
+            break
