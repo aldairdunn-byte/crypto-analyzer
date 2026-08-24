@@ -441,7 +441,7 @@ export function App() {
       let updated = false;
       const nextOrders = prevOrders.map((order) => {
         if (order.status === 'PENDING') {
-          // CRITICAL: Evaluar la orden ÚNICAMENTE contra el precio de su propia moneda
+          // Evaluar la orden ÚNICAMENTE contra el precio de su propia moneda
           const orderCoinId = order.coinId || activeCoin;
           const orderCoin = COINS[orderCoinId];
           const orderPrice = orderCoinId === activeCoin ? currentPrice : (livePrices[orderCoinId] || 0);
@@ -450,14 +450,22 @@ export function App() {
 
           const prevP = prevPricesRef.current[orderCoinId];
           if (!prevP) {
-            // First tick: initialize without instant cascade
+            // Inicializar referencia de precio sin disparar orden
+            prevPricesRef.current[orderCoinId] = orderPrice;
             return order;
           }
 
-          // Trigger condition: price crossed the grid level
+          if (prevP === orderPrice) {
+            // El precio no se ha movido, no evaluar cruces
+            return order;
+          }
+
+          // Cruce estricto de nivel (Tick Crossing):
+          // BUY: El precio venía de arriba (prevP > order.price) y cayó hasta o por debajo de la orden (orderPrice <= order.price)
+          // SELL: El precio venía de abajo (prevP < order.price) y subió hasta o por encima de la orden (orderPrice >= order.price)
           const isTriggered =
-            (order.side === 'BUY' && (orderPrice <= order.price || (prevP > order.price && orderPrice <= order.price))) ||
-            (order.side === 'SELL' && (orderPrice >= order.price || (prevP < order.price && orderPrice >= order.price)));
+            (order.side === 'BUY' && prevP > order.price && orderPrice <= order.price) ||
+            (order.side === 'SELL' && prevP < order.price && orderPrice >= order.price);
 
           if (isTriggered) {
             updated = true;
@@ -555,7 +563,7 @@ export function App() {
         return order;
       });
 
-      // Update price ref
+      // Actualizar registro de precios
       if (currentPrice > 0) {
         prevPricesRef.current[activeCoin] = currentPrice;
       }
@@ -565,7 +573,7 @@ export function App() {
 
       return updated ? nextOrders : prevOrders;
     });
-  }, [currentPrice, livePrices, activeCoin, currencyMode, capitalInBots, trades, activeGridOrders.length]);
+  }, [currentPrice, livePrices, activeCoin]);
 
   // 4. Bot Creation & Actions
   const handleCreateBot = async (botData: {
