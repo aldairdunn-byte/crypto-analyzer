@@ -84,6 +84,9 @@ export const BotDetailModal = ({
   }
   const gridOrders = gridOrdersList.reverse(); // highest price first
 
+  // Initial Entry Price
+  const initialP = config.initial_price ?? (botTrades.length > 0 ? botTrades[botTrades.length - 1].entry_price : currentP);
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 select-none animate-fadeIn">
       {/* Click outside backdrop */}
@@ -118,10 +121,12 @@ export const BotDetailModal = ({
                   <span>{isActive ? 'Activo' : isPaused ? 'Pausado' : 'Detenido'}</span>
                 </span>
               </div>
-              <div className="text-[11px] sm:text-xs text-slate-400 font-mono flex items-center gap-1.5 sm:gap-2 mt-0.5">
+              <div className="text-[11px] sm:text-xs text-slate-400 font-mono flex flex-wrap items-center gap-1.5 sm:gap-2 mt-0.5">
                 <span>{numGrids} Mallas</span>
                 <span>·</span>
-                <span className="truncate">24/7 ({coinInfo.name})</span>
+                <span className="text-[#0ECB81] font-bold">Inicio: {formatDynamicPrice(initialP, coinInfo.decimals, currencyMode, penRate)}</span>
+                <span>·</span>
+                <span>Spot: {formatDynamicPrice(currentP, coinInfo.decimals, currencyMode, penRate)}</span>
               </div>
             </div>
           </div>
@@ -182,18 +187,18 @@ export const BotDetailModal = ({
               <span className="text-[10px] text-slate-500 font-semibold">Compras & Ventas</span>
             </div>
 
-            {/* Tile 4: Rango Spot */}
+            {/* Tile 4: Rango & Precios */}
             <div className="bg-[#08090C] p-3 rounded-xl border border-white/5 flex flex-col justify-between">
-              <span className="text-[10px] text-slate-400 uppercase font-bold">Precio Spot</span>
+              <span className="text-[10px] text-slate-400 uppercase font-bold">Precio Entrada</span>
               <div className="my-1">
-                <div className="font-black text-sm text-white tabular-nums">
-                  {formatDynamicPrice(currentP, coinInfo.decimals, currencyMode, penRate)}
+                <div className="font-black text-sm text-[#0ECB81] tabular-nums">
+                  {formatDynamicPrice(initialP, coinInfo.decimals, currencyMode, penRate)}
                 </div>
-                <div className="text-[10px] text-[#0ECB81] font-bold">
-                  En Rango Óptimo
+                <div className="text-[10px] text-slate-400 font-medium">
+                  Spot: {formatDynamicPrice(currentP, coinInfo.decimals, currencyMode, penRate)}
                 </div>
               </div>
-              <span className="text-[10px] text-slate-500 font-semibold">USDT Binance</span>
+              <span className="text-[10px] text-slate-500 font-semibold">Base de Inicio</span>
             </div>
           </div>
 

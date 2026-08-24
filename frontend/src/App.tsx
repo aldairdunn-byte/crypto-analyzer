@@ -590,6 +590,8 @@ export function App() {
       return;
     }
 
+    const targetCurrentPrice = livePrices[botData.coinId] || currentPrice;
+
     const newBot: BotRow = {
       id: crypto.randomUUID(),
       name: botData.name,
@@ -597,7 +599,10 @@ export function App() {
       strategy: botData.strategy,
       status: 'ACTIVE',
       capital_allocated_usd: botData.capitalUsd,
-      config_json: botData.config,
+      config_json: {
+        ...botData.config,
+        initial_price: targetCurrentPrice,
+      },
       created_at: new Date().toISOString(),
     };
 

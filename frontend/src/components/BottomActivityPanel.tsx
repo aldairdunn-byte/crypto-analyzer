@@ -223,6 +223,9 @@ export const BottomActivityPanel = ({
                   const capitalPen = bot.capital_allocated_usd * penRate;
                   const avgPerArbitrage = arbitrajesCount > 0 ? estimatedPnLUsd / arbitrajesCount : 0;
 
+                  // Initial Entry Price tracking
+                  const initialP = config.initial_price ?? (botTrades.length > 0 ? botTrades[botTrades.length - 1].entry_price : currentP);
+
                   return (
                     <div
                       key={bot.id}
@@ -245,8 +248,12 @@ export const BottomActivityPanel = ({
                                 {bot.strategy}
                               </span>
                             </div>
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              {numGrids} Mallas Activas · Ejecución 24/7 ({coinInfo.name})
+                            <div className="text-[10px] text-slate-400 font-mono flex flex-wrap items-center gap-1.5">
+                              <span>{numGrids} Mallas</span>
+                              <span>·</span>
+                              <span className="text-[#0ECB81] font-bold">Entrada: {formatDynamicPrice(initialP, coinInfo.decimals, currencyMode, penRate)}</span>
+                              <span>·</span>
+                              <span>Spot: {formatDynamicPrice(currentP, coinInfo.decimals, currencyMode, penRate)}</span>
                             </div>
                           </div>
                         </div>
@@ -346,18 +353,18 @@ export const BottomActivityPanel = ({
                           <span className="text-[9px] text-slate-500 font-semibold">Compras & Ventas</span>
                         </div>
 
-                        {/* Tile 4: Rango de Precios */}
+                        {/* Tile 4: Rango y Precios */}
                         <div className="bg-[#08090C] p-2.5 rounded-xl border border-white/5 flex flex-col justify-between">
-                          <div className="flex justify-between text-[9px] text-slate-400 font-semibold">
-                            <span>RANGO</span>
+                          <div className="flex justify-between text-[9px] font-semibold">
+                            <span className="text-slate-400">INICIAL: <strong className="text-[#0ECB81]">{formatDynamicPrice(initialP, coinInfo.decimals, currencyMode, penRate)}</strong></span>
                             <span className="text-white font-bold">
-                              {formatDynamicPrice(currentP, coinInfo.decimals, currencyMode, penRate)}
+                              Spot: {formatDynamicPrice(currentP, coinInfo.decimals, currencyMode, penRate)}
                             </span>
                           </div>
                           <div className="my-1">
                             <div className="flex justify-between text-[9px] text-slate-400 font-bold mb-1">
-                              <span>{formatDynamicPrice(lowRange, coinInfo.decimals, currencyMode, penRate)}</span>
-                              <span>{formatDynamicPrice(highRange, coinInfo.decimals, currencyMode, penRate)}</span>
+                              <span>Min: {formatDynamicPrice(lowRange, coinInfo.decimals, currencyMode, penRate)}</span>
+                              <span>Max: {formatDynamicPrice(highRange, coinInfo.decimals, currencyMode, penRate)}</span>
                             </div>
                             <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
                               <div
@@ -366,7 +373,7 @@ export const BottomActivityPanel = ({
                               />
                             </div>
                           </div>
-                          <span className="text-[9px] text-slate-400 font-semibold">Precio en rango óptimo</span>
+                          <span className="text-[9px] text-slate-400 font-semibold">Rango activo de oscilación</span>
                         </div>
                       </div>
 
