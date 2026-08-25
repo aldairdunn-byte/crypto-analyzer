@@ -94,6 +94,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setUsdtCash(defaultAmount);
     setCapitalInBots(0);
     localStorage.removeItem('crypto_analyzer_active_orders');
+    localStorage.removeItem('crypto_analyzer_bots');
+    localStorage.removeItem('crypto_analyzer_trades');
 
     // Purge test bots and trades from Supabase asynchronously
     try {

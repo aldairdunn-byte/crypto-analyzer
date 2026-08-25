@@ -73,9 +73,10 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     const loadData = async () => {
       try {
+        const effectiveBasePrice = livePrices[activeCoin] || coinInfo.basePrice;
         const [klineData, depthData] = await Promise.all([
-          fetchRealBinanceKlines(coinInfo.binanceSymbol, timeframe, 80),
-          fetchRealBinanceDepth(coinInfo.binanceSymbol, 15),
+          fetchRealBinanceKlines(coinInfo.binanceSymbol, timeframe, 80, effectiveBasePrice),
+          fetchRealBinanceDepth(coinInfo.binanceSymbol, 15, effectiveBasePrice),
         ]);
 
         if (isMounted) {

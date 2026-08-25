@@ -51,7 +51,6 @@ const MainContent: React.FC = () => {
     isLiveMode,
     setIsLiveMode,
     holdings,
-    resetDemoBalance,
   } = usePortfolio();
 
   const {
@@ -72,6 +71,7 @@ const MainContent: React.FC = () => {
     clearAllNotifications,
     handleCreateBot,
     handleUpdateBotStatus,
+    resetAllBotEngine,
   } = useBotEngine();
 
   // Navigation State (4 Master Views)
@@ -117,7 +117,7 @@ const MainContent: React.FC = () => {
         virtualUsdt={virtualUsdt}
         capitalInBots={capitalInBots}
         availableUsdt={availableUsdt}
-        onResetBalance={resetDemoBalance}
+        onResetBalance={resetAllBotEngine}
         currencyMode={currencyMode}
         penRate={penRate}
         onToggleCurrency={toggleCurrency}
@@ -166,6 +166,7 @@ const MainContent: React.FC = () => {
                   analysis={analysis}
                   currencyMode={currencyMode}
                   penRate={penRate}
+                  availableUsdt={availableUsdt}
                   onGridPreviewChange={setGridPreviewLevels}
                   onCreateBot={handleCreateBot}
                   onExecuteSpotTrade={handleExecuteSpotTrade}
@@ -174,19 +175,17 @@ const MainContent: React.FC = () => {
             </div>
 
             {/* Bottom Collapsible Activity Tray */}
-            <div className="h-56 sm:h-64 border-t border-white/10 bg-[#08090C] shrink-0">
-              <BottomActivityPanel
-                bots={bots}
-                trades={trades}
-                gridLevels={displayGridLevels}
-                currentPrice={currentPrice}
-                livePrices={livePrices}
-                currencyMode={currencyMode}
-                penRate={penRate}
-                onUpdateBotStatus={handleUpdateBotStatus}
-                onSelectCoin={handleOpenCoinInTerminal}
-              />
-            </div>
+            <BottomActivityPanel
+              bots={bots}
+              trades={trades}
+              gridLevels={displayGridLevels}
+              currentPrice={currentPrice}
+              livePrices={livePrices}
+              currencyMode={currencyMode}
+              penRate={penRate}
+              onUpdateBotStatus={handleUpdateBotStatus}
+              onSelectCoin={handleOpenCoinInTerminal}
+            />
           </div>
         )}
 
@@ -226,7 +225,7 @@ const MainContent: React.FC = () => {
         {/* VIEW 4: AJUSTES & CONECTIVIDAD */}
         {activeView === 'SETTINGS' && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden content-bottom-pad">
-            <SettingsView onResetDemoBalance={resetDemoBalance} />
+            <SettingsView onResetDemoBalance={resetAllBotEngine} />
           </div>
         )}
       </main>

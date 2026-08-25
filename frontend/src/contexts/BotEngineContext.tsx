@@ -46,6 +46,7 @@ interface BotEngineContextType {
   markAllNotificationsAsRead: () => void;
   dismissNotification: (id: string) => void;
   clearAllNotifications: () => void;
+  resetAllBotEngine: () => void;
   handleCreateBot: (botData: {
     name: string;
     coinId: string;
@@ -64,8 +65,40 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const { activeCoin, currentPrice, livePrices } = useMarketData();
   const { availableUsdt, currencyMode, penRate, setUsdtCash, setCapitalInBots, capitalInBots } = usePortfolio();
 
-  const [bots, setBots] = useState<BotRow[]>([]);
-  const [trades, setTrades] = useState<TradeRow[]>([]);
+  const [bots, setBots] = useState<BotRow[]>(() => {
+    try {
+      const saved = localStorage.getItem('crypto_analyzer_bots');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [trades, setTrades] = useState<TradeRow[]>(() => {
+    try {
+      const saved = localStorage.getItem('crypto_analyzer_trades');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('crypto_analyzer_bots', JSON.stringify(bots));
+    } catch (e) {
+      console.warn('Could not persist bots to localStorage:', e);
+    }
+  }, [bots]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('crypto_analyzer_trades', JSON.stringify(trades));
+    } catch (e) {
+      console.warn('Could not persist trades to localStorage:', e);
+    }
+  }, [trades]);
+
   const [signals, setSignals] = useState<SignalRow[]>([]);
   const [gridPreviewLevels, setGridPreviewLevels] = useState<GridLevelItem[]>([]);
   const [selectedBotForInspection, setSelectedBotForInspection] = useState<BotRow | null>(null);
@@ -108,23 +141,19 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // 1. Initial Load from Supabase (Isolated per user if logged in)
   useEffect(() => {
     const loadSupabaseData = async () => {
+      if (!user) {
+        // En modo Demo / Invitado, mantenemos los bots y trades locales sin sobreescribir con array vacío
+        return;
+      }
       try {
-        let botsQuery = supabase.from('bots').select('*').order('created_at', { ascending: false });
-        let tradesQuery = supabase.from('bot_trades').select('*').order('created_at', { ascending: false });
-
-        if (user) {
-          botsQuery = botsQuery.eq('user_id', user.id);
-          tradesQuery = tradesQuery.eq('user_id', user.id);
-        }
-
         const [botsRes, tradesRes, signalsRes] = await Promise.all([
-          botsQuery,
-          tradesQuery,
+          supabase.from('bots').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+          supabase.from('bot_trades').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
           supabase.from('market_signals').select('*').order('created_at', { ascending: false }).limit(20),
         ]);
 
-        if (botsRes.data) setBots(botsRes.data as BotRow[]);
-        if (tradesRes.data) setTrades(tradesRes.data as TradeRow[]);
+        if (botsRes.data && botsRes.data.length > 0) setBots(botsRes.data as BotRow[]);
+        if (tradesRes.data && tradesRes.data.length > 0) setTrades(tradesRes.data as TradeRow[]);
         if (signalsRes.data) setSignals(signalsRes.data as SignalRow[]);
       } catch (err) {
         console.warn('Error loading Supabase bot data:', err);
@@ -157,6 +186,14 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           return order;
         }
 
+        // Only trigger orders whose parent bot is currently ACTIVE
+        if (order.botId) {
+          const parentBot = bots.find((b) => b.id === order.botId);
+          if (parentBot && parentBot.status !== 'ACTIVE') {
+            return order;
+          }
+        }
+
         // Strict Tick Crossing condition
         const isTriggered =
           (order.side === 'BUY' && prevP > order.price && orderPrice <= order.price) ||
@@ -173,36 +210,70 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             setUsdtCash((prev) => prev + profitUsd);
           }
 
-          // Record Trade in state & Supabase
+          // Record Trade with explicit bot_id attribution
           const executedTrade: TradeRow = {
             id: crypto.randomUUID(),
             user_id: user?.id,
+            bot_id: order.botId,
             coin_id: orderCoinId,
             side: order.side,
             entry_price: actualEntryPrice,
             exit_price: order.side === 'SELL' ? order.price : undefined,
             amount_usd: order.allocationUsd,
-            units: order.allocationUsd / order.price,
+            units: Number((order.allocationUsd / order.price).toFixed(6)),
             status: order.side === 'BUY' ? 'OPEN' : 'CLOSED',
             pnl_usd: profitUsd > 0 ? profitUsd : undefined,
             created_at: new Date().toISOString(),
           };
 
-          setTrades((prev) => [executedTrade, ...prev]);
+          // If SELL executed, pair and close the prior OPEN BUY position
+          if (order.side === 'SELL') {
+            setTrades((prev) => {
+              let closedExisting = false;
+              const updatedTrades = prev.map((t) => {
+                if (
+                  !closedExisting &&
+                  t.status === 'OPEN' &&
+                  t.side === 'BUY' &&
+                  (order.botId ? t.bot_id === order.botId : t.coin_id === orderCoinId)
+                ) {
+                  closedExisting = true;
+                  return {
+                    ...t,
+                    status: 'CLOSED' as const,
+                    exit_price: order.price,
+                    pnl_usd: profitUsd,
+                  };
+                }
+                return t;
+              });
 
-          // Persist trade asynchronously to Supabase
-          supabase.from('bot_trades').insert({
-            id: executedTrade.id,
-            user_id: executedTrade.user_id,
-            coin_id: executedTrade.coin_id,
-            side: executedTrade.side,
-            entry_price: executedTrade.entry_price,
-            exit_price: executedTrade.exit_price,
-            amount_usd: executedTrade.amount_usd,
-            units: executedTrade.units,
-            status: executedTrade.status,
-            pnl_usd: executedTrade.pnl_usd,
-          }).then();
+              if (closedExisting) {
+                return updatedTrades;
+              }
+              return [executedTrade, ...prev];
+            });
+          } else {
+            // New BUY creates a tracked OPEN position
+            setTrades((prev) => [executedTrade, ...prev]);
+          }
+
+          // Persist trade asynchronously to Supabase if authenticated
+          if (user) {
+            supabase.from('bot_trades').insert({
+              id: executedTrade.id,
+              user_id: executedTrade.user_id,
+              bot_id: executedTrade.bot_id,
+              coin_id: executedTrade.coin_id,
+              side: executedTrade.side,
+              entry_price: executedTrade.entry_price,
+              exit_price: executedTrade.exit_price,
+              amount_usd: executedTrade.amount_usd,
+              units: executedTrade.units,
+              status: executedTrade.status,
+              pnl_usd: executedTrade.pnl_usd,
+            }).then();
+          }
 
           const symbol = orderCoin?.symbol || orderCoinId.toUpperCase();
 
@@ -294,10 +365,18 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     capitalUsd: number;
     config: any;
   }) => {
+    // 1. Validate sufficient available capital
     if (botData.capitalUsd > availableUsdt) {
-      alert(`Saldo disponible insuficiente. Tienes ${formatDynamicPrice(availableUsdt, 2, currencyMode, penRate)} disponibles.`);
+      addToast({
+        type: 'WARNING',
+        title: 'Saldo Insuficiente',
+        message: `Tienes ${formatDynamicPrice(availableUsdt, 2, currencyMode, penRate)} disponibles y requieres ${formatDynamicPrice(botData.capitalUsd, 2, currencyMode, penRate)} para este bot.`,
+      });
       return;
     }
+
+    // 2. Deduct allocated capital from available USDT cash
+    setUsdtCash((prev) => Math.max(0, prev - botData.capitalUsd));
 
     const targetCurrentPrice = livePrices[botData.coinId] || currentPrice;
     const targetCoin = COINS[botData.coinId] || COINS.solana;
@@ -389,31 +468,114 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const handleUpdateBotStatus = async (botId: string, newStatus: 'ACTIVE' | 'PAUSED' | 'STOPPED') => {
+    const targetBot = bots.find((b) => b.id === botId);
+    if (!targetBot) return;
+
+    if (newStatus === 'STOPPED' && targetBot.status !== 'STOPPED') {
+      // Reembolsar capital a saldo disponible al detener el bot
+      setUsdtCash((prev) => prev + (targetBot.capital_allocated_usd || 0));
+      // Cancelar y purgar todas las órdenes del grid asociadas a este bot
+      setActiveGridOrders((prev) => prev.filter((o) => o.botId !== botId));
+      addToast({
+        type: 'INFO',
+        title: `Bot Detenido: ${targetBot.name}`,
+        message: `Mallas canceladas y $${targetBot.capital_allocated_usd.toFixed(2)} USDT devueltos a disponible.`,
+      });
+    } else if (newStatus === 'ACTIVE' && targetBot.status === 'STOPPED') {
+      // Validar si hay saldo suficiente al reactivar
+      if (targetBot.capital_allocated_usd > availableUsdt) {
+        addToast({
+          type: 'WARNING',
+          title: 'Saldo Insuficiente',
+          message: `Requieres $${targetBot.capital_allocated_usd.toFixed(2)} USDT y solo dispones de $${availableUsdt.toFixed(2)} USDT.`,
+        });
+        return;
+      }
+      setUsdtCash((prev) => Math.max(0, prev - targetBot.capital_allocated_usd));
+
+      // Regenerar mallas activas para este bot
+      const cfg = targetBot.config_json || (targetBot as any).config || {};
+      if (cfg.price_high && cfg.price_low && cfg.num_grids) {
+        const targetCurrentPrice = livePrices[targetBot.coin_id] || currentPrice;
+        const targetCoin = COINS[targetBot.coin_id] || COINS.solana;
+        const step = (cfg.price_high - cfg.price_low) / Math.max(1, cfg.num_grids - 1);
+        const alloc = targetBot.capital_allocated_usd / cfg.num_grids;
+        const newLevels: GridLevelItem[] = [];
+        for (let i = 0; i < cfg.num_grids; i++) {
+          const p = cfg.price_low + i * step;
+          const isBuy = p < targetCurrentPrice;
+          newLevels.push({
+            id: crypto.randomUUID(),
+            botId: targetBot.id,
+            coinId: targetBot.coin_id,
+            level: i + 1,
+            price: Number(p.toFixed(targetCoin.decimals)),
+            allocationUsd: Number(alloc.toFixed(2)),
+            side: isBuy ? 'BUY' : 'SELL',
+            status: 'PENDING',
+            entryPrice: isBuy ? undefined : Number((p - step).toFixed(targetCoin.decimals)),
+          });
+        }
+        setActiveGridOrders((prev) => [...prev.filter((o) => o.botId !== botId), ...newLevels]);
+      }
+    }
+
     setBots((prev) =>
       prev.map((b) => (b.id === botId ? { ...b, status: newStatus } : b))
     );
 
-    const targetBot = bots.find((b) => b.id === botId);
-    if (targetBot) {
-      sendTelegramBotStatusChange({
-        botName: targetBot.name,
-        coinSymbol: COINS[targetBot.coin_id]?.symbol || 'CRYPTO',
-        strategy: targetBot.strategy,
-        status: newStatus,
-        capitalUsd: targetBot.capital_allocated_usd,
-        currencyMode,
-        penRate,
-      });
-    }
+    sendTelegramBotStatusChange({
+      botName: targetBot.name,
+      coinSymbol: COINS[targetBot.coin_id]?.symbol || 'CRYPTO',
+      strategy: targetBot.strategy,
+      status: newStatus,
+      capitalUsd: targetBot.capital_allocated_usd,
+      currencyMode,
+      penRate,
+    });
 
-    await supabase.from('bots').update({ status: newStatus }).eq('id', botId);
+    if (user) {
+      await supabase.from('bots').update({ status: newStatus }).eq('id', botId);
+    }
   };
 
   const handleDeleteBot = async (botId: string) => {
+    const targetBot = bots.find((b) => b.id === botId);
+    if (targetBot && (targetBot.status === 'ACTIVE' || targetBot.status === 'PAUSED')) {
+      setUsdtCash((prev) => prev + (targetBot.capital_allocated_usd || 0));
+      addToast({
+        type: 'INFO',
+        title: `Bot Eliminado: ${targetBot.name}`,
+        message: `Mallas canceladas y $${targetBot.capital_allocated_usd.toFixed(2)} USDT devueltos a disponible.`,
+      });
+    }
+
     setBots((prev) => prev.filter((b) => b.id !== botId));
     setActiveGridOrders((prev) => prev.filter((o) => o.botId !== botId));
-    await supabase.from('bots').delete().eq('id', botId);
+
+    if (user) {
+      await supabase.from('bots').delete().eq('id', botId);
+    }
   };
+
+  const resetAllBotEngine = useCallback(() => {
+    setBots([]);
+    setTrades([]);
+    setActiveGridOrders([]);
+    setNotifications(getInitialSeedNotifications());
+    localStorage.removeItem('crypto_analyzer_bots');
+    localStorage.removeItem('crypto_analyzer_trades');
+    localStorage.removeItem('crypto_analyzer_active_orders');
+    localStorage.removeItem('crypto_analyzer_notifications');
+    setUsdtCash(1000.0);
+    setCapitalInBots(0);
+    localStorage.setItem('usdtCash', '1000');
+    addToast({
+      type: 'INFO',
+      title: 'Sistema Reiniciado',
+      message: 'Saldo restaurado a $1,000.00 USDT. Todos los bots y órdenes han sido cancelados.',
+    });
+  }, [setUsdtCash, setCapitalInBots]);
 
   // 4. Real-time Event-Driven Notifications Feed
   const [notifications, setNotifications] = useState<PlainSpanishNotification[]>(() => {
@@ -497,6 +659,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         handleCreateBot,
         handleUpdateBotStatus,
         handleDeleteBot,
+        resetAllBotEngine,
       }}
     >
       {children}

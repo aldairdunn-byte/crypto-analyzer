@@ -138,7 +138,8 @@ export function formatDynamicPrice(
 export async function fetchRealBinanceKlines(
   binanceSymbol: string,
   interval: string = '5m',
-  limit: number = 350
+  limit: number = 350,
+  basePrice: number = 100
 ): Promise<CandleData[]> {
   try {
     const url = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=${limit}`;
@@ -156,7 +157,7 @@ export async function fetchRealBinanceKlines(
     }));
   } catch (err) {
     console.warn(`Could not fetch live klines for ${binanceSymbol}, using fallback:`, err);
-    return generateBackupCandles(145.0, limit);
+    return generateBackupCandles(basePrice, limit);
   }
 }
 
@@ -239,7 +240,8 @@ export async function fetchAllCoins24hStats(): Promise<Record<string, { price: n
  */
 export async function fetchRealBinanceDepth(
   binanceSymbol: string,
-  limit: number = 20
+  limit: number = 20,
+  basePrice: number = 100
 ): Promise<{ asks: OrderBookItem[]; bids: OrderBookItem[] }> {
   try {
     const url = `https://api.binance.com/api/v3/depth?symbol=${binanceSymbol}&limit=${limit}`;
@@ -278,7 +280,7 @@ export async function fetchRealBinanceDepth(
     return { asks, bids };
   } catch (err) {
     console.warn(`Could not fetch depth for ${binanceSymbol}:`, err);
-    return generateOrderBook(145.0, limit);
+    return generateOrderBook(basePrice, limit);
   }
 }
 
@@ -487,27 +489,28 @@ export interface OrderBookItem {
   depthPct: number;
 }
 
-export function generateBackupCandles(basePrice: number, count: number = 100): CandleData[] {
+export function generateBackupCandles(basePrice: number = 100, count: number = 80): CandleData[] {
   const candles: CandleData[] = [];
   const now = Math.floor(Date.now() / 1000);
   const intervalSeconds = 300;
-  let currentPrice = basePrice * 0.94;
+  let currentPrice = basePrice * 0.98;
+  const decimals = basePrice >= 1000 ? 2 : basePrice >= 1 ? 2 : basePrice >= 0.01 ? 4 : 8;
 
   for (let i = count; i >= 0; i--) {
     const time = now - i * intervalSeconds;
-    const change = (Math.random() - 0.48) * (basePrice * 0.012);
+    const change = (Math.random() - 0.49) * (basePrice * 0.008);
     const open = currentPrice;
     const close = Math.max(0.000001, open + change);
-    const high = Math.max(open, close) + Math.random() * (basePrice * 0.006);
-    const low = Math.min(open, close) - Math.random() * (basePrice * 0.006);
+    const high = Math.max(open, close) + Math.random() * (basePrice * 0.004);
+    const low = Math.min(open, close) - Math.random() * (basePrice * 0.004);
     const volume = Math.random() * 50000 + 10000;
 
     candles.push({
       time,
-      open: Number(open.toFixed(4)),
-      high: Number(high.toFixed(4)),
-      low: Number(low.toFixed(4)),
-      close: Number(close.toFixed(4)),
+      open: Number(open.toFixed(decimals)),
+      high: Number(high.toFixed(decimals)),
+      low: Number(low.toFixed(decimals)),
+      close: Number(close.toFixed(decimals)),
       volume: Number(volume.toFixed(2)),
     });
 
@@ -517,10 +520,11 @@ export function generateBackupCandles(basePrice: number, count: number = 100): C
   return candles;
 }
 
-export function generateOrderBook(currentPrice: number, count: number = 8): { asks: OrderBookItem[]; bids: OrderBookItem[] } {
+export function generateOrderBook(currentPrice: number, count: number = 10): { asks: OrderBookItem[]; bids: OrderBookItem[] } {
   const asks: OrderBookItem[] = [];
   const bids: OrderBookItem[] = [];
-  const spreadStep = currentPrice * 0.0012;
+  const spreadStep = Math.max(currentPrice * 0.0006, 0.000001);
+  const decimals = currentPrice >= 1000 ? 2 : currentPrice >= 1 ? 2 : currentPrice >= 0.01 ? 4 : 8;
 
   let askTotal = 0;
   for (let i = 1; i <= count; i++) {
@@ -528,7 +532,7 @@ export function generateOrderBook(currentPrice: number, count: number = 8): { as
     const size = Math.random() * 45 + 5;
     askTotal += size;
     asks.push({
-      price: Number(price.toFixed(2)),
+      price: Number(price.toFixed(decimals)),
       size: Number(size.toFixed(2)),
       total: Number(askTotal.toFixed(2)),
       depthPct: Math.min(100, (askTotal / 300) * 100),
@@ -541,7 +545,7 @@ export function generateOrderBook(currentPrice: number, count: number = 8): { as
     const size = Math.random() * 45 + 5;
     bidTotal += size;
     bids.push({
-      price: Number(price.toFixed(2)),
+      price: Number(price.toFixed(decimals)),
       size: Number(size.toFixed(2)),
       total: Number(bidTotal.toFixed(2)),
       depthPct: Math.min(100, (bidTotal / 300) * 100),

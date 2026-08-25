@@ -54,8 +54,8 @@ export const BotDetailModal = ({
   const numGrids = config.num_grids || 16;
   const stopLoss = config.stop_loss ?? Number((lowPrice * 0.95).toFixed(coinInfo.decimals));
 
-  // Financial calculations
-  const botTrades = trades.filter((t) => t.coin_id === coinInfo.id || bot.name.toLowerCase().includes(t.coin_id));
+  // Financial calculations (Strictly isolated per botId)
+  const botTrades = trades.filter((t) => (t.bot_id ? t.bot_id === bot.id : t.coin_id === coinInfo.id));
   const closedTrades = botTrades.filter((t) => t.status === 'CLOSED');
   const arbitrajesCount = closedTrades.length;
   const estimatedPnLUsd = closedTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0);

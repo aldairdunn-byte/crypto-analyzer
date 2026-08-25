@@ -20,6 +20,7 @@ interface TradingBotPanelProps {
   analysis?: QuantitativeAnalysis;
   currencyMode?: 'USD' | 'PEN';
   penRate?: number;
+  availableUsdt?: number;
   onGridPreviewChange: (levels: GridLevelItem[]) => void;
   onCreateBot: (botData: {
     name: string;
@@ -43,6 +44,7 @@ export const TradingBotPanel = ({
   analysis,
   currencyMode = 'USD',
   penRate = 3.75,
+  availableUsdt = 1000,
   onGridPreviewChange,
   onCreateBot,
   onExecuteSpotTrade,
@@ -451,15 +453,33 @@ export const TradingBotPanel = ({
             {/* Inversión Asignada */}
             <div>
               <div className="flex justify-between items-center text-[10px] font-bold mb-1">
-                <span className="text-slate-400">Inversión Asignada</span>
-                <span className="text-slate-500 font-mono">~S/ {capitalInPen.toFixed(0)} Soles</span>
+                <div className="flex items-center gap-1 text-slate-400">
+                  <span>Inversión Asignada</span>
+                  <span className="text-slate-500 font-mono font-normal">
+                    (Disp: <span className="text-[#0ECB81] font-bold">${availableUsdt.toFixed(2)}</span>)
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleUpdateGridParams(gridLow, gridHigh, gridCount, Math.max(25, Math.floor(availableUsdt)))}
+                    className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-[#F59E0B]/20 text-[#F59E0B] text-[9px] font-mono font-bold transition-all cursor-pointer"
+                    title="Usar todo el saldo disponible"
+                  >
+                    MAX
+                  </button>
+                  <span className="text-slate-500 font-mono">~S/ {capitalInPen.toFixed(0)} PEN</span>
+                </div>
               </div>
               <div className="relative">
                 <input
                   type="number"
                   value={gridCapital}
                   onChange={(e) => handleUpdateGridParams(gridLow, gridHigh, gridCount, Number(e.target.value))}
-                  className="w-full bg-[#08090C] border border-white/10 rounded-xl px-3 py-2 pr-11 text-white font-mono font-bold focus:outline-none focus:border-[#F59E0B] tabular-nums"
+                  className={`w-full bg-[#08090C] border rounded-xl px-3 py-2 pr-11 text-white font-mono font-bold focus:outline-none tabular-nums ${
+                    gridCapital > availableUsdt
+                      ? 'border-rose-500/50 focus:border-rose-500 text-rose-300'
+                      : 'border-white/10 focus:border-[#F59E0B]'
+                  }`}
                 />
                 <span className="absolute right-2.5 top-2.5 text-[10px] text-slate-500 font-mono">USDT</span>
               </div>
@@ -489,7 +509,9 @@ export const TradingBotPanel = ({
                   <Activity className="w-3 h-3 text-[#0ECB81]" />
                   <span>Proyección de Beneficio</span>
                 </span>
-                <span className="text-emerald-400 font-bold">~{estimatedApy.toFixed(1)}% APY Est.</span>
+                <span className="text-[#0ECB81] font-extrabold font-mono tracking-tight">
+                  Est. +{Math.abs(estimatedApy).toFixed(1)}% APY Anual
+                </span>
               </div>
 
               <div className="flex justify-between items-center text-slate-400 text-[11px]">
@@ -554,11 +576,21 @@ export const TradingBotPanel = ({
             {/* Create Grid Bot Button */}
             <button
               onClick={handleCreateGridBot}
-              disabled={isSubmitting}
-              className="w-full bg-gradient-to-r from-[#F59E0B] to-amber-400 hover:from-amber-400 hover:to-[#F59E0B] text-black font-black py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-amber-500/20 active:scale-98 disabled:opacity-50"
+              disabled={isSubmitting || gridCapital > availableUsdt || gridCapital <= 0}
+              className={`w-full font-black py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-98 disabled:cursor-not-allowed ${
+                gridCapital > availableUsdt
+                  ? 'bg-rose-500/15 border border-rose-500/30 text-rose-400 opacity-90'
+                  : 'bg-gradient-to-r from-[#F59E0B] to-amber-400 hover:from-amber-400 hover:to-[#F59E0B] text-black shadow-amber-500/20 disabled:opacity-50'
+              }`}
             >
               <Bot className="w-4 h-4" />
-              <span>{isSubmitting ? 'Iniciando Bot...' : `Iniciar Bot Grid en ${coinSymbol} ($${gridCapital} USDT)`}</span>
+              <span>
+                {isSubmitting
+                  ? 'Iniciando Bot...'
+                  : gridCapital > availableUsdt
+                  ? `Saldo Insuficiente ($${availableUsdt.toFixed(2)} USDT disp.)`
+                  : `Iniciar Bot Grid en ${coinSymbol} ($${gridCapital} USDT)`}
+              </span>
             </button>
           </div>
         )}

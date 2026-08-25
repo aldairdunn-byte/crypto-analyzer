@@ -14,6 +14,8 @@ import {
   History,
   ChevronDown,
   ChevronUp,
+  Maximize2,
+  Minimize2,
   Zap,
   ArrowUpRight,
 } from 'lucide-react';
@@ -47,7 +49,7 @@ export const BottomActivityPanel = ({
 
   const [panelHeight, setPanelHeight] = useState<number>(() => {
     const saved = localStorage.getItem('crypto_analyzer_bottom_panel_height');
-    return saved ? parseInt(saved, 10) : 240;
+    return saved ? parseInt(saved, 10) : 260;
   });
 
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -78,8 +80,9 @@ export const BottomActivityPanel = ({
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const deltaY = startY - moveEvent.clientY;
-      const newHeight = Math.min(600, Math.max(160, startHeight + deltaY));
+      const newHeight = Math.min(650, Math.max(160, startHeight + deltaY));
       setPanelHeight(newHeight);
+      if (isCollapsed) setIsCollapsed(false);
     };
 
     const onMouseUp = () => {
@@ -90,24 +93,24 @@ export const BottomActivityPanel = ({
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
-  }, [panelHeight]);
+  }, [panelHeight, isCollapsed]);
 
   const openTrades = trades.filter((t) => t.status === 'OPEN');
 
   return (
     <div
       style={{ height: isCollapsed ? '42px' : `${panelHeight}px` }}
-      className={`border-t border-white/10 bg-[#0E1118] flex flex-col transition-all duration-150 select-none relative shrink-0 min-h-0 ${
+      className={`border-t border-white/10 bg-[#0E1118] flex flex-col transition-all duration-150 relative shrink-0 min-h-0 ${
         isDragging ? 'transition-none select-none' : ''
       }`}
     >
       {/* ─── DRAGGABLE RESIZE HANDLE (TOP BORDER) ─── */}
       <div
         onMouseDown={startResizing}
-        title="Arrastra para redimensionar el panel"
-        className="absolute -top-1 left-0 right-0 h-2.5 cursor-row-resize z-30 group flex items-center justify-center hover:bg-amber-500/20 transition-all"
+        title="Arrastra hacia arriba o abajo para redimensionar el panel"
+        className="absolute -top-1.5 left-0 right-0 h-3.5 cursor-row-resize z-30 group flex items-center justify-center hover:bg-amber-500/20 transition-all"
       >
-        <div className="w-12 h-1 bg-white/20 group-hover:bg-[#F59E0B] rounded-full transition-all group-hover:w-20 shadow-sm" />
+        <div className="w-16 h-1 bg-white/20 group-hover:bg-[#F59E0B] rounded-full transition-all group-hover:w-24 shadow-sm" />
       </div>
 
       {/* ─── TAB NAVIGATION HEADER & CONTROLS ─── */}
@@ -168,20 +171,32 @@ export const BottomActivityPanel = ({
 
         {/* Height Controls & Collapse Button */}
         <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
+          {/* Toggle Maximize / Restore */}
+          <button
+            onClick={() => {
+              if (isCollapsed) setIsCollapsed(false);
+              setPanelHeight((prev) => (prev >= 420 ? 260 : 460));
+            }}
+            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white cursor-pointer transition-all"
+            title={panelHeight >= 420 ? 'Restaurar altura (260px)' : 'Maximizar panel (460px)'}
+          >
+            {panelHeight >= 420 ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          </button>
+
           {/* Toggle Collapse/Expand */}
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white cursor-pointer transition-all"
+            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white cursor-pointer transition-all"
             title={isCollapsed ? 'Expandir panel de actividad' : 'Minimizar panel'}
           >
-            {isCollapsed ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            {isCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>
 
       {/* ─── TAB CONTENT AREA (Hidden when collapsed) ─── */}
       {!isCollapsed && (
-        <div className="flex-1 overflow-y-auto p-3 text-xs bg-[#08090C]">
+        <div className="flex-1 overflow-y-auto overflow-x-auto p-3 text-xs bg-[#08090C]">
         {/* ─── TAB 1: MIS BOTS (SUPABASE / LOCAL HYDRATED) ─── */}
         {activeTab === 'BOTS' && (
           <div>
@@ -213,8 +228,10 @@ export const BottomActivityPanel = ({
                   const pricePctInRange = Math.max(0, Math.min(100, highRange > lowRange ? ((currentP - lowRange) / (highRange - lowRange)) * 100 : 50));
                   const numGrids = config.num_grids || 16;
 
-                  // Trades & Arbitrage metrics
-                  const botTrades = trades.filter((t) => t.coin_id === coinInfo.id || bot.name.toLowerCase().includes(t.coin_id));
+                  // Trades & Arbitrage metrics (Strictly isolated per botId)
+                  const botTrades = trades.filter((t) =>
+                    t.bot_id ? t.bot_id === bot.id : t.coin_id === coinInfo.id && bot.id === bots[0]?.id
+                  );
                   const closedTrades = botTrades.filter((t) => t.status === 'CLOSED');
                   const arbitrajesCount = closedTrades.length;
                   const estimatedPnLUsd = closedTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0);
@@ -408,7 +425,7 @@ export const BottomActivityPanel = ({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left">
+                <table className="w-full text-left min-w-[700px] whitespace-nowrap">
                   <thead>
                     <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8">
                       <th className="pl-3">Activo</th>
@@ -417,49 +434,45 @@ export const BottomActivityPanel = ({
                       <th>Precio Entrada</th>
                       <th>Precio Actual</th>
                       <th>Valor Asignado</th>
-                      <th className="text-right pr-3">PnL Flotante</th>
+                      <th className="text-right pr-4">PnL Flotante</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 font-mono">
-                    {openTrades.map((t) => {
-                      const coinInfo = COINS[t.coin_id];
+                    {openTrades.map((pos) => {
+                      const coinInfo = COINS[pos.coin_id];
+                      const curP = livePrices[pos.coin_id] || currentPrice;
                       const decimals = coinInfo ? coinInfo.decimals : 2;
-                      const live = livePrices[t.coin_id] ?? currentPrice;
-                      const pnlPct = t.entry_price > 0 ? ((live - t.entry_price) / t.entry_price) * 100 : 0;
-                      const pnlUsd = (t.amount_usd * pnlPct) / 100;
-                      const isPos = pnlPct >= 0;
+                      const pnlUsd = (curP - pos.entry_price) * pos.units;
+                      const pnlPct = ((curP - pos.entry_price) / pos.entry_price) * 100;
+                      const isWin = pnlUsd >= 0;
 
                       return (
-                        <tr key={t.id} className="hover:bg-white/[0.03] transition-colors h-10">
-                          <td className="pl-3 font-bold text-white font-sans flex items-center space-x-2 py-2">
-                            <CryptoIcon symbol={coinInfo?.symbol || t.coin_id} size={18} />
-                            <span>{t.coin_id.toUpperCase()}</span>
+                        <tr key={pos.id} className="hover:bg-white/[0.03] transition-colors h-9">
+                          <td className="pl-3 font-bold text-white font-sans flex items-center space-x-1.5 py-2">
+                            <CryptoIcon symbol={coinInfo?.symbol || pos.coin_id} size={16} />
+                            <span>{pos.coin_id.toUpperCase()}</span>
                           </td>
                           <td>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
-                                t.side === 'BUY'
-                                  ? 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
-                                  : 'bg-rose-500/15 text-[#F6465D] border-rose-500/30'
-                              }`}
-                            >
-                              {t.side}
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-500/15 text-[#0ECB81] border border-emerald-500/30">
+                              SPOT GRID
                             </span>
                           </td>
-                          <td className="text-slate-300 tabular-nums">{t.units ? t.units.toFixed(4) : '-'}</td>
-                          <td className="text-white tabular-nums">
-                            {formatDynamicPrice(t.entry_price, decimals, currencyMode, penRate)}
+                          <td className="text-slate-200 tabular-nums">
+                            {pos.units.toFixed(4)} {coinInfo?.symbol || ''}
                           </td>
-                          <td className="text-white tabular-nums font-bold">
-                            {formatDynamicPrice(live, decimals, currencyMode, penRate)}
+                          <td className="text-slate-200 tabular-nums">
+                            {formatDynamicPrice(pos.entry_price, decimals, currencyMode, penRate)}
+                          </td>
+                          <td className="text-white font-bold tabular-nums">
+                            {formatDynamicPrice(curP, decimals, currencyMode, penRate)}
                           </td>
                           <td className="text-slate-300 tabular-nums">
-                            {formatDynamicPrice(t.amount_usd, 2, currencyMode, penRate)}
+                            {formatDynamicPrice(pos.amount_usd, 2, currencyMode, penRate)}
                           </td>
-                          <td className={`text-right pr-3 font-extrabold tabular-nums ${isPos ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
-                            <span className={`px-2 py-0.5 rounded-lg ${isPos ? 'bg-emerald-500/10' : 'bg-rose-500/10'}`}>
-                              {isPos ? '+' : ''}
-                              {formatDynamicPrice(pnlUsd, 2, currencyMode, penRate)} ({isPos ? '+' : ''}
+                          <td className={`text-right pr-4 font-bold tabular-nums ${isWin ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                            <span className={`px-2 py-0.5 rounded-lg ${isWin ? 'bg-emerald-500/10' : 'bg-rose-500/10'}`}>
+                              {isWin ? '+' : ''}
+                              {formatDynamicPrice(pnlUsd, 2, currencyMode, penRate)} ({isWin ? '+' : ''}
                               {pnlPct.toFixed(2)}%)
                             </span>
                           </td>
@@ -473,23 +486,23 @@ export const BottomActivityPanel = ({
           </div>
         )}
 
-        {/* ─── TAB 3: ÓRDENES DEL GRID ─── */}
+        {/* ─── TAB 3: ORDENES ACTIVAS DEL GRID ─── */}
         {activeTab === 'GRID_ORDERS' && (
           <div>
             {gridLevels.length === 0 ? (
               <div className="text-center py-10 text-slate-400 font-medium">
-                No hay niveles de Grid simulados. Ajusta los parámetros en el panel lateral derecho.
+                No hay órdenes de malla pendientes para esta criptomoneda.
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left">
+                <table className="w-full text-left min-w-[650px] whitespace-nowrap">
                   <thead>
                     <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8">
                       <th className="pl-3">Malla</th>
                       <th>Orden</th>
                       <th>Precio Límite</th>
                       <th>Asignación</th>
-                      <th className="text-right pr-3">Distancia al Spot</th>
+                      <th className="text-right pr-4">Distancia al Spot</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 font-mono">
@@ -551,7 +564,7 @@ export const BottomActivityPanel = ({
               <div className="text-center py-10 text-slate-400 font-medium">Aún no se registran operaciones ejecutadas.</div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left">
+                <table className="w-full text-left min-w-[720px] whitespace-nowrap">
                   <thead>
                     <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8">
                       <th className="pl-3">Hora</th>
@@ -561,7 +574,7 @@ export const BottomActivityPanel = ({
                       <th>Precio Salida</th>
                       <th>Monto</th>
                       <th>Estado</th>
-                      <th className="text-right pr-3">PnL Realizado</th>
+                      <th className="text-right pr-4">PnL Realizado</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 font-mono">
