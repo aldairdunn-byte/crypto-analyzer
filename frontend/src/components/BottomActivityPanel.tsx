@@ -71,7 +71,7 @@ export const BottomActivityPanel = ({
     localStorage.setItem('crypto_analyzer_bottom_panel_collapsed', isCollapsed ? 'true' : 'false');
   }, [isCollapsed]);
 
-  // Drag-to-Resize Mouse Event Listener
+  // Drag-to-Resize Mouse + Touch Event Listener
   const startResizing = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -95,6 +95,29 @@ export const BottomActivityPanel = ({
     window.addEventListener('mouseup', onMouseUp);
   }, [panelHeight, isCollapsed]);
 
+  const startResizingTouch = useCallback((e: React.TouchEvent) => {
+    setIsDragging(true);
+    const startY = e.touches[0].clientY;
+    const startHeight = panelHeight;
+
+    const onTouchMove = (moveEvent: TouchEvent) => {
+      moveEvent.preventDefault();
+      const deltaY = startY - moveEvent.touches[0].clientY;
+      const newHeight = Math.min(650, Math.max(160, startHeight + deltaY));
+      setPanelHeight(newHeight);
+      if (isCollapsed) setIsCollapsed(false);
+    };
+
+    const onTouchEnd = () => {
+      setIsDragging(false);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd);
+  }, [panelHeight, isCollapsed]);
+
   const openTrades = trades.filter((t) => t.status === 'OPEN');
 
   return (
@@ -104,36 +127,40 @@ export const BottomActivityPanel = ({
         isDragging ? 'transition-none select-none' : ''
       }`}
     >
-      {/* ─── DRAGGABLE RESIZE HANDLE (TOP BORDER) ─── */}
+      {/* ─── DRAGGABLE RESIZE HANDLE (TOP BORDER) — Mouse + Touch ─── */}
       <div
         onMouseDown={startResizing}
+        onTouchStart={startResizingTouch}
         title="Arrastra hacia arriba o abajo para redimensionar el panel"
-        className="absolute -top-1.5 left-0 right-0 h-3.5 cursor-row-resize z-30 group flex items-center justify-center hover:bg-amber-500/20 transition-all"
+        className="absolute -top-1.5 left-0 right-0 h-4 cursor-row-resize z-30 group flex items-center justify-center hover:bg-amber-500/20 active:bg-amber-500/30 transition-all touch-none"
       >
-        <div className="w-16 h-1 bg-white/20 group-hover:bg-[#F59E0B] rounded-full transition-all group-hover:w-24 shadow-sm" />
+        <div className="w-16 h-1 bg-white/20 group-hover:bg-[#F59E0B] group-active:bg-[#F59E0B] rounded-full transition-all group-hover:w-24 shadow-sm" />
       </div>
 
       {/* ─── TAB NAVIGATION HEADER & CONTROLS ─── */}
       <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5 bg-[#08090C] shrink-0 h-10">
-        {/* Navigation Tabs */}
-        <div className="flex space-x-1">
+        {/* Navigation Tabs — horizontal scrollable on mobile */}
+        <div className="flex space-x-1 overflow-x-auto no-scrollbar min-w-0">
           {[
-            { id: 'BOTS', label: 'Mis Bots', count: bots.length, icon: Bot },
+            { id: 'BOTS', label: 'Bots', labelFull: 'Mis Bots', count: bots.length, icon: Bot },
             {
               id: 'POSITIONS',
-              label: 'Posiciones Abiertas',
+              label: 'Posiciones',
+              labelFull: 'Posiciones Abiertas',
               count: trades.filter((t) => t.status === 'OPEN').length,
               icon: Activity,
             },
             {
               id: 'GRID_ORDERS',
-              label: 'Órdenes del Grid',
+              label: 'Órdenes',
+              labelFull: 'Órdenes del Grid',
               count: gridLevels.length,
               icon: Layers,
             },
             {
               id: 'TRADES',
-              label: 'Historial de Trades',
+              label: 'Historial',
+              labelFull: 'Historial de Trades',
               count: trades.filter((t) => t.status === 'CLOSED').length,
               icon: History,
             },
@@ -147,16 +174,17 @@ export const BottomActivityPanel = ({
                   setActiveTab(tab.id as any);
                   if (isCollapsed) setIsCollapsed(false);
                 }}
-                className={`px-3 py-1 text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer rounded-lg ${
+                className={`px-2 sm:px-3 py-1 text-xs font-bold transition-all flex items-center space-x-1 sm:space-x-1.5 cursor-pointer rounded-lg whitespace-nowrap shrink-0 ${
                   isActive
                     ? 'bg-white/10 text-[#F59E0B] shadow-sm font-extrabold'
                     : 'text-slate-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{tab.label}</span>
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">{tab.labelFull}</span>
+                <span className="sm:hidden">{tab.label}</span>
                 <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-extrabold ${
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-extrabold leading-none ${
                     isActive
                       ? 'bg-[#F59E0B] text-black shadow-sm'
                       : 'bg-white/5 text-slate-400'
@@ -252,33 +280,33 @@ export const BottomActivityPanel = ({
                       {/* Ambient background glow */}
                       <div className="absolute -top-16 -right-16 w-36 h-36 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
 
-                      {/* 1. Header Bar: Identity + Status + Actions */}
-                      <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow-md shrink-0">
-                            <CryptoIcon symbol={coinInfo.symbol} size={22} />
+                      {/* 1. Header Bar: Identity + Status + Actions — responsive wrap */}
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-white/5 pb-2.5 gap-2">
+                        <div className="flex items-center space-x-3 min-w-0">
+                          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow-md shrink-0">
+                            <CryptoIcon symbol={coinInfo.symbol} size={20} />
                           </div>
-                          <div>
+                          <div className="min-w-0">
                             <div className="flex items-center gap-1.5 font-extrabold text-white text-xs tracking-tight">
-                              <span>{bot.name}</span>
-                              <span className="text-[9px] bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30 px-1.5 py-0.2 rounded font-mono font-bold">
+                              <span className="truncate">{bot.name}</span>
+                              <span className="text-[9px] bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
                                 {bot.strategy}
                               </span>
                             </div>
-                            <div className="text-[10px] text-slate-400 font-mono flex flex-wrap items-center gap-1.5">
+                            <div className="text-[10px] text-slate-400 font-mono flex flex-wrap items-center gap-1 sm:gap-1.5">
                               <span>{numGrids} Mallas</span>
                               <span>·</span>
                               <span className="text-[#0ECB81] font-bold">Entrada: {formatDynamicPrice(initialP, coinInfo.decimals, currencyMode, penRate)}</span>
-                              <span>·</span>
-                              <span>Spot: {formatDynamicPrice(currentP, coinInfo.decimals, currencyMode, penRate)}</span>
+                              <span className="hidden sm:inline">·</span>
+                              <span className="hidden sm:inline">Spot: {formatDynamicPrice(currentP, coinInfo.decimals, currencyMode, penRate)}</span>
                             </div>
                           </div>
                         </div>
 
-                        {/* Status & Buttons */}
-                        <div className="flex items-center space-x-2">
+                        {/* Status & Buttons — wraps to second row on mobile */}
+                        <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
                           <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-extrabold border flex items-center gap-1 shadow-sm ${
+                            className={`px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-mono font-extrabold border flex items-center gap-1 shadow-sm ${
                               isActive
                                 ? 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
                                 : isPaused
@@ -287,7 +315,7 @@ export const BottomActivityPanel = ({
                             }`}
                           >
                             <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#0ECB81] animate-pulse' : isPaused ? 'bg-[#F59E0B]' : 'bg-[#F6465D]'}`} />
-                            <span>{isActive ? 'Activo' : isPaused ? 'Pausado' : 'Detenido'}</span>
+                            <span>{isActive ? 'Activo' : isPaused ? 'Pausado' : 'Stop'}</span>
                           </span>
 
                           {isActive ? (
@@ -296,10 +324,10 @@ export const BottomActivityPanel = ({
                                 e.stopPropagation();
                                 onUpdateBotStatus(bot.id, 'PAUSED');
                               }}
-                              className="bg-white/5 hover:bg-amber-500/20 text-[#F59E0B] px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center space-x-1 cursor-pointer transition-all active:scale-95 shadow-sm"
+                              className="bg-white/5 hover:bg-amber-500/20 text-[#F59E0B] p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] font-extrabold flex items-center space-x-1 cursor-pointer transition-all active:scale-95 shadow-sm"
                             >
-                              <Pause className="w-3 h-3" />
-                              <span>Pausar</span>
+                              <Pause className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
+                              <span className="hidden sm:inline">Pausar</span>
                             </button>
                           ) : (
                             <button
@@ -307,10 +335,10 @@ export const BottomActivityPanel = ({
                                 e.stopPropagation();
                                 onUpdateBotStatus(bot.id, 'ACTIVE');
                               }}
-                              className="bg-white/5 hover:bg-emerald-500/20 text-[#0ECB81] px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center space-x-1 cursor-pointer transition-all active:scale-95 shadow-sm"
+                              className="bg-white/5 hover:bg-emerald-500/20 text-[#0ECB81] p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] font-extrabold flex items-center space-x-1 cursor-pointer transition-all active:scale-95 shadow-sm"
                             >
-                              <Play className="w-3 h-3" />
-                              <span>Reanudar</span>
+                              <Play className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
+                              <span className="hidden sm:inline">Reanudar</span>
                             </button>
                           )}
 
@@ -319,10 +347,10 @@ export const BottomActivityPanel = ({
                               e.stopPropagation();
                               onUpdateBotStatus(bot.id, 'STOPPED');
                             }}
-                            className="bg-white/5 hover:bg-rose-500/20 text-[#F6465D] px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center space-x-1 cursor-pointer transition-all active:scale-95 shadow-sm"
+                            className="bg-white/5 hover:bg-rose-500/20 text-[#F6465D] p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] font-extrabold flex items-center space-x-1 cursor-pointer transition-all active:scale-95 shadow-sm"
                           >
-                            <Square className="w-3 h-3" />
-                            <span>Detener</span>
+                            <Square className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
+                            <span className="hidden sm:inline">Detener</span>
                           </button>
                         </div>
                       </div>
@@ -427,7 +455,7 @@ export const BottomActivityPanel = ({
               <div className="overflow-x-auto">
                 <table className="w-full text-left min-w-[700px] whitespace-nowrap">
                   <thead>
-                    <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8">
+                    <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8 sticky top-0 bg-[#08090C] z-10">
                       <th className="pl-3">Activo</th>
                       <th>Tipo</th>
                       <th>Cantidad</th>
@@ -497,7 +525,7 @@ export const BottomActivityPanel = ({
               <div className="overflow-x-auto">
                 <table className="w-full text-left min-w-[650px] whitespace-nowrap">
                   <thead>
-                    <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8">
+                    <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8 sticky top-0 bg-[#08090C] z-10">
                       <th className="pl-3">Malla</th>
                       <th>Orden</th>
                       <th>Precio Límite</th>
@@ -566,7 +594,7 @@ export const BottomActivityPanel = ({
               <div className="overflow-x-auto">
                 <table className="w-full text-left min-w-[720px] whitespace-nowrap">
                   <thead>
-                    <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8">
+                    <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8 sticky top-0 bg-[#08090C] z-10">
                       <th className="pl-3">Hora</th>
                       <th>Activo</th>
                       <th>Lado</th>

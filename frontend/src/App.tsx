@@ -14,7 +14,7 @@ import { AssetsView } from './components/AssetsView';
 import { SettingsView } from './components/SettingsView';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
 import { BottomNavMobile } from './components/BottomNavMobile';
-import { BotDetailModal } from './components/BotDetailModal';
+// BotDetailModal is rendered inside BottomActivityPanel
 import {
   TrendingUp,
   TrendingDown,
@@ -132,11 +132,11 @@ const MainContent: React.FC = () => {
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
         {/* VIEW 1: TERMINAL PRO (Operativa Cuantitativa) */}
         {activeView === 'TERMINAL' && (
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden content-bottom-pad">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             {/* Top Operational Area: Chart + OrderBook + Bot Panel */}
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-hidden">
               {/* Main TradingView Chart (7 cols on desktop) */}
-              <div className="lg:col-span-7 flex flex-col min-h-[340px] lg:min-h-0 border-b lg:border-b-0 lg:border-r border-white/10 overflow-hidden">
+              <div className="lg:col-span-7 flex flex-col min-h-[250px] sm:min-h-[300px] lg:min-h-0 border-b lg:border-b-0 lg:border-r border-white/10 overflow-hidden">
                 <TradingViewChart
                   candles={candles}
                   gridLevels={displayGridLevels}
@@ -147,8 +147,8 @@ const MainContent: React.FC = () => {
                 />
               </div>
 
-              {/* Real-time OrderBook (2 cols on desktop, hidden on smaller screens) */}
-              <div className="hidden xl:block xl:col-span-2 border-r border-white/10 overflow-hidden">
+              {/* Real-time OrderBook (2 cols on desktop, hidden on small screens) */}
+              <div className="hidden lg:block xl:col-span-2 lg:col-span-2 border-r border-white/10 overflow-hidden">
                 <OrderBook
                   asks={orderBook.asks}
                   bids={orderBook.bids}
@@ -158,7 +158,7 @@ const MainContent: React.FC = () => {
               </div>
 
               {/* Bot Configuration Panel (3 cols on desktop) */}
-              <div className="lg:col-span-5 xl:col-span-3 flex flex-col min-h-0 overflow-y-auto bg-[#08090C]">
+              <div className="lg:col-span-3 flex flex-col min-h-0 overflow-y-auto bg-[#08090C]">
                 <TradingBotPanel
                   currentPrice={currentPrice}
                   coinSymbol={coinInfo.symbol}
@@ -252,21 +252,10 @@ const MainContent: React.FC = () => {
         }}
       />
 
-      {/* ─── 5. BOT INSPECTION MODAL ─── */}
-      {selectedBotForInspection && (
-        <BotDetailModal
-          bot={selectedBotForInspection}
-          trades={trades}
-          currentPrice={livePrices[selectedBotForInspection.coin_id] || currentPrice}
-          currencyMode={currencyMode}
-          penRate={penRate}
-          onClose={() => setSelectedBotForInspection(null)}
-          onUpdateBotStatus={handleUpdateBotStatus}
-        />
-      )}
+      {/* BotDetailModal is rendered inside BottomActivityPanel — no duplicate needed here */}
 
       {/* ─── 6. TOAST NOTIFICATIONS HUB ─── */}
-      <div className="fixed bottom-16 sm:bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-3 sm:px-0">
+      <div className="fixed bottom-20 sm:bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-3 sm:px-0">
         {toasts.map((toast) => (
           <div
             key={toast.id}

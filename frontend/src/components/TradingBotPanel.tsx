@@ -229,7 +229,7 @@ export const TradingBotPanel = ({
   };
 
   return (
-    <div className="w-full md:w-84 bg-[#0E1118] flex flex-col h-full min-h-0 text-xs select-none md:border-l border-white/10 overflow-hidden shrink-0">
+    <div className="w-full bg-[#0E1118] flex flex-col h-full min-h-0 text-xs select-none md:border-l border-white/10 overflow-hidden shrink-0">
       {/* Top Main Mode Tabs (4 Modes with Clean SVGs) */}
       <div className="flex border-b border-white/10 bg-[#08090C] shrink-0">
         <button
@@ -486,12 +486,12 @@ export const TradingBotPanel = ({
             </div>
 
             {/* Quick Capital Presets */}
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               {[25, 50, 100, 250, 500].map((cap) => (
                 <button
                   key={cap}
                   onClick={() => handleUpdateGridParams(gridLow, gridHigh, gridCount, cap)}
-                  className={`flex-1 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                  className={`flex-1 min-w-[48px] py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
                     gridCapital === cap
                       ? 'bg-[#F59E0B] text-black shadow-sm'
                       : 'bg-[#08090C] text-slate-400 hover:text-white border border-white/5'

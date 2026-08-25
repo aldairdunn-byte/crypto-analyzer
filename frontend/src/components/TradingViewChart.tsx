@@ -263,7 +263,17 @@ export const TradingViewChart = ({
       </div>
 
       {/* Chart Canvas */}
-      <div ref={chartContainerRef} className="flex-1 w-full min-h-0 relative overflow-hidden" />
+      <div ref={chartContainerRef} className="flex-1 w-full min-h-0 relative overflow-hidden">
+        {/* Loading skeleton shown while waiting for candle data */}
+        {candles.length === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10">
+            <div className="w-full h-full skeleton-shimmer rounded opacity-50" />
+            <div className="absolute text-xs text-slate-500 font-mono font-bold animate-pulse">
+              Cargando datos de mercado...
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
