@@ -5,8 +5,20 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1N
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
+export interface UserProfile {
+  id: string;
+  email?: string;
+  full_name?: string;
+  telegram_chat_id?: number;
+  telegram_link_token?: string;
+  preferred_currency: 'USD' | 'PEN';
+  demo_usdt_balance: number;
+  created_at?: string;
+}
+
 export interface BotRow {
   id: string;
+  user_id?: string;
   name: string;
   coin_id: string;
   strategy: 'GRID' | 'DCA';
@@ -18,6 +30,7 @@ export interface BotRow {
 
 export interface TradeRow {
   id: string;
+  user_id?: string;
   bot_id?: string;
   coin_id: string;
   side: 'BUY' | 'SELL';
@@ -46,6 +59,7 @@ export interface SignalRow {
 
 export interface PortfolioRow {
   id: string;
+  user_id?: string;
   asset: string;
   symbol: string;
   amount: number;

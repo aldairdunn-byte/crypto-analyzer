@@ -8,7 +8,6 @@ import {
   RotateCcw,
   Search,
   ChevronDown,
-  LayoutDashboard,
   Bell,
   Layers,
   Flame,
@@ -25,8 +24,8 @@ interface HeaderTickerBarProps {
   high24h: number;
   low24h: number;
   vol24h?: number;
-  activeView: 'DASHBOARD' | 'TERMINAL' | 'RADAR' | 'ASSETS' | 'ALERTS' | 'SETTINGS';
-  onSelectView: (view: 'DASHBOARD' | 'TERMINAL' | 'RADAR' | 'ASSETS' | 'ALERTS' | 'SETTINGS') => void;
+  activeView: 'TERMINAL' | 'RADAR' | 'ASSETS' | 'SETTINGS';
+  onSelectView: (view: 'TERMINAL' | 'RADAR' | 'ASSETS' | 'SETTINGS') => void;
   isPaperMode: boolean;
   onTogglePaperMode: () => void;
   virtualUsdt: number;
@@ -38,6 +37,9 @@ interface HeaderTickerBarProps {
   onToggleCurrency: () => void;
   unreadNotificationsCount?: number;
   onToggleNotifications?: () => void;
+  userEmail?: string;
+  isGuest?: boolean;
+  onOpenAuth?: () => void;
 }
 
 export const HeaderTickerBar = ({
@@ -61,6 +63,9 @@ export const HeaderTickerBar = ({
   onToggleCurrency,
   unreadNotificationsCount = 0,
   onToggleNotifications,
+  userEmail,
+  isGuest = true,
+  onOpenAuth,
 }: HeaderTickerBarProps) => {
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [isWalletOpen, setIsWalletOpen] = useState<boolean>(false);
@@ -81,11 +86,11 @@ export const HeaderTickerBar = ({
 
   return (
     <header className="h-14 bg-[#08090C] border-b border-white/10 flex items-center justify-between px-4 select-none relative z-40">
-      {/* ─── LEFT: BRAND & 6 MASTER VIEW NAVIGATION ─── */}
+      {/* ─── LEFT: BRAND & 4 MASTER VIEW NAVIGATION ─── */}
       <div className="flex items-center space-x-3">
         {/* Brand */}
         <div
-          onClick={() => onSelectView('DASHBOARD')}
+          onClick={() => onSelectView('TERMINAL')}
           className="flex items-center space-x-2 cursor-pointer group pr-1"
         >
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#F59E0B] to-amber-300 flex items-center justify-center shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform">
@@ -101,14 +106,12 @@ export const HeaderTickerBar = ({
           </div>
         </div>
 
-        {/* 6 View Segmented Tabs (Desktop/Tablet Only - Mobile uses BottomNav) */}
+        {/* 4 Master View Segmented Tabs (Desktop/Tablet Only - Mobile uses BottomNav) */}
         <div className="hidden md:flex items-center bg-[#0E1118] rounded-xl p-0.5 border border-white/10 space-x-0.5 shadow-inner">
           {[
-            { id: 'DASHBOARD', label: 'Dashboard', icon: LayoutDashboard, color: 'text-amber-400' },
             { id: 'TERMINAL', label: 'Terminal', icon: Zap, color: 'text-amber-400' },
             { id: 'RADAR', label: 'Radar', icon: BarChart2, color: 'text-[#0ECB81]' },
             { id: 'ASSETS', label: 'Portafolio', icon: Wallet, color: 'text-blue-400' },
-            { id: 'ALERTS', label: 'Alertas', icon: Bell, color: 'text-purple-400' },
             { id: 'SETTINGS', label: 'Ajustes', icon: Sliders, color: 'text-slate-300' },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -329,6 +332,22 @@ export const HeaderTickerBar = ({
         >
           <span className={`w-2 h-2 rounded-full ${isPaperMode ? 'bg-[#F59E0B]' : 'bg-[#0ECB81]'} animate-pulse`} />
           <span className="hidden md:inline">{isPaperMode ? 'Demo' : 'Live'}</span>
+        </button>
+
+        {/* User Account / Auth Capsule */}
+        <button
+          onClick={onOpenAuth}
+          className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer shadow-sm active:scale-95 ${
+            !isGuest && userEmail
+              ? 'bg-white/5 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10'
+              : 'bg-gradient-to-r from-amber-500/15 to-[#F59E0B]/20 border-[#F59E0B]/40 text-[#F59E0B] hover:border-[#F59E0B]'
+          }`}
+          title={!isGuest && userEmail ? `Conectado como ${userEmail}` : 'Iniciar Sesión / Guardar en Nube'}
+        >
+          <span className={`w-2 h-2 rounded-full shrink-0 ${!isGuest ? 'bg-[#0ECB81]' : 'bg-amber-400'}`} />
+          <span className="hidden sm:inline font-mono truncate max-w-[100px]">
+            {!isGuest && userEmail ? userEmail.split('@')[0] : 'Invitado'}
+          </span>
         </button>
       </div>
     </header>

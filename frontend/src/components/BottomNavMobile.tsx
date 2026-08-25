@@ -1,30 +1,25 @@
 import React from 'react';
 import {
-  LayoutDashboard,
   Zap,
   BarChart2,
   Wallet,
-  Bell,
   Sliders,
 } from 'lucide-react';
 
 interface BottomNavMobileProps {
-  activeView: 'DASHBOARD' | 'TERMINAL' | 'RADAR' | 'ASSETS' | 'ALERTS' | 'SETTINGS';
-  onSelectView: (view: 'DASHBOARD' | 'TERMINAL' | 'RADAR' | 'ASSETS' | 'ALERTS' | 'SETTINGS') => void;
+  activeView: 'TERMINAL' | 'RADAR' | 'ASSETS' | 'SETTINGS';
+  onSelectView: (view: 'TERMINAL' | 'RADAR' | 'ASSETS' | 'SETTINGS') => void;
   unreadNotificationsCount?: number;
 }
 
 export const BottomNavMobile: React.FC<BottomNavMobileProps> = ({
   activeView,
   onSelectView,
-  unreadNotificationsCount = 0,
 }) => {
   const navItems = [
-    { id: 'DASHBOARD' as const, label: 'Inicio', icon: LayoutDashboard },
     { id: 'TERMINAL' as const, label: 'Terminal', icon: Zap },
     { id: 'RADAR' as const, label: 'Radar', icon: BarChart2 },
     { id: 'ASSETS' as const, label: 'Portafolio', icon: Wallet },
-    { id: 'ALERTS' as const, label: 'Alertas', icon: Bell, badge: unreadNotificationsCount },
     { id: 'SETTINGS' as const, label: 'Ajustes', icon: Sliders },
   ];
 
@@ -56,11 +51,6 @@ export const BottomNavMobile: React.FC<BottomNavMobileProps> = ({
                   isActive ? 'scale-110 stroke-[2.5]' : 'stroke-[1.8]'
                 }`}
               />
-              {item.badge && item.badge > 0 ? (
-                <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] px-0.5 bg-[#F6465D] text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-md animate-pulse ring-1 ring-[#08090C]">
-                  {item.badge > 99 ? '99+' : item.badge}
-                </span>
-              ) : null}
             </div>
 
             <span
