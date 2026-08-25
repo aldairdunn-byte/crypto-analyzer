@@ -60,8 +60,7 @@ const MainContent: React.FC = () => {
     activeGridOrders,
     gridPreviewLevels,
     setGridPreviewLevels,
-    selectedBotForInspection,
-    setSelectedBotForInspection,
+    // selectedBotForInspection lives inside BottomActivityPanel now
     toasts,
     removeToast,
     notifications,
