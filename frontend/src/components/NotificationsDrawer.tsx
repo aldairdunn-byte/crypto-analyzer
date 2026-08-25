@@ -9,9 +9,10 @@ import {
   Sparkles,
   TrendingUp,
   AlertTriangle,
-  Zap,
   CheckCircle2,
   Layers,
+  Trash2,
+  Bot,
 } from 'lucide-react';
 
 interface NotificationsDrawerProps {
@@ -20,6 +21,8 @@ interface NotificationsDrawerProps {
   notifications: PlainSpanishNotification[];
   unreadCount: number;
   onMarkAllAsRead: () => void;
+  onDismissNotification: (id: string) => void;
+  onClearAllNotifications: () => void;
   onSelectNotification: (coinId: string, notificationId: string) => void;
 }
 
@@ -29,21 +32,24 @@ export const NotificationsDrawer = ({
   notifications,
   unreadCount,
   onMarkAllAsRead,
+  onDismissNotification,
+  onClearAllNotifications,
   onSelectNotification,
 }: NotificationsDrawerProps) => {
-  const [filter, setFilter] = useState<'ALL' | 'PROFIT' | 'BUY_OPPORTUNITY' | 'DANGER' | 'DISCOUNT'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'PROFIT' | 'BUY_OPPORTUNITY' | 'GRID_SETUP' | 'DANGER'>('ALL');
 
   if (!isOpen) return null;
 
   const filteredList = notifications.filter((n) => {
     if (filter === 'ALL') return true;
+    if (filter === 'GRID_SETUP') return n.category === 'GRID_SETUP' || n.category === 'DISCOUNT';
     return n.category === filter;
   });
 
   const profitCount = notifications.filter((n) => n.category === 'PROFIT').length;
   const buyCount = notifications.filter((n) => n.category === 'BUY_OPPORTUNITY').length;
+  const botCount = notifications.filter((n) => n.category === 'GRID_SETUP' || n.category === 'DISCOUNT').length;
   const dangerCount = notifications.filter((n) => n.category === 'DANGER').length;
-  const discountCount = notifications.filter((n) => n.category === 'DISCOUNT' || n.category === 'GRID_SETUP').length;
 
   return (
     <>
@@ -53,8 +59,8 @@ export const NotificationsDrawer = ({
         className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 transition-opacity animate-in fade-in duration-200"
       />
 
-      {/* Drawer Panel (Responsive 100vw on mobile, 420px on desktop) */}
-      <div className="fixed inset-y-0 right-0 w-full sm:w-[420px] max-w-full bg-[#08090C] border-l border-white/10 z-50 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 select-none">
+      {/* Drawer Panel (Responsive 100vw on mobile, 440px on desktop) */}
+      <div className="fixed inset-y-0 right-0 w-full sm:w-[440px] max-w-full bg-[#08090C] border-l border-white/10 z-50 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 select-none">
         {/* Drawer Header */}
         <div className="h-16 px-4 sm:px-5 border-b border-white/10 bg-[#0E1118] flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
@@ -63,7 +69,7 @@ export const NotificationsDrawer = ({
                 <Bell className="w-4 h-4" />
               </div>
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#F6465D] text-white text-[10px] font-black rounded-full flex items-center justify-center animate-pulse">
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#F6465D] text-white text-[10px] font-black rounded-full flex items-center justify-center animate-pulse shadow-md shadow-rose-500/30">
                   {unreadCount}
                 </span>
               )}
@@ -78,17 +84,28 @@ export const NotificationsDrawer = ({
             </div>
           </div>
 
-          <div className="flex items-center space-x-1.5">
+          <div className="flex items-center space-x-1">
             {unreadCount > 0 && (
               <button
                 onClick={onMarkAllAsRead}
                 title="Marcar todas como leídas"
-                className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
               >
                 <CheckCheck className="w-3.5 h-3.5 text-[#0ECB81]" />
-                <span className="text-[11px]">Leídas</span>
+                <span className="text-[11px] hidden sm:inline">Leídas</span>
               </button>
             )}
+
+            {notifications.length > 0 && (
+              <button
+                onClick={onClearAllNotifications}
+                title="Limpiar todas las notificaciones"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-all cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
@@ -98,14 +115,14 @@ export const NotificationsDrawer = ({
           </div>
         </div>
 
-        {/* Filter Pills (Clean Vector SVG Icons without emojis) */}
+        {/* Filter Pills */}
         <div className="p-2.5 bg-[#08090C] border-b border-white/5 flex items-center space-x-1.5 overflow-x-auto no-scrollbar">
           {[
             { id: 'ALL', label: 'Todas', count: notifications.length, icon: Layers },
             { id: 'PROFIT', label: 'Ganancias', count: profitCount, icon: TrendingUp },
             { id: 'BUY_OPPORTUNITY', label: 'Compras', count: buyCount, icon: CheckCircle2 },
+            { id: 'GRID_SETUP', label: 'Bots', count: botCount, icon: Bot },
             { id: 'DANGER', label: 'Peligro', count: dangerCount, icon: AlertTriangle },
-            { id: 'DISCOUNT', label: 'Ofertas', count: discountCount, icon: Zap },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = filter === tab.id;
@@ -136,39 +153,58 @@ export const NotificationsDrawer = ({
         {/* Notifications Bubble Stream */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {filteredList.length === 0 ? (
-            <div className="text-center py-16 text-slate-500 flex flex-col items-center justify-center gap-2">
-              <Sparkles className="w-8 h-8 text-slate-600" />
-              <p className="text-sm font-medium">No hay notificaciones en esta categoría</p>
+            <div className="text-center py-20 text-slate-500 flex flex-col items-center justify-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-500">
+                <Sparkles className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-white">Bandeja al día</p>
+                <p className="text-xs text-slate-400 mt-1 max-w-[240px] leading-relaxed">
+                  Tus alertas de compras, ventas y ganancias de Grid Bots aparecerán aquí en vivo.
+                </p>
+              </div>
             </div>
           ) : (
             filteredList.map((item) => (
               <div
                 key={item.id}
                 onClick={() => onSelectNotification(item.actionCoinId, item.id)}
-                className={`relative group rounded-2xl p-4 transition-all duration-200 cursor-pointer border hover:-translate-y-0.5 shadow-lg ${
+                className={`relative group rounded-2xl p-4 transition-all duration-200 cursor-pointer border shadow-lg ${
                   item.isRead
                     ? 'bg-[#0E1118]/80 border-white/5 opacity-85 hover:opacity-100 hover:border-white/20'
                     : 'bg-[#0E1118] border-white/15 hover:border-[#F59E0B]/50 ring-1 ring-white/5'
                 }`}
               >
-                {/* Unread Glowing Dot */}
-                {!item.isRead && (
-                  <span className="absolute top-4 right-4 w-2.5 h-2.5 rounded-full bg-[#0ECB81] ring-4 ring-emerald-500/20 animate-pulse" />
-                )}
+                {/* Individual Dismiss Button (X) */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDismissNotification(item.id);
+                  }}
+                  title="Eliminar notificación"
+                  className="absolute top-3.5 right-3 p-1 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-colors cursor-pointer z-10"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
 
                 {/* Top Badge & Time */}
-                <div className="flex items-center justify-between mb-2">
-                  <span
-                    className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border font-mono tracking-wide"
-                    style={{
-                      color: item.badgeColor,
-                      backgroundColor: item.badgeBg,
-                      borderColor: item.badgeBorder,
-                    }}
-                  >
-                    {item.badge}
-                  </span>
-                  <span className="text-[10px] font-mono text-slate-400 mr-4">{item.timeAgo}</span>
+                <div className="flex items-center justify-between mb-2 pr-7">
+                  <div className="flex items-center gap-1.5">
+                    {!item.isRead && (
+                      <span className="w-2 h-2 rounded-full bg-[#0ECB81] animate-pulse" />
+                    )}
+                    <span
+                      className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border font-mono tracking-wide"
+                      style={{
+                        color: item.badgeColor,
+                        backgroundColor: item.badgeBg,
+                        borderColor: item.badgeBorder,
+                      }}
+                    >
+                      {item.badge}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400">{item.timeAgo}</span>
                 </div>
 
                 {/* Coin Icon + Human Headline */}
@@ -183,12 +219,12 @@ export const NotificationsDrawer = ({
                   </div>
                 </div>
 
-                {/* Plain Spanish Message (Zero technical jargon) */}
+                {/* Plain Spanish Message */}
                 <p className="text-xs text-slate-300 leading-relaxed mb-2 font-normal pl-11">
                   {item.plainExplanation}
                 </p>
 
-                {/* Highlight / Goal in Soles & Dólares */}
+                {/* Highlight Text */}
                 <div className="ml-11 mb-3 bg-[#08090C] rounded-xl p-2.5 border border-white/5 text-[11px] font-semibold text-[#F59E0B]">
                   {item.highlightText}
                 </div>

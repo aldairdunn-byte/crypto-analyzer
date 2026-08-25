@@ -105,7 +105,7 @@ export const DashboardView = ({
   // Filtered Notifications Feed
   const filteredEvents = useMemo(() => {
     if (feedFilter === 'ALL') return displayEvents;
-    return displayEvents.filter((ev) => ev.category === feedFilter);
+    return displayEvents.filter((ev: PlainSpanishNotification) => ev.category === feedFilter);
   }, [displayEvents, feedFilter]);
 
   // Global Market Sentiment Calculations
@@ -505,7 +505,7 @@ export const DashboardView = ({
                   No hay alertas en esta categoría en este momento.
                 </div>
               ) : (
-                filteredEvents.slice(0, 6).map((ev) => (
+                filteredEvents.slice(0, 6).map((ev: PlainSpanishNotification) => (
                   <div
                     key={ev.id}
                     onClick={() => onSelectNotification ? onSelectNotification(ev.actionCoinId, ev.id) : onOpenCoinInTerminal(ev.actionCoinId)}

@@ -68,6 +68,8 @@ const MainContent: React.FC = () => {
     notifications,
     unreadNotificationsCount,
     markAllNotificationsAsRead,
+    dismissNotification,
+    clearAllNotifications,
     handleCreateBot,
     handleUpdateBotStatus,
   } = useBotEngine();
@@ -243,6 +245,8 @@ const MainContent: React.FC = () => {
         notifications={notifications}
         unreadCount={unreadNotificationsCount}
         onMarkAllAsRead={markAllNotificationsAsRead}
+        onDismissNotification={dismissNotification}
+        onClearAllNotifications={clearAllNotifications}
         onSelectNotification={(coinId) => {
           handleOpenCoinInTerminal(coinId);
           setIsNotificationsDrawerOpen(false);

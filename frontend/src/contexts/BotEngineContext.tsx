@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { useMarketData } from './MarketDataContext';
 import { usePortfolio } from './PortfolioContext';
@@ -9,7 +9,11 @@ import {
 } from '../lib/marketData';
 import {
   type PlainSpanishNotification,
-  generatePlainSpanishNotifications,
+  formatTimeAgo,
+  createProfitNotification,
+  createBuyOrderNotification,
+  createBotCreatedNotification,
+  getInitialSeedNotifications,
 } from '../lib/notifications';
 import { supabase, type BotRow, type TradeRow, type SignalRow } from '../lib/supabase';
 import {
@@ -40,6 +44,8 @@ interface BotEngineContextType {
   notifications: PlainSpanishNotification[];
   unreadNotificationsCount: number;
   markAllNotificationsAsRead: () => void;
+  dismissNotification: (id: string) => void;
+  clearAllNotifications: () => void;
   handleCreateBot: (botData: {
     name: string;
     coinId: string;
@@ -64,7 +70,6 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [gridPreviewLevels, setGridPreviewLevels] = useState<GridLevelItem[]>([]);
   const [selectedBotForInspection, setSelectedBotForInspection] = useState<BotRow | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
 
   // Memory ref for previous prices per coin to ensure strict Tick-Crossing
   const prevPricesRef = useRef<Record<string, number>>({});
@@ -226,6 +231,21 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 : `Compra completada a ${formatDynamicPrice(order.price, decimals, currencyMode, penRate)} por $${order.allocationUsd.toFixed(2)} USDT. Orden de venta colocada en ${formatDynamicPrice(nextPrice, decimals, currencyMode, penRate)}`,
           });
 
+          // Dispatch In-App Event-Driven Notification
+          if (order.side === 'SELL' && profitUsd > 0) {
+            pushNotification(createProfitNotification(orderCoinId, profitUsd, order.price, penRate));
+          } else if (order.side === 'BUY') {
+            pushNotification(
+              createBuyOrderNotification(
+                orderCoinId,
+                order.price,
+                order.allocationUsd,
+                order.level,
+                prevOrders.filter((o) => (o.coinId || activeCoin) === orderCoinId).length || 6
+              )
+            );
+          }
+
           // Dispatch Telegram Notification
           const closedTradesCount = trades.filter((t) => t.side === 'SELL' && t.status === 'CLOSED').length + 1;
           const currentTotalBotPnl = trades.reduce((sum, t) => sum + (t.pnl_usd || 0), 0) + profitUsd;
@@ -329,6 +349,16 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       message: `Asignados $${botData.capitalUsd.toFixed(2)} USDT con ${botData.config?.num_grids || 8} mallas activas.`,
     });
 
+    // In-App Notification
+    pushNotification(
+      createBotCreatedNotification(
+        botData.name,
+        botData.coinId,
+        botData.capitalUsd,
+        botData.config?.num_grids || 8
+      )
+    );
+
     // Telegram Alert
     sendTelegramGridBotCreated({
       botName: botData.name,
@@ -385,26 +415,65 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     await supabase.from('bots').delete().eq('id', botId);
   };
 
-  // 4. Notifications Feed
-  const rawNotifications = useMemo<PlainSpanishNotification[]>(() => {
-    return generatePlainSpanishNotifications(livePrices);
-  }, [livePrices]);
+  // 4. Real-time Event-Driven Notifications Feed
+  const [notifications, setNotifications] = useState<PlainSpanishNotification[]>(() => {
+    const saved = localStorage.getItem('crypto_analyzer_notifications');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {
+        return getInitialSeedNotifications();
+      }
+    }
+    return getInitialSeedNotifications();
+  });
 
-  const notifications = useMemo(() => {
-    return rawNotifications.map((n) => ({
-      ...n,
-      isRead: readNotificationIds.has(n.id),
-    }));
-  }, [rawNotifications, readNotificationIds]);
+  const pushNotification = useCallback((notif: PlainSpanishNotification) => {
+    setNotifications((prev) => {
+      const updated = [notif, ...prev.filter((item) => item.id !== notif.id)].slice(0, 30);
+      localStorage.setItem('crypto_analyzer_notifications', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  // Update timeAgo every 30 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNotifications((prev) =>
+        prev.map((n) => ({
+          ...n,
+          timeAgo: formatTimeAgo(n.timestamp),
+        }))
+      );
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const unreadNotificationsCount = useMemo(() => {
     return notifications.filter((n) => !n.isRead).length;
   }, [notifications]);
 
-  const markAllNotificationsAsRead = () => {
-    const allIds = new Set(notifications.map((n) => n.id));
-    setReadNotificationIds(allIds);
-  };
+  const markAllNotificationsAsRead = useCallback(() => {
+    setNotifications((prev) => {
+      const updated = prev.map((n) => ({ ...n, isRead: true }));
+      localStorage.setItem('crypto_analyzer_notifications', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const dismissNotification = useCallback((id: string) => {
+    setNotifications((prev) => {
+      const updated = prev.filter((n) => n.id !== id);
+      localStorage.setItem('crypto_analyzer_notifications', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const clearAllNotifications = useCallback(() => {
+    setNotifications([]);
+    localStorage.setItem('crypto_analyzer_notifications', JSON.stringify([]));
+  }, []);
 
   return (
     <BotEngineContext.Provider
@@ -423,6 +492,8 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         notifications,
         unreadNotificationsCount,
         markAllNotificationsAsRead,
+        dismissNotification,
+        clearAllNotifications,
         handleCreateBot,
         handleUpdateBotStatus,
         handleDeleteBot,
