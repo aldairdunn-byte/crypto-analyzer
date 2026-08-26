@@ -195,3 +195,53 @@ def test_persistence_integration_mock():
     assert res_dca["total_buys"] == 2
     assert mock_sb.create_bot.called
     assert mock_sb.update_portfolio.called
+
+
+def test_evaluate_active_grid_bot_tick_buy_and_sell():
+    """Valida la ejecución de compras y ventas de grid en vivo 24/7 con Supabase y Telegram."""
+    from bot_engine import evaluate_active_grid_bot_tick
+
+    mock_sb = mock.MagicMock()
+    mock_sb.is_configured = True
+    mock_sb.get_open_trades.return_value = []
+    
+    mock_notifier = mock.MagicMock()
+    mock_notifier.is_configured = True
+
+    bot = {
+        "id": "bot-live-001",
+        "name": "Live SOL Grid",
+        "coin_id": "solana",
+        "capital_allocated_usd": 100.0,
+        "config": {
+            "price_low": 100.0,
+            "price_high": 150.0,
+            "num_grids": 5,
+            "levels": create_grid_levels(100.0, 150.0, 5, 100.0)
+        }
+    }
+
+    # 1. Precio cae a $100 -> debe disparar BUY
+    tick1 = evaluate_active_grid_bot_tick(bot, current_price=100.0, client=mock_sb, telegram_notifier=mock_notifier)
+    assert len(tick1["actions_executed"]) == 1
+    assert tick1["actions_executed"][0]["action"] == "BUY"
+    assert mock_sb.record_trade.called
+    assert mock_notifier.send_spot_trade_alert.called
+
+    # 2. Precio sube a $105 con posición abierta previa a $100 -> debe disparar SELL (TP)
+    mock_sb.reset_mock()
+    mock_notifier.reset_mock()
+    mock_sb.get_open_trades.return_value = [{
+        "id": "trade-001",
+        "entry_price": 100.0,
+        "units": 0.2,
+        "side": "BUY"
+    }]
+
+    tick2 = evaluate_active_grid_bot_tick(bot, current_price=105.0, client=mock_sb, telegram_notifier=mock_notifier)
+    assert len(tick2["actions_executed"]) >= 1
+    sell_action = [a for a in tick2["actions_executed"] if a["action"] == "SELL"][0]
+    assert sell_action["pnl_usd"] == pytest.approx(1.0, rel=1e-2)  # (105 - 100) * 0.2 = $1.00
+    assert mock_sb.close_trade.called
+    assert mock_notifier.send_spot_trade_alert.called
+

@@ -4,17 +4,26 @@ import { MarketDataProvider, useMarketData } from './contexts/MarketDataContext'
 import { PortfolioProvider, usePortfolio } from './contexts/PortfolioContext';
 import { BotEngineProvider, useBotEngine } from './contexts/BotEngineContext';
 
+import { DashboardView } from './components/DashboardView';
 import { HeaderTickerBar } from './components/HeaderTickerBar';
 import { TradingViewChart } from './components/TradingViewChart';
 import { OrderBook } from './components/OrderBook';
 import { TradingBotPanel } from './components/TradingBotPanel';
 import { BottomActivityPanel } from './components/BottomActivityPanel';
+import { ActiveBotsPanel } from './components/ActiveBotsPanel';
 import { MarketRadarView } from './components/MarketRadarView';
 import { AssetsView } from './components/AssetsView';
 import { SettingsView } from './components/SettingsView';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
-import { BottomNavMobile } from './components/BottomNavMobile';
-// BotDetailModal is rendered inside BottomActivityPanel
+import { BottomNavMobile, type MasterViewType } from './components/BottomNavMobile';
+import { AuthModal } from './components/AuthModal';
+import { type StrategyRecommendation, evaluateStrategyForCoin } from './lib/strategyAdvisor';
+import {
+  Robot,
+  ChartLineUp,
+  Lightning,
+  ClockCounterClockwise,
+} from '@phosphor-icons/react';
 import {
   TrendingUp,
   TrendingDown,
@@ -25,7 +34,7 @@ import {
 
 // ─── ROOT APPLICATION SHELL (CLEAN ARCHITECTURE) ───
 const MainContent: React.FC = () => {
-  const { user, isGuest } = useAuth();
+  const { user, isGuest, openAuthModal } = useAuth();
   const {
     activeCoin,
     setActiveCoin,
@@ -35,6 +44,7 @@ const MainContent: React.FC = () => {
     candles,
     orderBook,
     analysis,
+    allCoinsStats,
     timeframe,
     setTimeframe,
     penRate,
@@ -51,6 +61,9 @@ const MainContent: React.FC = () => {
     isLiveMode,
     setIsLiveMode,
     holdings,
+    totalSpotValue,
+    addOrUpdateHolding,
+    removeHolding,
   } = usePortfolio();
 
   const {
@@ -60,7 +73,6 @@ const MainContent: React.FC = () => {
     activeGridOrders,
     gridPreviewLevels,
     setGridPreviewLevels,
-    // selectedBotForInspection lives inside BottomActivityPanel now
     toasts,
     removeToast,
     notifications,
@@ -70,12 +82,17 @@ const MainContent: React.FC = () => {
     clearAllNotifications,
     handleCreateBot,
     handleUpdateBotStatus,
+    handleStopAllBots,
+    executeSpotTrade,
     resetAllBotEngine,
+    clearTradeHistory,
   } = useBotEngine();
 
-  // Navigation State (4 Master Views)
-  const [activeView, setActiveView] = useState<'TERMINAL' | 'RADAR' | 'ASSETS' | 'SETTINGS'>('TERMINAL');
+  // Navigation State (5 Master Views)
+  const [activeView, setActiveView] = useState<MasterViewType>('DASHBOARD');
+  const [terminalMobileTab, setTerminalMobileTab] = useState<'CREATE_BOT' | 'MY_BOTS' | 'ORDERBOOK' | 'HISTORY'>('CREATE_BOT');
   const [isNotificationsDrawerOpen, setIsNotificationsDrawerOpen] = useState<boolean>(false);
+  const [terminalIntent, setTerminalIntent] = useState<StrategyRecommendation | null>(null);
 
   // Spot execution helper (for manual trading)
   const handleExecuteSpotTrade = async (trade: {
@@ -84,12 +101,24 @@ const MainContent: React.FC = () => {
     price: number;
     amountUsd: number;
   }) => {
-    console.log('Spot trade requested:', trade);
+    await executeSpotTrade(trade);
+  };
+
+  const handleOpenCoinWithStrategy = (intentOrCoinId: StrategyRecommendation | string) => {
+    if (typeof intentOrCoinId === 'string') {
+      const intent = evaluateStrategyForCoin(intentOrCoinId, allCoinsStats[intentOrCoinId]);
+      setActiveCoin(intentOrCoinId);
+      setTerminalIntent(intent);
+    } else if (intentOrCoinId && typeof intentOrCoinId === 'object' && intentOrCoinId.coinId) {
+      setActiveCoin(intentOrCoinId.coinId);
+      setTerminalIntent(intentOrCoinId);
+    }
+    setActiveView('TERMINAL');
+    setTerminalMobileTab('CREATE_BOT');
   };
 
   const handleOpenCoinInTerminal = (coinId: string) => {
-    setActiveCoin(coinId);
-    setActiveView('TERMINAL');
+    handleOpenCoinWithStrategy(coinId);
   };
 
   // Filter grid levels for current active coin
@@ -98,6 +127,13 @@ const MainContent: React.FC = () => {
       ? gridPreviewLevels
       : activeGridOrders.filter((o) => (o.coinId || activeCoin) === activeCoin);
 
+  // Active Coin 24h stats for top ticker capsule
+  const activeCoinStats = allCoinsStats[activeCoin];
+  const activeChange24h = activeCoinStats?.change24h ?? 0.0;
+  const activeHigh24h = activeCoinStats?.high24h ?? currentPrice * 1.03;
+  const activeLow24h = activeCoinStats?.low24h ?? currentPrice * 0.97;
+  const activeVol24h = activeCoinStats?.vol24h ?? 15000000;
+
   return (
     <div className="h-screen w-screen bg-[#08090C] text-[#F8FAFC] flex flex-col font-sans overflow-hidden select-none">
       {/* ─── 1. GLOBAL HEADER / TICKER BAR ─── */}
@@ -105,10 +141,12 @@ const MainContent: React.FC = () => {
         activeCoin={activeCoin}
         onSelectCoin={setActiveCoin}
         currentPrice={currentPrice}
-        change24h={0.0}
-        high24h={currentPrice * 1.03}
-        low24h={currentPrice * 0.97}
-        vol24h={15000000}
+        change24h={activeChange24h}
+        high24h={activeHigh24h}
+        low24h={activeLow24h}
+        vol24h={activeVol24h}
+        allCoinsStats={allCoinsStats}
+        livePrices={livePrices}
         activeView={activeView}
         onSelectView={setActiveView}
         isPaperMode={!isLiveMode}
@@ -117,6 +155,7 @@ const MainContent: React.FC = () => {
         capitalInBots={capitalInBots}
         availableUsdt={availableUsdt}
         onResetBalance={resetAllBotEngine}
+        onStopAllBots={handleStopAllBots}
         currencyMode={currencyMode}
         penRate={penRate}
         onToggleCurrency={toggleCurrency}
@@ -124,30 +163,118 @@ const MainContent: React.FC = () => {
         onToggleNotifications={() => setIsNotificationsDrawerOpen(true)}
         userEmail={user?.email}
         isGuest={isGuest}
-        onOpenAuth={() => setActiveView('SETTINGS')}
+        onOpenAuth={openAuthModal}
       />
 
       {/* ─── 2. MASTER VIEWS ROUTER ─── */}
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-        {/* VIEW 1: TERMINAL PRO (Operativa Cuantitativa) */}
-        {activeView === 'TERMINAL' && (
+        {/* VIEW 1: INICIO / DASHBOARD OVERVIEW */}
+        {activeView === 'DASHBOARD' && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            {/* Top Operational Area: Chart + OrderBook + Bot Panel */}
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-hidden">
-              {/* Main TradingView Chart (7 cols on desktop) */}
-              <div className="lg:col-span-7 flex flex-col min-h-[250px] sm:min-h-[300px] lg:min-h-0 border-b lg:border-b-0 lg:border-r border-white/10 overflow-hidden">
+            <DashboardView
+              virtualUsdt={virtualUsdt}
+              capitalInBots={capitalInBots}
+              availableUsdt={availableUsdt}
+              totalSpotValue={totalSpotValue}
+              pnl24hUsd={trades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0)}
+              pnl24hPct={virtualUsdt > 0 ? (trades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0) / virtualUsdt) * 100 : 0}
+              signals={signals}
+              currencyMode={currencyMode}
+              penRate={penRate}
+              isLiveMode={isLiveMode}
+              onTogglePaperMode={() => setIsLiveMode(!isLiveMode)}
+              onOpenCoinInTerminal={handleOpenCoinInTerminal}
+              onOpenCoinWithStrategy={handleOpenCoinWithStrategy}
+              onNavigateView={setActiveView}
+              onOpenNotifications={() => setIsNotificationsDrawerOpen(true)}
+              allCoinsStats={allCoinsStats}
+            />
+          </div>
+        )}
+
+        {/* VIEW 2: TERMINAL PRO (Operativa Cuantitativa - Preserved Instance) */}
+        <div className={`flex-1 flex-col min-h-0 overflow-hidden ${activeView === 'TERMINAL' ? 'flex' : 'hidden'}`}>
+          {/* Top Operational Area: Responsive Layout (Desktop 3-Column vs Mobile Segmented Switcher) */}
+          <div className="flex-1 flex flex-col lg:grid lg:grid-cols-12 min-h-0 overflow-hidden">
+              {/* 1. Main TradingView Chart (7 cols on desktop, 36vh height on mobile) */}
+              <div className="lg:col-span-7 h-[36vh] sm:h-[40vh] lg:h-full flex flex-col min-h-0 border-b lg:border-b-0 lg:border-r border-white/10 overflow-hidden shrink-0">
                 <TradingViewChart
                   candles={candles}
                   gridLevels={displayGridLevels}
                   coinSymbol={coinInfo.symbol}
+                  coinInfo={coinInfo}
+                  currentPrice={currentPrice}
+                  change24h={allCoinsStats[activeCoin]?.change24h ?? 0}
+                  high24h={allCoinsStats[activeCoin]?.high24h || currentPrice * 1.03}
+                  low24h={allCoinsStats[activeCoin]?.low24h || currentPrice * 0.97}
+                  vol24h={allCoinsStats[activeCoin]?.vol24h}
+                  rsi={analysis?.rsi}
+                  atrPercent={analysis?.atrPercent}
+                  currencyMode={currencyMode}
+                  penRate={penRate}
                   activeInterval={timeframe}
                   onSelectInterval={setTimeframe}
                   onRefresh={refreshMarketData}
                 />
               </div>
 
-              {/* Real-time OrderBook (2 cols on desktop, hidden on small screens) */}
-              <div className="hidden lg:block xl:col-span-2 lg:col-span-2 border-r border-white/10 overflow-hidden">
+              {/* 2. Mobile Sub-View Segmented Selector (Visible only on mobile screens < lg) */}
+              <div className="flex lg:hidden items-center bg-[#08090C] border-b border-white/10 p-1 shrink-0 space-x-1 overflow-x-auto no-scrollbar">
+                <button
+                  onClick={() => setTerminalMobileTab('CREATE_BOT')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap border ${
+                    terminalMobileTab === 'CREATE_BOT'
+                      ? 'bg-amber-500/20 text-[#F59E0B] border-amber-500/30 shadow-xs'
+                      : 'bg-white/[0.02] border-white/5 text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <Robot weight="duotone" className="w-4 h-4 text-amber-400" />
+                  <span>Crear Bot</span>
+                </button>
+                <button
+                  onClick={() => setTerminalMobileTab('MY_BOTS')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap border relative ${
+                    terminalMobileTab === 'MY_BOTS'
+                      ? 'bg-amber-500/20 text-[#F59E0B] border-amber-500/30 shadow-xs'
+                      : 'bg-white/[0.02] border-white/5 text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <Lightning weight="duotone" className="w-4 h-4 text-amber-400" />
+                  <span>Mis Bots ({bots.length})</span>
+                  {bots.filter((b) => b.status === 'ACTIVE').length > 0 && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#0ECB81] animate-pulse" />
+                  )}
+                </button>
+                <button
+                  onClick={() => setTerminalMobileTab('ORDERBOOK')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap border ${
+                    terminalMobileTab === 'ORDERBOOK'
+                      ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30 shadow-xs'
+                      : 'bg-white/[0.02] border-white/5 text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <ChartLineUp weight="duotone" className="w-4 h-4 text-cyan-400" />
+                  <span>Libro & Profundidad</span>
+                </button>
+                <button
+                  onClick={() => setTerminalMobileTab('HISTORY')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap border ${
+                    terminalMobileTab === 'HISTORY'
+                      ? 'bg-purple-500/20 text-purple-400 border-purple-500/30 shadow-xs'
+                      : 'bg-white/[0.02] border-white/5 text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <ClockCounterClockwise weight="duotone" className="w-4 h-4 text-purple-400" />
+                  <span>Historial ({trades.filter((t) => t.status === 'CLOSED').length})</span>
+                </button>
+              </div>
+
+              {/* 3. Real-time OrderBook (2 cols on desktop, switchable tab on mobile) */}
+              <div
+                className={`xl:col-span-2 lg:col-span-2 border-r border-white/10 overflow-hidden flex-1 lg:flex-initial min-h-0 ${
+                  terminalMobileTab === 'ORDERBOOK' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
+                }`}
+              >
                 <OrderBook
                   asks={orderBook.asks}
                   bids={orderBook.bids}
@@ -156,8 +283,12 @@ const MainContent: React.FC = () => {
                 />
               </div>
 
-              {/* Bot Configuration Panel (3 cols on desktop) */}
-              <div className="lg:col-span-3 flex flex-col min-h-0 overflow-y-auto bg-[#08090C]">
+              {/* 4. Bot Configuration Panel (3 cols on desktop, switchable tab on mobile) */}
+              <div
+                className={`lg:col-span-3 flex-1 lg:flex-initial min-h-0 overflow-y-auto bg-[#08090C] ${
+                  terminalMobileTab === 'CREATE_BOT' ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
+                }`}
+              >
                 <TradingBotPanel
                   currentPrice={currentPrice}
                   coinSymbol={coinInfo.symbol}
@@ -166,42 +297,69 @@ const MainContent: React.FC = () => {
                   currencyMode={currencyMode}
                   penRate={penRate}
                   availableUsdt={availableUsdt}
+                  holdingUnits={holdings[activeCoin]?.units || 0}
+                  terminalIntent={terminalIntent}
+                  onClearTerminalIntent={() => setTerminalIntent(null)}
                   onGridPreviewChange={setGridPreviewLevels}
                   onCreateBot={handleCreateBot}
                   onExecuteSpotTrade={handleExecuteSpotTrade}
                 />
               </div>
+
+              {/* 5. Active Bots & History Panel (Full view on mobile when tab is selected) */}
+              <div
+                className={`flex-1 lg:hidden min-h-0 overflow-hidden ${
+                  terminalMobileTab === 'MY_BOTS' || terminalMobileTab === 'HISTORY' ? 'flex flex-col' : 'hidden'
+                }`}
+              >
+                <ActiveBotsPanel
+                  bots={bots}
+                  trades={trades}
+                  gridLevels={displayGridLevels}
+                  currentPrice={currentPrice}
+                  livePrices={livePrices}
+                  currencyMode={currencyMode}
+                  penRate={penRate}
+                  onUpdateBotStatus={handleUpdateBotStatus}
+                  onSelectCoin={handleOpenCoinInTerminal}
+                  onClearTrades={clearTradeHistory}
+                  onCreateBotClick={() => setTerminalMobileTab('CREATE_BOT')}
+                />
+              </div>
             </div>
 
-            {/* Bottom Collapsible Activity Tray */}
-            <BottomActivityPanel
-              bots={bots}
-              trades={trades}
-              gridLevels={displayGridLevels}
-              currentPrice={currentPrice}
-              livePrices={livePrices}
-              currencyMode={currencyMode}
-              penRate={penRate}
-              onUpdateBotStatus={handleUpdateBotStatus}
-              onSelectCoin={handleOpenCoinInTerminal}
-            />
+            {/* Bottom Activity Tray — ONLY on Desktop (Hidden on mobile to avoid clunky drawers) */}
+            <div className="hidden lg:block">
+              <BottomActivityPanel
+                bots={bots}
+                trades={trades}
+                gridLevels={displayGridLevels}
+                currentPrice={currentPrice}
+                livePrices={livePrices}
+                currencyMode={currencyMode}
+                penRate={penRate}
+                onUpdateBotStatus={handleUpdateBotStatus}
+                onSelectCoin={handleOpenCoinInTerminal}
+                onClearTrades={clearTradeHistory}
+              />
+            </div>
           </div>
-        )}
 
-        {/* VIEW 2: RADAR DE MERCADO (Screener Cuantitativo) */}
+        {/* VIEW 3: RADAR DE MERCADO (Screener Cuantitativo) */}
         {activeView === 'RADAR' && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden content-bottom-pad">
             <MarketRadarView
               signals={signals}
               livePrices={livePrices}
+              allCoinsStats={allCoinsStats}
               currencyMode={currencyMode}
               penRate={penRate}
-              onOpenTradeInTerminal={handleOpenCoinInTerminal}
+              onOpenTradeInTerminal={handleOpenCoinWithStrategy}
             />
           </div>
         )}
 
-        {/* VIEW 3: MI PORTAFOLIO (Assets & Desglose Patrimonial) */}
+        {/* VIEW 4: MI PORTAFOLIO (Assets & Desglose Patrimonial) */}
         {activeView === 'ASSETS' && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden content-bottom-pad">
             <AssetsView
@@ -213,15 +371,16 @@ const MainContent: React.FC = () => {
               currencyMode={currencyMode}
               penRate={penRate}
               onSetUsdtCash={setUsdtCash}
-              onAddOrUpdateHolding={(cId, units, avgPrice) => console.log('Holding updated:', cId, units, avgPrice)}
-              onRemoveHolding={(cId) => console.log('Holding removed:', cId)}
+              onAddOrUpdateHolding={addOrUpdateHolding}
+              onRemoveHolding={removeHolding}
               onOpenCoinInTerminal={handleOpenCoinInTerminal}
               onUpdateBotStatus={handleUpdateBotStatus}
+              onExecuteSpotTrade={handleExecuteSpotTrade}
             />
           </div>
         )}
 
-        {/* VIEW 4: AJUSTES & CONECTIVIDAD */}
+        {/* VIEW 5: AJUSTES & CONECTIVIDAD */}
         {activeView === 'SETTINGS' && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden content-bottom-pad">
             <SettingsView onResetDemoBalance={resetAllBotEngine} />
@@ -229,11 +388,10 @@ const MainContent: React.FC = () => {
         )}
       </main>
 
-      {/* ─── 3. MOBILE DOCK NAVIGATION (390x844 VIEWPORT) ─── */}
+      {/* ─── 3. MOBILE DOCK NAVIGATION (5 MASTER VIEWS) ─── */}
       <BottomNavMobile
         activeView={activeView}
         onSelectView={setActiveView}
-        unreadNotificationsCount={unreadNotificationsCount}
       />
 
       {/* ─── 4. NOTIFICATIONS DRAWER (SINGLE CENTRALIZED HUB) ─── */}
@@ -251,7 +409,8 @@ const MainContent: React.FC = () => {
         }}
       />
 
-      {/* BotDetailModal is rendered inside BottomActivityPanel — no duplicate needed here */}
+      {/* ─── 5. AUTHENTICATION & LOGIN MODAL ─── */}
+      <AuthModal />
 
       {/* ─── 6. TOAST NOTIFICATIONS HUB ─── */}
       <div className="fixed bottom-20 sm:bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-3 sm:px-0">

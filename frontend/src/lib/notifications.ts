@@ -184,7 +184,7 @@ export function getInitialSeedNotifications(): PlainSpanishNotification[] {
       badgeBg: 'rgba(14, 203, 129, 0.15)',
       badgeBorder: 'rgba(14, 203, 129, 0.35)',
       headline: 'SISTEMA CUANTITATIVO 2.0 LISTO',
-      plainExplanation: 'WebSocket de Binance conectado con cotizaciones en tiempo real para 6 criptomonedas líderes.',
+      plainExplanation: 'WebSocket de Binance conectado con cotizaciones en tiempo real para 36 criptomonedas líderes.',
       highlightText: 'Tus compras, ventas automáticas y ganancias de Grid Bots aparecerán aquí en vivo.',
       actionText: 'Crear mi Primer Bot',
       actionCoinId: 'solana',

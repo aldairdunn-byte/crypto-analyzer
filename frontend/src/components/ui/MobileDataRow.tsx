@@ -1,8 +1,10 @@
 import React from 'react';
 import { CryptoIcon } from '../CryptoIcon';
+import { SparklineChart } from '../SparklineChart';
 import { ChevronRight } from 'lucide-react';
 
 interface MobileDataRowProps {
+  coinId?: string;
   symbol: string;
   name: string;
   category?: string;
@@ -17,6 +19,7 @@ interface MobileDataRowProps {
 }
 
 export const MobileDataRow: React.FC<MobileDataRowProps> = ({
+  coinId,
   symbol,
   name,
   category,
@@ -25,8 +28,6 @@ export const MobileDataRow: React.FC<MobileDataRowProps> = ({
   change24h,
   badge,
   badgeColor = 'bg-white/5 text-slate-400',
-  sparklinePoints,
-  sparklineColor = '#0ECB81',
   onClick,
 }) => {
   const isPositive = change24h >= 0;
@@ -57,20 +58,9 @@ export const MobileDataRow: React.FC<MobileDataRowProps> = ({
       </div>
 
       {/* Center: Sparkline Mini Chart (visible on sm+) */}
-      {sparklinePoints && (
-        <div className="hidden sm:block shrink-0">
-          <svg className="w-16 h-6 overflow-visible" viewBox="0 0 64 24">
-            <polyline
-              fill="none"
-              stroke={sparklineColor}
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              points={sparklinePoints}
-            />
-          </svg>
-        </div>
-      )}
+      <div className="hidden sm:block shrink-0">
+        <SparklineChart coinId={coinId || symbol.toLowerCase()} change24h={change24h} width={64} height={22} />
+      </div>
 
       {/* Right: Price, Change & Badge */}
       <div className="flex items-center space-x-2 shrink-0">

@@ -1,23 +1,27 @@
 import { useState, useEffect, useCallback } from 'react';
 import { type BotRow, type TradeRow } from '../lib/supabase';
-import { type GridLevelItem, COINS, formatDynamicPrice, resolveBotCoin } from '../lib/marketData';
+import { type GridLevelItem, getDynamicCoinInfo, formatDynamicPrice, formatTradeTime, resolveBotCoin } from '../lib/marketData';
 import { CryptoIcon } from './CryptoIcon';
 import { BotDetailModal } from './BotDetailModal';
+import {
+  Robot as PhosphorRobot,
+  ChartLineUp,
+  Stack as PhosphorStack,
+  ClockCounterClockwise,
+} from '@phosphor-icons/react';
 import {
   Play,
   Pause,
   Square,
   Bot,
   Inbox,
-  Layers,
-  Activity,
-  History,
   ChevronDown,
   ChevronUp,
   Maximize2,
   Minimize2,
   Zap,
   ArrowUpRight,
+  Trash2,
 } from 'lucide-react';
 
 interface BottomActivityPanelProps {
@@ -30,6 +34,7 @@ interface BottomActivityPanelProps {
   penRate?: number;
   onUpdateBotStatus: (botId: string, newStatus: 'ACTIVE' | 'PAUSED' | 'STOPPED') => Promise<void>;
   onSelectCoin?: (coinId: string) => void;
+  onClearTrades?: () => Promise<void>;
 }
 
 export const BottomActivityPanel = ({
@@ -42,6 +47,7 @@ export const BottomActivityPanel = ({
   penRate = 3.75,
   onUpdateBotStatus,
   onSelectCoin,
+  onClearTrades,
 }: BottomActivityPanelProps) => {
   const [activeTab, setActiveTab] = useState<'BOTS' | 'POSITIONS' | 'GRID_ORDERS' | 'TRADES'>(() => {
     return (localStorage.getItem('crypto_analyzer_activity_tab') as any) || 'BOTS';
@@ -53,7 +59,9 @@ export const BottomActivityPanel = ({
   });
 
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
-    return localStorage.getItem('crypto_analyzer_bottom_panel_collapsed') === 'true';
+    const saved = localStorage.getItem('crypto_analyzer_bottom_panel_collapsed');
+    if (saved !== null) return saved === 'true';
+    return typeof window !== 'undefined' ? window.innerWidth < 1024 : false;
   });
 
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -131,10 +139,11 @@ export const BottomActivityPanel = ({
       <div
         onMouseDown={startResizing}
         onTouchStart={startResizingTouch}
+        style={{ touchAction: 'none' }}
         title="Arrastra hacia arriba o abajo para redimensionar el panel"
         className="absolute -top-1.5 left-0 right-0 h-4 cursor-row-resize z-30 group flex items-center justify-center hover:bg-amber-500/20 active:bg-amber-500/30 transition-all touch-none"
       >
-        <div className="w-16 h-1 bg-white/20 group-hover:bg-[#F59E0B] group-active:bg-[#F59E0B] rounded-full transition-all group-hover:w-24 shadow-sm" />
+        <div className="w-16 h-1 bg-white/20 group-hover:bg-[#F59E0B] group-active:bg-[#F59E0B] rounded-full transition-all group-hover:w-24 shadow-sm pointer-events-none" />
       </div>
 
       {/* ─── TAB NAVIGATION HEADER & CONTROLS ─── */}
@@ -142,27 +151,30 @@ export const BottomActivityPanel = ({
         {/* Navigation Tabs — horizontal scrollable on mobile */}
         <div className="flex space-x-1 overflow-x-auto no-scrollbar min-w-0">
           {[
-            { id: 'BOTS', label: 'Bots', labelFull: 'Mis Bots', count: bots.length, icon: Bot },
+            { id: 'BOTS', label: 'Bots', labelFull: 'Mis Bots', count: bots.length, icon: PhosphorRobot, color: 'text-amber-400' },
             {
               id: 'POSITIONS',
               label: 'Posiciones',
               labelFull: 'Posiciones Abiertas',
               count: trades.filter((t) => t.status === 'OPEN').length,
-              icon: Activity,
+              icon: ChartLineUp,
+              color: 'text-emerald-400',
             },
             {
               id: 'GRID_ORDERS',
               label: 'Órdenes',
               labelFull: 'Órdenes del Grid',
               count: gridLevels.length,
-              icon: Layers,
+              icon: PhosphorStack,
+              color: 'text-cyan-400',
             },
             {
               id: 'TRADES',
               label: 'Historial',
               labelFull: 'Historial de Trades',
               count: trades.filter((t) => t.status === 'CLOSED').length,
-              icon: History,
+              icon: ClockCounterClockwise,
+              color: 'text-purple-400',
             },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -174,13 +186,13 @@ export const BottomActivityPanel = ({
                   setActiveTab(tab.id as any);
                   if (isCollapsed) setIsCollapsed(false);
                 }}
-                className={`px-2 sm:px-3 py-1 text-xs font-bold transition-all flex items-center space-x-1 sm:space-x-1.5 cursor-pointer rounded-lg whitespace-nowrap shrink-0 ${
+                className={`px-2.5 sm:px-3.5 py-1 text-xs font-black transition-all flex items-center space-x-1.5 cursor-pointer rounded-lg whitespace-nowrap shrink-0 border ${
                   isActive
-                    ? 'bg-white/10 text-[#F59E0B] shadow-sm font-extrabold'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    ? 'bg-amber-500/20 text-[#F59E0B] border-amber-500/30 shadow-xs'
+                    : 'bg-white/[0.02] border-white/5 text-slate-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <Icon weight="duotone" className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#F59E0B]' : tab.color}`} />
                 <span className="hidden sm:inline">{tab.labelFull}</span>
                 <span className="sm:hidden">{tab.label}</span>
                 <span
@@ -467,7 +479,7 @@ export const BottomActivityPanel = ({
                   </thead>
                   <tbody className="divide-y divide-white/5 font-mono">
                     {openTrades.map((pos) => {
-                      const coinInfo = COINS[pos.coin_id];
+                      const coinInfo = getDynamicCoinInfo(pos.coin_id);
                       const curP = livePrices[pos.coin_id] || currentPrice;
                       const decimals = coinInfo ? coinInfo.decimals : 2;
                       const pnlUsd = (curP - pos.entry_price) * pos.units;
@@ -518,8 +530,28 @@ export const BottomActivityPanel = ({
         {activeTab === 'GRID_ORDERS' && (
           <div>
             {gridLevels.length === 0 ? (
-              <div className="text-center py-10 text-slate-400 font-medium">
-                No hay órdenes de malla pendientes para esta criptomoneda.
+              <div className="text-center py-8 text-slate-400 font-medium space-y-2.5">
+                <div className="text-xs">No hay órdenes de malla pendientes para esta criptomoneda.</div>
+                {bots.filter((b) => b.status === 'ACTIVE').length > 0 && (
+                  <div className="flex items-center justify-center gap-2 flex-wrap text-xs pt-1">
+                    <span className="text-slate-500 font-bold">Ver mallas de tus bots activos:</span>
+                    {bots
+                      .filter((b) => b.status === 'ACTIVE')
+                      .map((b) => {
+                        const coin = resolveBotCoin(b);
+                        return (
+                          <button
+                            key={b.id}
+                            onClick={() => onSelectCoin && onSelectCoin(b.coin_id)}
+                            className="px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-[#F59E0B] font-bold hover:bg-amber-500/25 transition-colors cursor-pointer flex items-center gap-1.5 active:scale-95"
+                          >
+                            <CryptoIcon symbol={coin.symbol} size={14} />
+                            <span>{b.name} ({coin.symbol})</span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -587,9 +619,37 @@ export const BottomActivityPanel = ({
 
         {/* ─── TAB 4: HISTORIAL DE TRADES ─── */}
         {activeTab === 'TRADES' && (
-          <div>
+          <div className="space-y-2">
+            {/* Trades Subheader */}
+            <div className="flex items-center justify-between px-1 pb-1 border-b border-white/[0.06]">
+              <div className="flex items-center space-x-2 text-[11px] font-mono text-slate-400">
+                <span className="font-bold text-white">Historial de Operaciones</span>
+                <span className="bg-white/10 text-slate-300 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                  {trades.length} Ejecutadas
+                </span>
+              </div>
+
+              {trades.length > 0 && onClearTrades && (
+                <button
+                  onClick={onClearTrades}
+                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 text-[10.5px] font-bold transition-all cursor-pointer active:scale-95"
+                  title="Vaciar todo el historial de trades"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Limpiar Historial</span>
+                </button>
+              )}
+            </div>
+
             {trades.length === 0 ? (
-              <div className="text-center py-10 text-slate-400 font-medium">Aún no se registran operaciones ejecutadas.</div>
+              <div className="text-center py-10 space-y-1.5">
+                <p className="text-xs text-slate-400 font-semibold font-sans">
+                  Aún no se registran operaciones ejecutadas en esta cuenta.
+                </p>
+                <p className="text-[11px] text-slate-500 font-mono">
+                  Las órdenes completadas de tus bots y operaciones manuales se listarán aquí en tiempo real.
+                </p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left min-w-[720px] whitespace-nowrap">
@@ -605,21 +665,26 @@ export const BottomActivityPanel = ({
                       <th className="text-right pr-4">PnL Realizado</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/5 font-mono">
+                  <tbody className="divide-y divide-white/5 font-mono text-xs">
                     {trades.map((tr) => {
-                      const coinInfo = COINS[tr.coin_id];
+                      const coinInfo = getDynamicCoinInfo(tr.coin_id);
                       const decimals = coinInfo ? coinInfo.decimals : 2;
                       const isClosed = tr.status === 'CLOSED';
                       const isWin = (tr.pnl_usd ?? 0) >= 0;
 
-                      return (
-                        <tr key={tr.id} className="hover:bg-white/[0.03] transition-colors h-9">
-                          <td className="pl-3 text-slate-400 text-[10px]">
-                            {new Date(tr.created_at).toLocaleTimeString('es-PE')}
-                          </td>
+                        const timeInfo = formatTradeTime(tr.created_at || (tr as any).entry_time);
+                        return (
+                          <tr key={tr.id} className="hover:bg-white/[0.04] transition-colors h-10">
+                            <td className="pl-3 py-1.5 text-slate-300 font-mono text-[11px] font-semibold whitespace-nowrap">
+                              <div className="flex flex-col leading-tight">
+                                <span className="text-white font-mono font-bold text-[11px]">{timeInfo.time}</span>
+                                <span className="text-[9.5px] text-slate-400 font-mono">{timeInfo.date} • {timeInfo.relative}</span>
+                              </div>
+                            </td>
                           <td className="font-bold text-white font-sans flex items-center space-x-1.5 py-2">
                             <CryptoIcon symbol={coinInfo?.symbol || tr.coin_id} size={16} />
-                            <span>{tr.coin_id.toUpperCase()}</span>
+                            <span className="text-white font-extrabold">{coinInfo?.name || tr.coin_id.toUpperCase()}</span>
+                            <span className="text-[10px] font-mono text-slate-400 font-bold">({coinInfo?.symbol || tr.coin_id.toUpperCase()})</span>
                           </td>
                           <td>
                             <span
@@ -632,10 +697,10 @@ export const BottomActivityPanel = ({
                               {tr.side}
                             </span>
                           </td>
-                          <td className="text-white tabular-nums">
+                          <td className="text-white tabular-nums font-bold">
                             {formatDynamicPrice(tr.entry_price, decimals, currencyMode, penRate)}
                           </td>
-                          <td className="text-white tabular-nums">
+                          <td className="text-slate-200 tabular-nums">
                             {tr.exit_price ? formatDynamicPrice(tr.exit_price, decimals, currencyMode, penRate) : '-'}
                           </td>
                           <td className="text-slate-300 tabular-nums">
@@ -652,7 +717,7 @@ export const BottomActivityPanel = ({
                             }`}
                           >
                             {isClosed ? (
-                              <span className={`px-2 py-0.5 rounded-lg ${isWin ? 'bg-emerald-500/10' : 'bg-rose-500/10'}`}>
+                              <span className={`px-2 py-0.5 rounded-lg font-black ${isWin ? 'bg-emerald-500/15 text-[#0ECB81]' : 'bg-rose-500/15 text-[#F6465D]'}`}>
                                 {isWin ? '+' : ''}
                                 {formatDynamicPrice(tr.pnl_usd ?? 0, 2, currencyMode, penRate)}
                               </span>

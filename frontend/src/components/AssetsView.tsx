@@ -2,6 +2,12 @@ import { useState, useMemo } from 'react';
 import { COINS, formatDynamicPrice, resolveBotCoin } from '../lib/marketData';
 import { type BotRow, type TradeRow } from '../lib/supabase';
 import { CryptoIcon } from './CryptoIcon';
+import { PortfolioDonutChart, type PortfolioSegment } from './ui/PortfolioDonutChart';
+import {
+  SquaresFour,
+  Robot,
+  Coins as PhosphorCoins,
+} from '@phosphor-icons/react';
 import {
   Wallet,
   ShieldCheck,
@@ -13,10 +19,10 @@ import {
   Edit3,
   PieChart,
   ArrowUpRight,
+  ArrowDownRight,
   CheckCircle2,
   X,
   Search,
-  Layers,
   Zap,
   Coins,
   Bot,
@@ -44,6 +50,7 @@ interface AssetsViewProps {
   onRemoveHolding: (coinId: string) => void;
   onOpenCoinInTerminal: (coinId: string) => void;
   onUpdateBotStatus?: (botId: string, newStatus: 'ACTIVE' | 'PAUSED' | 'STOPPED') => Promise<void>;
+  onExecuteSpotTrade?: (trade: { coinId: string; side: 'BUY' | 'SELL'; price: number; amountUsd: number }) => Promise<void>;
 }
 
 const COIN_COLORS: Record<string, string> = {
@@ -79,6 +86,7 @@ export const AssetsView = ({
   onRemoveHolding,
   onOpenCoinInTerminal,
   onUpdateBotStatus,
+  onExecuteSpotTrade,
 }: AssetsViewProps) => {
   // Navigation & View Mode inside Assets
   const [activeTab, setActiveTab] = useState<'ALL' | 'BOTS' | 'SPOT' | 'FILLS'>('ALL');
@@ -87,6 +95,9 @@ export const AssetsView = ({
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState<boolean>(false);
+  const [sellModalItem, setSellModalItem] = useState<any | null>(null);
+  const [sellPercentage, setSellPercentage] = useState<number>(100);
+  const [isSelling, setIsSelling] = useState<boolean>(false);
 
   // Form states for Add/Edit Modal
   const [selectedCoinId, setSelectedCoinId] = useState<string>('solana');
@@ -118,10 +129,10 @@ export const AssetsView = ({
         const closedTrades = botTrades.filter((t) => t.status === 'CLOSED');
         const profitRealized = closedTrades.length > 0
           ? closedTrades.reduce((sum, t) => sum + (t.pnl_usd || 0), 0)
-          : capitalAllocated * 0.025; // 2.50% estimado inicial
+          : 0; // 0.00 hasta que se cierren trades reales
 
         const change24h = ((currentPrice - coin.basePrice) / (coin.basePrice || 1)) * 100;
-        const totalValUsd = capitalAllocated + profitRealized;
+        const totalValUsd = capitalAllocated;
         const roiPct = capitalAllocated > 0 ? (profitRealized / capitalAllocated) * 100 : 0;
 
         return {
@@ -140,7 +151,7 @@ export const AssetsView = ({
           status: b.status,
           strategy: b.strategy,
           numGrids: config.num_grids || 16,
-          tradesCount: closedTrades.length > 0 ? closedTrades.length : 16,
+          tradesCount: closedTrades.length,
         };
       });
   }, [bots, trades, livePrices]);
@@ -163,8 +174,9 @@ export const AssetsView = ({
         };
         const currentPrice = livePrices[cId] ?? coin.basePrice;
         const totalValUsd = h.units * currentPrice;
-        const pnlUsd = totalValUsd - h.totalInvestedUsd;
-        const pnlPct = h.totalInvestedUsd > 0 ? (pnlUsd / h.totalInvestedUsd) * 100 : 0;
+        const investedUsd = h.units * (h.avgEntryPrice || coin.basePrice);
+        const pnlUsd = totalValUsd - investedUsd;
+        const pnlPct = investedUsd > 0 ? (pnlUsd / investedUsd) * 100 : 0;
         const change24h = ((currentPrice - coin.basePrice) / (coin.basePrice || 1)) * 100;
 
         list.push({
@@ -174,10 +186,10 @@ export const AssetsView = ({
           symbol: coin.symbol,
           category: coin.category,
           units: h.units,
-          avgEntryPrice: h.avgEntryPrice,
+          avgEntryPrice: h.avgEntryPrice || coin.basePrice,
           currentPrice,
           totalValUsd,
-          investedUsd: h.totalInvestedUsd,
+          investedUsd,
           pnlUsd,
           pnlPct,
           change24h,
@@ -190,7 +202,7 @@ export const AssetsView = ({
   }, [holdings, livePrices]);
 
   // ─── 3. TOTALES PATRIMONIALES EXACTOS (SIN DUPLICACIONES) ───
-  const totalBotsCapitalUsd = consolidatedBots.reduce((sum, b) => sum + b.totalValUsd, 0);
+  const totalBotsCapitalUsd = consolidatedBots.reduce((sum, b) => sum + b.capitalAllocated, 0);
   const totalBotsProfitUsd = consolidatedBots.reduce((sum, b) => sum + b.profitRealized, 0);
   const totalSpotValueUsd = consolidatedSpotHoldings.reduce((sum, s) => sum + s.totalValUsd, 0);
   const totalSpotPnlUsd = consolidatedSpotHoldings.reduce((sum, s) => sum + s.pnlUsd, 0);
@@ -199,17 +211,15 @@ export const AssetsView = ({
   const totalPortfolioValueUsd = usdtCash + totalBotsCapitalUsd + totalSpotValueUsd;
   const totalPortfolioValuePen = totalPortfolioValueUsd * penRate;
 
-  // 24H PnL
-  const pnl24hUsd =
-    consolidatedBots.reduce((sum, b) => sum + b.totalValUsd * (b.change24h / 100), 0) +
-    consolidatedSpotHoldings.reduce((sum, s) => sum + s.totalValUsd * (s.change24h / 100), 0);
-  const pnl24hPct = totalPortfolioValueUsd > 0 ? (pnl24hUsd / totalPortfolioValueUsd) * 100 : 0;
-
   // Realized profit total from closed trades
   const totalClosedTradesProfit = trades
     .filter((t) => t.status === 'CLOSED' && t.pnl_usd)
     .reduce((sum, t) => sum + (t.pnl_usd || 0), 0);
   const totalRealizedProfitUsd = Math.max(totalBotsProfitUsd, totalClosedTradesProfit);
+
+  // 24H PnL: Realized Bot Profit + Spot Floating PnL
+  const pnl24hUsd = totalRealizedProfitUsd + totalSpotPnlUsd;
+  const pnl24hPct = totalPortfolioValueUsd > 0 ? (pnl24hUsd / Math.max(1, totalPortfolioValueUsd - pnl24hUsd)) * 100 : 0;
 
   // Sector Percentages
   const stablePct = totalPortfolioValueUsd > 0 ? (usdtCash / totalPortfolioValueUsd) * 100 : 100;
@@ -217,8 +227,8 @@ export const AssetsView = ({
   const spotPct = totalPortfolioValueUsd > 0 ? (totalSpotValueUsd / totalPortfolioValueUsd) * 100 : 0;
 
   // ─── 4. SEGMENTOS CONSOLIDADOS PARA LA BARRA GRÁFICA (MÁXIMO 8 CHIPS LIMPIOS) ───
-  const chartSegments = useMemo(() => {
-    const segments = [];
+  const chartSegments = useMemo<PortfolioSegment[]>(() => {
+    const segments: PortfolioSegment[] = [];
 
     // Segment 1: USDT Cash
     segments.push({
@@ -332,6 +342,43 @@ export const AssetsView = ({
       type: 'SUCCESS',
     });
     setTimeout(() => setFeedbackMessage(null), 3500);
+  };
+
+  const handleConfirmSell = async () => {
+    if (!sellModalItem) return;
+    setIsSelling(true);
+    try {
+      const unitsToSell = (sellModalItem.units * sellPercentage) / 100;
+      const proceeds = unitsToSell * sellModalItem.currentPrice;
+
+      if (onExecuteSpotTrade) {
+        await onExecuteSpotTrade({
+          coinId: sellModalItem.coin.id,
+          side: 'SELL',
+          price: sellModalItem.currentPrice,
+          amountUsd: proceeds,
+        });
+      } else {
+        const remainingUnits = sellModalItem.units - unitsToSell;
+        if (remainingUnits <= 0.000001) {
+          onRemoveHolding(sellModalItem.coin.id);
+        } else {
+          onAddOrUpdateHolding(sellModalItem.coin.id, remainingUnits, sellModalItem.avgEntryPrice);
+        }
+        onSetUsdtCash(usdtCash + proceeds);
+      }
+
+      setFeedbackMessage({
+        text: `¡Vendidos ${unitsToSell.toFixed(sellModalItem.coin.decimals || 2)} ${sellModalItem.symbol} por $${proceeds.toFixed(2)} USDT!`,
+        type: 'SUCCESS',
+      });
+      setSellModalItem(null);
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    } catch (err: any) {
+      alert('Error al ejecutar venta spot: ' + err.message);
+    } finally {
+      setIsSelling(false);
+    }
   };
 
   return (
@@ -520,9 +567,9 @@ export const AssetsView = ({
         </div>
       </div>
 
-      {/* ─── 3. DISTRIBUCIÓN GRÁFICA LIMPIA & CONSOLIDADA (MÁXIMO 8 CHIPS) ─── */}
-      <div className="glass-card rounded-2xl p-4 sm:p-5 shadow-xl space-y-3.5 border border-white/10">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      {/* ─── 3. DISTRIBUCIÓN GRÁFICA INTERACTIVA DEL PORTAFOLIO (DONUT CHART) ─── */}
+      <div className="glass-card rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 border border-white/10">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-white/5">
           <div className="flex items-center gap-2">
             <PieChart className="w-4 h-4 text-[#F59E0B]" />
             <h2 className="text-xs font-black text-white tracking-tight uppercase">
@@ -539,48 +586,13 @@ export const AssetsView = ({
           </div>
         </div>
 
-        {/* Multi-Segment Visual Allocation Bar */}
-        <div className="w-full h-3 bg-[#08090C] rounded-full overflow-hidden flex border border-white/10 p-0.5 gap-0.5">
-          {chartSegments.map((seg) => (
-            <div
-              key={seg.id}
-              className="h-full rounded-full transition-all duration-300 relative group cursor-pointer"
-              style={{
-                width: `${Math.max(1, seg.pct)}%`,
-                backgroundColor: seg.color,
-              }}
-              title={`${seg.label}: $${seg.valUsd.toFixed(2)} (${seg.pct.toFixed(1)}%)`}
-            />
-          ))}
-        </div>
-
-        {/* Clean Legend Chips (Consolidados) */}
-        <div className="flex flex-wrap gap-2 pt-0.5">
-          {chartSegments.map((seg) => (
-            <div
-              key={seg.id}
-              className={`flex items-center space-x-1.5 bg-[#08090C] px-2.5 py-1 rounded-lg border text-[11px] transition-colors ${
-                seg.type === 'BOT'
-                  ? 'border-amber-500/30'
-                  : seg.type === 'CASH'
-                  ? 'border-emerald-500/20'
-                  : 'border-white/10'
-              }`}
-            >
-              <CryptoIcon symbol={seg.symbol} size={14} />
-              <span className="font-bold text-white">{seg.symbol}:</span>
-              <span className="text-slate-200 font-mono font-bold tabular-nums">
-                ${seg.valUsd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </span>
-              {seg.type === 'BOT' && (
-                <span className="text-[9px] bg-amber-500/15 text-[#F59E0B] px-1 py-0.2 rounded font-mono font-bold">
-                  Bot
-                </span>
-              )}
-              <span className="text-slate-400 font-mono text-[10px]">({seg.pct.toFixed(1)}%)</span>
-            </div>
-          ))}
-        </div>
+        {/* Interactive SVG Donut Chart with Hover and Detailed Legend */}
+        <PortfolioDonutChart
+          segments={chartSegments}
+          totalUsd={totalPortfolioValueUsd}
+          currencyMode={currencyMode}
+          penRate={penRate}
+        />
       </div>
 
       {/* ─── 4. TABLA CONSOLIDADA DE ACTIVOS REALES (PESTAÑAS DE VISTA) ─── */}
@@ -588,40 +600,40 @@ export const AssetsView = ({
         {/* Table Navigation Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-2 border-b border-white/5">
           {/* Navigation Tabs */}
-          <div className="flex space-x-1.5 overflow-x-auto p-1 bg-[#08090C] rounded-xl border border-white/5">
+          <div className="flex space-x-1.5 overflow-x-auto p-1 bg-[#08090C] rounded-xl border border-white/10">
             <button
               onClick={() => setActiveTab('ALL')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                 activeTab === 'ALL'
-                  ? 'bg-white/10 text-[#F59E0B] font-extrabold shadow-sm'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-amber-500/20 text-[#F59E0B] font-extrabold shadow-sm border border-amber-500/30'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              <Layers className="w-3.5 h-3.5" />
+              <SquaresFour weight="duotone" className="w-4 h-4 text-amber-400" />
               <span>Vista Consolidada ({consolidatedBots.length + consolidatedSpotHoldings.length + 1})</span>
             </button>
 
             <button
               onClick={() => setActiveTab('BOTS')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                 activeTab === 'BOTS'
                   ? 'bg-amber-500/20 text-[#F59E0B] font-extrabold shadow-sm border border-amber-500/30'
-                  : 'text-slate-400 hover:text-white'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              <Bot className="w-3.5 h-3.5 text-[#F59E0B]" />
+              <Robot weight="duotone" className="w-4 h-4 text-amber-400" />
               <span>Asistentes Grid Bots ({consolidatedBots.length})</span>
             </button>
 
             <button
               onClick={() => setActiveTab('SPOT')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                 activeTab === 'SPOT'
                   ? 'bg-blue-500/20 text-blue-400 font-extrabold shadow-sm border border-blue-500/30'
-                  : 'text-slate-400 hover:text-white'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              <Coins className="w-3.5 h-3.5 text-blue-400" />
+              <PhosphorCoins weight="duotone" className="w-4 h-4 text-blue-400" />
               <span>Billetera Spot & Efectivo ({consolidatedSpotHoldings.length + 1})</span>
             </button>
           </div>
@@ -1048,6 +1060,16 @@ export const AssetsView = ({
                         </span>
                         <div className="flex items-center space-x-1.5">
                           <button
+                            onClick={() => {
+                              setSellModalItem(item);
+                              setSellPercentage(100);
+                            }}
+                            className="px-2.5 py-1 bg-rose-500/15 hover:bg-rose-500 text-rose-400 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-rose-500/30 active:scale-95"
+                          >
+                            <ArrowDownRight className="w-3.5 h-3.5" />
+                            <span>Vender</span>
+                          </button>
+                          <button
                             onClick={() => onOpenCoinInTerminal(item.coin.id)}
                             className="px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-black rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-blue-500/20"
                           >
@@ -1245,7 +1267,18 @@ export const AssetsView = ({
                             </div>
                           </td>
                           <td className="text-right pr-3">
-                            <div className="flex items-center justify-end space-x-1">
+                            <div className="flex items-center justify-end space-x-1.5">
+                              <button
+                                onClick={() => {
+                                  setSellModalItem(item);
+                                  setSellPercentage(100);
+                                }}
+                                title="Vender / Liquidar Spot"
+                                className="px-2.5 py-1 bg-rose-500/15 hover:bg-rose-500 text-rose-400 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-rose-500/30 active:scale-95"
+                              >
+                                <ArrowDownRight className="w-3.5 h-3.5" />
+                                <span>Vender</span>
+                              </button>
                               <button
                                 onClick={() => onOpenCoinInTerminal(item.coin.id)}
                                 title="Operar en Terminal Pro"
@@ -1489,6 +1522,124 @@ export const AssetsView = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 7. MODAL: VENTA RÁPIDA SPOT (1-CLIC) ─── */}
+      {sellModalItem && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn select-none">
+          <div className="fixed inset-0 -z-10" onClick={() => !isSelling && setSellModalItem(null)} />
+
+          <div className="bg-[#0E1118] border border-white/15 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 relative">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#F6465D] to-transparent opacity-90" />
+
+            <div className="flex justify-between items-center pb-3 border-b border-white/10">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/25 flex items-center justify-center">
+                  <CryptoIcon symbol={sellModalItem.symbol} size={22} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white tracking-tight">Venta Rápida Spot</h3>
+                  <div className="text-[10px] text-slate-400 font-mono">Liquidar Posición de {sellModalItem.name}</div>
+                </div>
+              </div>
+              <button
+                onClick={() => !isSelling && setSellModalItem(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 cursor-pointer transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Position Summary Card */}
+            <div className="bg-[#08090C] rounded-xl p-3.5 border border-white/5 space-y-2 text-xs font-mono">
+              <div className="flex justify-between items-center text-slate-400">
+                <span>Tenencia Disponible:</span>
+                <span className="text-white font-bold tabular-nums">
+                  {sellModalItem.units.toFixed(sellModalItem.coin.decimals || 2)} {sellModalItem.symbol}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-slate-400">
+                <span>Precio Promedio Entrada:</span>
+                <span className="text-slate-300 tabular-nums">
+                  ${sellModalItem.avgEntryPrice.toFixed(sellModalItem.coin.decimals || 2)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-slate-400">
+                <span>Precio Spot Actual (Binance):</span>
+                <span className="text-white font-bold tabular-nums">
+                  ${sellModalItem.currentPrice.toFixed(sellModalItem.coin.decimals || 2)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center pt-1.5 border-t border-white/5">
+                <span className="text-slate-400">PnL Flotante Acumulado:</span>
+                <span className={`font-black tabular-nums ${sellModalItem.pnlUsd >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                  {sellModalItem.pnlUsd >= 0 ? '+' : ''}${sellModalItem.pnlUsd.toFixed(2)} USDT ({sellModalItem.pnlUsd >= 0 ? '+' : ''}{sellModalItem.pnlPct.toFixed(2)}%)
+                </span>
+              </div>
+            </div>
+
+            {/* Percentage Selector */}
+            <div className="space-y-2">
+              <label className="text-slate-300 font-bold block text-xs">Seleccionar Porcentaje a Vender</label>
+              <div className="grid grid-cols-4 gap-2">
+                {[25, 50, 75, 100].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => setSellPercentage(pct)}
+                    className={`py-2 rounded-xl font-mono font-bold transition-all cursor-pointer text-xs ${
+                      sellPercentage === pct
+                        ? 'bg-[#F6465D] text-white shadow-md font-black'
+                        : 'bg-[#08090C] text-slate-300 hover:text-white border border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    {pct === 100 ? '100% (Todo)' : `${pct}%`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Execution Details Calculation */}
+            <div className="bg-[#08090C] rounded-xl p-3.5 border border-rose-500/20 bg-rose-500/[0.02] space-y-2 text-xs font-mono">
+              <div className="flex justify-between text-slate-400">
+                <span>Unidades a Vender:</span>
+                <span className="text-white font-bold tabular-nums">
+                  {((sellModalItem.units * sellPercentage) / 100).toFixed(sellModalItem.coin.decimals || 2)} {sellModalItem.symbol}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-300 font-sans">
+                <span>Efectivo a Recibir:</span>
+                <span className="text-[#0ECB81] font-mono font-black text-sm tabular-nums">
+                  +${(((sellModalItem.units * sellPercentage) / 100) * sellModalItem.currentPrice).toFixed(2)} USDT
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-500 text-right font-mono">
+                ~S/ {((((sellModalItem.units * sellPercentage) / 100) * sellModalItem.currentPrice) * penRate).toFixed(2)} PEN
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end space-x-2 pt-1">
+              <button
+                type="button"
+                disabled={isSelling}
+                onClick={() => setSellModalItem(null)}
+                className="bg-white/5 hover:bg-white/10 text-slate-300 font-bold px-4 py-2.5 rounded-xl cursor-pointer transition-all text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isSelling}
+                onClick={handleConfirmSell}
+                className="bg-[#F6465D] hover:bg-rose-600 text-white font-black px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-lg shadow-rose-500/20 active:scale-95 text-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <ArrowDownRight className="w-4 h-4" />
+                <span>{isSelling ? 'Ejecutando Venta...' : 'Confirmar Venta Spot'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

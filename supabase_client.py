@@ -228,6 +228,30 @@ class SupabaseClient:
 
         return self._execute_with_retry("close_trade", _op)
 
+    def get_open_trades(self, bot_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Obtiene las operaciones abiertas (status='OPEN')."""
+        def _op():
+            endpoint = f"{self.url}/rest/v1/bot_trades?status=eq.OPEN&select=*"
+            if bot_id:
+                endpoint += f"&bot_id=eq.{bot_id}"
+            resp = requests.get(endpoint, headers=self._get_headers(), timeout=self.timeout)
+            resp.raise_for_status()
+            return resp.json() or []
+
+        return self._execute_with_retry("get_open_trades", _op)
+
+    def get_bot_trades(self, bot_id: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """Obtiene el historial de operaciones de bots."""
+        def _op():
+            endpoint = f"{self.url}/rest/v1/bot_trades?select=*&order=entry_time.desc&limit={limit}"
+            if bot_id:
+                endpoint += f"&bot_id=eq.{bot_id}"
+            resp = requests.get(endpoint, headers=self._get_headers(), timeout=self.timeout)
+            resp.raise_for_status()
+            return resp.json() or []
+
+        return self._execute_with_retry("get_bot_trades", _op)
+
     # =========================================================================
     # 3. GESTIÓN DE SEÑALES (signals)
     # =========================================================================

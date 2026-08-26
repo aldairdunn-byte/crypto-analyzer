@@ -1,0 +1,22 @@
+{
+  "short_name": "CryptoAnalyzer",
+  "name": "Crypto Analyzer Pro — Terminal Cuantitativo 2.0",
+  "icons": [
+    {
+      "src": "https://assets.coingecko.com/coins/images/825/large/bnb-icon2_2x.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://assets.coingecko.com/coins/images/825/large/bnb-icon2_2x.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#08090C",
+  "theme_color": "#08090C",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "description": "Terminal de Trading Cuantitativo, Señales en Vivo y Grid Bots con persistencia en Supabase."
+}

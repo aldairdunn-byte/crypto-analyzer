@@ -8,8 +8,13 @@ interface AuthContextType {
   profile: UserProfile | null;
   isGuest: boolean;
   isLoading: boolean;
+  isAuthModalOpen: boolean;
+  setIsAuthModalOpen: (open: boolean) => void;
+  openAuthModal: () => void;
+  closeAuthModal: () => void;
   signInWithEmail: (email: string, password?: string) => Promise<{ error: Error | null }>;
   signUpWithEmail: (email: string, password?: string) => Promise<{ error: Error | null }>;
+  signInWithGoogle: () => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   switchToGuestMode: () => void;
   updatePreferredCurrency: (currency: 'USD' | 'PEN') => Promise<void>;
@@ -26,6 +31,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return localStorage.getItem('crypto_auth_mode') !== 'authenticated';
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+
+  const openAuthModal = () => setIsAuthModalOpen(true);
+  const closeAuthModal = () => setIsAuthModalOpen(false);
 
   // Fetch or create user profile
   const fetchProfile = useCallback(async (userId: string, email?: string) => {
@@ -37,12 +46,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
 
       if (error && error.code === 'PGRST116') {
-        // Profile not found -> create one
+        // Profile not found -> create one with $1000 default demo balance
         const newProfile: UserProfile = {
           id: userId,
           email: email || '',
           preferred_currency: (localStorage.getItem('currencyMode') as 'USD' | 'PEN') || 'USD',
-          demo_usdt_balance: Number(localStorage.getItem('usdtCash') || '1000'),
+          demo_usdt_balance: 1000.0,
         };
         await supabase.from('user_profiles').insert(newProfile);
         setProfile(newProfile);
@@ -96,6 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password,
       });
       if (error) throw error;
+      setIsAuthModalOpen(false);
       return { error: null };
     } catch (err: any) {
       return { error: err };
@@ -107,6 +117,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { error } = await supabase.auth.signUp({
         email,
         password,
+      });
+      if (error) throw error;
+      setIsAuthModalOpen(false);
+      return { error: null };
+    } catch (err: any) {
+      return { error: err };
+    }
+  };
+
+  const signInWithGoogle = async (): Promise<{ error: Error | null }> => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        },
       });
       if (error) throw error;
       return { error: null };
@@ -127,6 +153,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const switchToGuestMode = () => {
     setIsGuest(true);
     localStorage.setItem('crypto_auth_mode', 'guest');
+    setIsAuthModalOpen(false);
   };
 
   const updatePreferredCurrency = async (currency: 'USD' | 'PEN') => {
@@ -153,8 +180,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profile,
         isGuest,
         isLoading,
+        isAuthModalOpen,
+        setIsAuthModalOpen,
+        openAuthModal,
+        closeAuthModal,
         signInWithEmail,
         signUpWithEmail,
+        signInWithGoogle,
         signOut,
         switchToGuestMode,
         updatePreferredCurrency,

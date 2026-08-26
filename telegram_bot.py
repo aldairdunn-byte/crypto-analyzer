@@ -334,6 +334,53 @@ class TelegramNotifier:
 
         return self._send_message("\n".join(lines), reply_markup=reply_markup)
 
+    def send_spot_trade_alert(
+        self,
+        coin_id: str,
+        side: str,
+        price: float,
+        amount_usd: float,
+        units: float,
+        pnl_usd: Optional[float] = None,
+        pnl_pct: Optional[float] = None
+    ) -> bool:
+        """
+        Envía notificación de orden Spot / Grid ejecutada en vivo por el motor 24/7.
+        """
+        timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        side_upper = side.upper()
+        emoji = "🟢" if side_upper == "BUY" else "🔴"
+        action_name = "COMPRA GRID SPOT" if side_upper == "BUY" else "VENTA GRID SPOT (TP)"
+
+        lines = [
+            "━━━━━━━━━━━━━━━━━━━━━━",
+            f"<b>{emoji} {action_name} — {coin_id.upper()}</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━",
+            f"📌 <b>Operación:</b> {side_upper}",
+            f"💰 <b>Precio:</b> ${price:,.4f}",
+            f"🔢 <b>Unidades:</b> {units:.6f} {coin_id.upper()[:4]}",
+            f"💵 <b>Monto Total:</b> ${amount_usd:,.2f} USDT",
+        ]
+
+        if pnl_usd is not None and side_upper == "SELL":
+            pnl_sign = "+" if pnl_usd >= 0 else ""
+            lines.append(f"📈 <b>Ganancia Neta (PnL):</b> <code>{pnl_sign}${pnl_usd:,.2f} ({pnl_sign}{pnl_pct or 0.0:,.2f}%)</code>")
+
+        lines.extend([
+            "━━━━━━━━━━━━━━━━━━━━━━",
+            f"<i>⏱️ {timestamp_utc} | Crypto Analyzer Pro 24/7</i>"
+        ])
+
+        reply_markup = {
+            "inline_keyboard": [
+                [
+                    {"text": "📈 Ver Terminal", "url": self.app_url}
+                ]
+            ]
+        }
+
+        return self._send_message("\n".join(lines), reply_markup=reply_markup)
+
     def send_portfolio_summary(
         self,
         portfolio_list: List[Dict[str, Any]],
@@ -616,7 +663,67 @@ if __name__ == "__main__":
     notifier = get_telegram_notifier()
     print(f"✅ Bot de Telegram conectado: {notifier.is_configured}. Escaneando mercado 24/7...")
 
-    # Bucle continuo
+    # Bucle continuo autónomo 24/7 en segundo plano
+    def _run_worker_thread():
+        from supabase_client import get_supabase_client
+        from bot_engine import evaluate_active_grid_bot_tick
+
+        sb = get_supabase_client()
+        logger.info("Worker 24/7 iniciado: evaluando bots activos cada 15 segundos...")
+
+        BINANCE_SYMBOLS = {
+            "solana": "SOLUSDT",
+            "bitcoin": "BTCUSDT",
+            "ethereum": "ETHUSDT",
+            "polkadot": "DOTUSDT",
+            "binancecoin": "BNBUSDT",
+            "cardano": "ADAUSDT",
+            "avalanche-2": "AVAXUSDT",
+            "avalanche": "AVAXUSDT",
+            "sui": "SUIUSDT",
+            "render-token": "RENDERUSDT",
+            "render": "RENDERUSDT",
+            "near": "NEARUSDT",
+            "bittensor": "TAOUSDT",
+            "dogecoin": "DOGEUSDT",
+            "pepe": "PEPEUSDT",
+            "fetch-ai": "FETUSDT",
+            "shiba-inu": "SHIBUSDT"
+        }
+
+        while True:
+            try:
+                if sb.is_configured:
+                    active_bots = sb.get_active_bots()
+                    if active_bots:
+                        try:
+                            resp = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=4)
+                            if resp.status_code == 200:
+                                price_list = resp.json()
+                                binance_map = {item["symbol"]: float(item["price"]) for item in price_list if "symbol" in item and "price" in item}
+                                
+                                for bot in active_bots:
+                                    coin_id = str(bot.get("coin_id") or "solana").lower()
+                                    b_symbol = BINANCE_SYMBOLS.get(coin_id, f"{coin_id.upper()[:4]}USDT")
+                                    live_price = binance_map.get(b_symbol)
+                                    
+                                    if live_price and live_price > 0:
+                                        evaluate_active_grid_bot_tick(
+                                            bot=bot,
+                                            current_price=live_price,
+                                            client=sb,
+                                            telegram_notifier=notifier
+                                        )
+                        except Exception as net_err:
+                            logger.warning(f"Error consultando Binance Ticker: {net_err}")
+                time.sleep(15)
+            except Exception as e:
+                logger.error(f"Error en bucle worker 24/7: {e}")
+                time.sleep(15)
+
+    worker_thread = threading.Thread(target=_run_worker_thread, daemon=True)
+    worker_thread.start()
+
     while True:
         try:
             time.sleep(60)

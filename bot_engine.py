@@ -531,3 +531,156 @@ def simulate_dca_bot(
             logger.warning(f"No se pudo persistir simulación DCA en Supabase: {e}")
 
     return result
+
+
+# =============================================================================
+# 3. LIVE 24/7 BACKGROUND GRID EVALUATOR
+# =============================================================================
+
+def evaluate_active_grid_bot_tick(
+    bot: Dict[str, Any],
+    current_price: float,
+    client: Optional[Any] = None,
+    telegram_notifier: Optional[Any] = None
+) -> Dict[str, Any]:
+    """
+    Evalúa un tick de precio en vivo para un Grid Bot activo.
+    Compara el precio con los niveles de la malla y ejecuta compras/ventas automáticas.
+    Registra operaciones en Supabase y notifica a Telegram en tiempo real 24/7.
+    """
+    import json
+    bot_id = bot.get("id")
+    coin_id = str(bot.get("coin_id") or "solana").lower()
+    bot_name = bot.get("name", f"Grid Bot {coin_id.upper()}")
+    capital = float(bot.get("capital_allocated_usd") or 100.0)
+
+    # 1. Parsear configuración del grid
+    raw_config = bot.get("config") or bot.get("config_json") or {}
+    if isinstance(raw_config, str):
+        try:
+            config = json.loads(raw_config)
+        except Exception:
+            config = {}
+    else:
+        config = raw_config if isinstance(raw_config, dict) else {}
+
+    levels = config.get("levels") or []
+    if not levels:
+        low = float(config.get("price_low") or config.get("range_min") or (current_price * 0.9))
+        high = float(config.get("price_high") or config.get("range_max") or (current_price * 1.1))
+        num_grids = int(config.get("num_grids") or 8)
+        if high > low and num_grids >= 2 and capital > 0:
+            levels = create_grid_levels(price_low=low, price_high=high, num_grids=num_grids, capital=capital)
+
+    sb = client or get_supabase_client()
+    executed_actions = []
+
+    # 2. Consultar trades abiertos para este bot
+    open_trades = []
+    if sb.is_configured and bot_id:
+        try:
+            open_trades = sb.get_open_trades(bot_id=bot_id)
+        except Exception as e:
+            logger.warning(f"No se pudieron cargar open_trades de Supabase: {e}")
+
+    # 3. Evaluar Cierre de Posiciones Abiertas (Ventas por TP)
+    for trade in list(open_trades):
+        entry_price = float(trade.get("entry_price", 0.0))
+        units = float(trade.get("units", 0.0))
+        trade_id = str(trade.get("id") or "")
+        
+        # Margen mínimo de ganancia de malla: ~1.0% a 2.5% según el paso del grid
+        target_sell_price = entry_price * 1.010  # 1.0% mínimo
+        
+        if current_price >= target_sell_price and units > 0 and trade_id:
+            pnl_usd = (current_price - entry_price) * units
+            pnl_pct = ((current_price - entry_price) / (entry_price or 1)) * 100.0
+            
+            if sb.is_configured:
+                try:
+                    sb.close_trade(
+                        trade_id=trade_id,
+                        exit_price=current_price,
+                        exit_reason=f"Grid TP ejecutado (+{pnl_pct:.2f}%)"
+                    )
+                except Exception as e:
+                    logger.error(f"Error cerrando trade {trade_id} en Supabase: {e}")
+
+            executed_actions.append({
+                "action": "SELL",
+                "trade_id": trade_id,
+                "price": current_price,
+                "units": units,
+                "pnl_usd": round(pnl_usd, 4),
+                "pnl_pct": round(pnl_pct, 2)
+            })
+
+            # Notificar Telegram
+            if telegram_notifier and getattr(telegram_notifier, "is_configured", False):
+                try:
+                    telegram_notifier.send_spot_trade_alert(
+                        coin_id=coin_id,
+                        side="SELL",
+                        price=current_price,
+                        amount_usd=round(units * current_price, 2),
+                        units=units,
+                        pnl_usd=pnl_usd,
+                        pnl_pct=pnl_pct
+                    )
+                except Exception as e:
+                    logger.warning(f"Error enviando alerta Telegram SELL: {e}")
+
+    # 4. Evaluar Nuevas Compras en niveles de soporte
+    for lvl in levels:
+        lvl_price = float(lvl.get("price", 0.0))
+        allocation = float(lvl.get("allocation") or (capital / max(len(levels), 1)))
+
+        if lvl_price > 0 and current_price <= lvl_price * 1.003:  # Tolerancia 0.3%
+            has_nearby_open = any(
+                abs(float(t.get("entry_price", 0.0)) - lvl_price) / lvl_price < 0.008
+                for t in open_trades
+            )
+            if not has_nearby_open and allocation > 0 and current_price > 0:
+                units = allocation / current_price
+                if sb.is_configured and bot_id:
+                    try:
+                        sb.record_trade(
+                            bot_id=bot_id,
+                            coin_id=coin_id,
+                            side="BUY",
+                            entry_price=current_price,
+                            units=units,
+                            amount_usd=allocation,
+                            entry_reason=f"Grid Buy Nivel ${lvl_price:,.4f}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error registrando compra en Supabase: {e}")
+
+                executed_actions.append({
+                    "action": "BUY",
+                    "price": current_price,
+                    "units": units,
+                    "amount_usd": allocation,
+                    "level_price": lvl_price
+                })
+
+                if telegram_notifier and getattr(telegram_notifier, "is_configured", False):
+                    try:
+                        telegram_notifier.send_spot_trade_alert(
+                            coin_id=coin_id,
+                            side="BUY",
+                            price=current_price,
+                            amount_usd=round(allocation, 2),
+                            units=units
+                        )
+                    except Exception as e:
+                        logger.warning(f"Error enviando alerta Telegram BUY: {e}")
+                break
+
+    return {
+        "bot_id": bot_id,
+        "coin_id": coin_id,
+        "current_price": current_price,
+        "actions_executed": executed_actions
+    }
+

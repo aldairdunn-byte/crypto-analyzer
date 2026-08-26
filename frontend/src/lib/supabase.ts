@@ -41,6 +41,7 @@ export interface TradeRow {
   amount_usd: number;
   units: number;
   pnl_usd?: number;
+  pnl_pct?: number;
   status: 'OPEN' | 'CLOSED' | 'CANCELLED';
   created_at: string;
 }
@@ -63,9 +64,111 @@ export interface PortfolioRow {
   id: string;
   user_id?: string;
   asset: string;
+  name?: string;
   symbol: string;
+  svg?: string;
   amount: number;
-  avg_buy_price: number;
   current_price: number;
   total_usd: number;
+  total_pen?: number;
+  change_24h?: number;
+  created_at?: string;
+  updated_at?: string;
 }
+
+export interface MarketCacheRow {
+  id: string;
+  coin_id: string;
+  usd: number;
+  usd_24h_change: number;
+  usd_7d_change?: number;
+  usd_24h_vol?: number;
+  usd_market_cap?: number;
+  high_24h?: number;
+  low_24h?: number;
+  cached_at?: string;
+}
+
+// ─── DIRECT SUPABASE QUERY HELPERS (POSTGREST API) ───
+
+export async function fetchPortfolioFromSupabase(userId?: string): Promise<PortfolioRow[]> {
+  try {
+    if (!userId) return [];
+    const { data, error } = await supabase
+      .from('portfolio')
+      .select('*')
+      .eq('user_id', userId)
+      .order('total_usd', { ascending: false });
+    if (error) {
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+export async function fetchBotsFromSupabase(userId?: string): Promise<BotRow[]> {
+  try {
+    let query = supabase.from('bots').select('*').order('created_at', { ascending: false });
+    if (userId) {
+      query = query.eq('user_id', userId);
+    }
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Error fetching bots from Supabase:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.warn('Exception in fetchBotsFromSupabase:', err);
+    return [];
+  }
+}
+
+export async function fetchTradesFromSupabase(userId?: string): Promise<TradeRow[]> {
+  try {
+    let query = supabase.from('bot_trades').select('*').order('created_at', { ascending: false }).limit(50);
+    if (userId) {
+      query = query.eq('user_id', userId);
+    }
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Error fetching trades from Supabase:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.warn('Exception in fetchTradesFromSupabase:', err);
+    return [];
+  }
+}
+
+export async function fetchSignalsFromSupabase(limit: number = 20): Promise<SignalRow[]> {
+  try {
+    const { data, error } = await supabase.from('signals').select('*').order('created_at', { ascending: false }).limit(limit);
+    if (error) {
+      console.warn('Error fetching signals from Supabase:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.warn('Exception in fetchSignalsFromSupabase:', err);
+    return [];
+  }
+}
+
+export async function fetchMarketCacheFromSupabase(): Promise<MarketCacheRow[]> {
+  try {
+    const { data, error } = await supabase.from('market_data_cache').select('*');
+    if (error) {
+      console.warn('Error fetching market_data_cache from Supabase:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.warn('Exception in fetchMarketCacheFromSupabase:', err);
+    return [];
+  }
+}
+

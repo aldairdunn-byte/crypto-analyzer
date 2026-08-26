@@ -1,7 +1,44 @@
-const TELEGRAM_BOT_TOKEN =
-  import.meta.env.VITE_TELEGRAM_BOT_TOKEN || '8897887741:AAFPzheKMItIIa6xNwn_ipd_pqZd_rLx9vU';
-const TELEGRAM_CHAT_ID =
-  import.meta.env.VITE_TELEGRAM_CHAT_ID || '1996733499';
+export const DEFAULT_TELEGRAM_BOT_TOKEN = '8897887741:AAFPzheKMItIIa6xNwn_ipd_pqZd_rLx9vU';
+export const DEFAULT_TELEGRAM_CHAT_ID = '1996733499';
+
+export function getTelegramBotToken(): string {
+  try {
+    const custom = localStorage.getItem('crypto_analyzer_telegram_bot_token');
+    if (custom && custom.trim().length > 0) return custom.trim();
+  } catch {}
+  return import.meta.env.VITE_TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+}
+
+export function getTelegramChatId(): string {
+  try {
+    const custom = localStorage.getItem('crypto_analyzer_telegram_chat_id');
+    if (custom && custom.trim().length > 0) return custom.trim();
+  } catch {}
+  return import.meta.env.VITE_TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
+}
+
+export function setTelegramCredentials(botToken: string, chatId: string): void {
+  try {
+    if (botToken.trim()) {
+      localStorage.setItem('crypto_analyzer_telegram_bot_token', botToken.trim());
+    } else {
+      localStorage.removeItem('crypto_analyzer_telegram_bot_token');
+    }
+    if (chatId.trim()) {
+      localStorage.setItem('crypto_analyzer_telegram_chat_id', chatId.trim());
+    } else {
+      localStorage.removeItem('crypto_analyzer_telegram_chat_id');
+    }
+  } catch {}
+}
+
+export function resetTelegramCredentials(): void {
+  try {
+    localStorage.removeItem('crypto_analyzer_telegram_bot_token');
+    localStorage.removeItem('crypto_analyzer_telegram_chat_id');
+  } catch {}
+}
+
 const TELEGRAM_CHANNEL_URL = 'https://t.me/CryptoDunnAlerts_bot';
 const APP_LIVE_URL = 'https://frontend-two-lyart-49.vercel.app';
 
@@ -102,7 +139,10 @@ export async function sendTelegramMessage(
   text: string,
   replyMarkup?: any
 ): Promise<{ success: boolean; error?: string }> {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+  const token = getTelegramBotToken();
+  const chatId = getTelegramChatId();
+
+  if (!token || !chatId) {
     console.warn('Telegram Bot no configurado (falta Token o Chat ID)');
     return { success: false, error: 'Credenciales de Telegram no configuradas' };
   }
@@ -115,9 +155,9 @@ export async function sendTelegramMessage(
   }
   lastSentTimestamp = Date.now();
 
-  const endpoint = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  const endpoint = `https://api.telegram.org/bot${token}/sendMessage`;
   const payload: Record<string, any> = {
-    chat_id: TELEGRAM_CHAT_ID,
+    chat_id: chatId,
     text,
     parse_mode: 'HTML',
     disable_web_page_preview: true,
@@ -136,15 +176,27 @@ export async function sendTelegramMessage(
 
     const data = await response.json();
     if (response.ok && data.ok) {
-      console.log('✅ Notificación enviada a Telegram:', data.result?.message_id);
+      console.log('[Telegram] Notificación enviada:', data.result?.message_id);
       return { success: true };
     } else {
-      console.warn('⚠️ Respuesta de Telegram Bot API:', data);
-      return { success: false, error: data.description || 'Error de API de Telegram' };
+      console.warn('[Telegram] Respuesta de API:', data);
+      const desc = data.description || '';
+      if (
+        data.error_code === 403 ||
+        desc.toLowerCase().includes('bot was blocked') ||
+        desc.toLowerCase().includes('chat not found') ||
+        data.error_code === 400
+      ) {
+        return {
+          success: false,
+          error: 'Envía /start a @CryptoDunnAlerts_bot en Telegram primero para autorizar la recepción de alertas.',
+        };
+      }
+      return { success: false, error: desc || 'Error de API de Telegram' };
     }
   } catch (err: any) {
-    console.warn('⚠️ Excepción contactando Telegram API:', err);
-    return { success: false, error: err.message || 'Error de conexión' };
+    console.warn('[Telegram] Excepción contactando API:', err);
+    return { success: false, error: err.message || 'Error de conexión con Telegram' };
   }
 }
 
@@ -165,7 +217,7 @@ function formatDualPrice(price: number, decimals: number = 2, penRate: number = 
 }
 
 /**
- * 1. 🤖 ACTIVACIÓN DE BOT GRID / DCA (Dopamina de Inicio y Proyección)
+ * 1. ACTIVACIÓN DE BOT GRID / DCA
  */
 export async function sendTelegramGridBotCreated(
   params: TelegramBotCreatedParams
@@ -192,14 +244,14 @@ export async function sendTelegramGridBotCreated(
 
   const lines = [
     `━━━━━━━━━━━━━━━━━━━━━━`,
-    `🚀🤖 <b>¡NUEVO ASISTENTE ACTIVADO! — ${coinSymbol}/USDT</b>`,
+    `🤖🚀 <b>NUEVO ASISTENTE GRID ACTIVADO — ${coinSymbol}/USDT</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━`,
-    `📌 <b>Nombre:</b> ${botName}`,
-    `🪙 <b>Estrategia:</b> ${strategy === 'GRID' ? 'Arbitraje Spot Grid 24/7' : 'Acumulación DCA Inteligente'}`,
-    `💵 <b>Capital Bloqueado:</b> ${dualCapital}`,
+    `🏷️ <b>Nombre:</b> ${botName}`,
+    `⚡ <b>Estrategia:</b> ${strategy === 'GRID' ? 'Arbitraje Spot Grid 24/7' : 'Acumulación DCA Inteligente'}`,
+    `💼 <b>Capital Asignado:</b> ${dualCapital}`,
     ``,
-    `📈 <b>PROYECCIÓN DE RENDIMIENTO:</b>`,
-    `  ✨ <b>Retorno por Malla:</b> +${profitPerGridPct.toFixed(2)}% NETO por ciclo`,
+    `📊 <b>PROYECCIÓN DE RENDIMIENTO:</b>`,
+    `  🎯 <b>Retorno por Malla:</b> +${profitPerGridPct.toFixed(2)}% NETO por ciclo`,
     `  🔥 <b>APY Estimado:</b> ${estimatedApyLow.toFixed(1)}% – ${estimatedApyHigh.toFixed(1)}% Anualizado`,
     ``,
   ];
@@ -207,10 +259,10 @@ export async function sendTelegramGridBotCreated(
   if (strategy === 'GRID' && lowerPrice && upperPrice) {
     const fLow = lowerPrice >= 1 ? lowerPrice.toFixed(2) : lowerPrice.toFixed(4);
     const fHigh = upperPrice >= 1 ? upperPrice.toFixed(2) : upperPrice.toFixed(4);
-    lines.push(`🎯 <b>Rango de Operación:</b>`);
-    lines.push(`  • 🛒 Piso de Compra: ${fLow} USDT`);
-    lines.push(`  • 💰 Techo de Venta: ${fHigh} USDT`);
-    lines.push(`🔢 <b>Densidad:</b> ${numGrids} Niveles [ 🛒 ${buyGrids} Compras | 💰 ${sellGrids} Ventas ]`);
+    lines.push(`📈 <b>Rango de Operación:</b>`);
+    lines.push(`  🟢 Piso de Compra: ${fLow} USDT`);
+    lines.push(`  🔴 Techo de Venta: ${fHigh} USDT`);
+    lines.push(`🔢 <b>Densidad:</b> ${numGrids} Niveles [ 🟢 ${buyGrids} Compras | 🔴 ${sellGrids} Ventas ]`);
   }
 
   if (stopLossPrice) {
@@ -220,16 +272,16 @@ export async function sendTelegramGridBotCreated(
   lines.push(``);
   lines.push(`🟢 <b>Estado:</b> 100% OPERATIVO & MONITOREANDO 24/7`);
   lines.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-  lines.push(`<i>⏱️ ${nowUtc} | Crypto Analyzer Pro 2.0</i>`);
+  lines.push(`<i>⏰ ${nowUtc} | Crypto Analyzer Pro</i>`);
 
   const replyMarkup = {
     inline_keyboard: [
       [
         { text: '🚀 Abrir Terminal Pro', url: APP_LIVE_URL },
-        { text: `📊 Binance ${coinSymbol}`, url: `https://www.binance.com/es/trade/${coinSymbol}_USDT` },
+        { text: `🟡 Binance ${coinSymbol}`, url: `https://www.binance.com/es/trade/${coinSymbol}_USDT` },
       ],
       [
-        { text: '🤖 Canal de Alertas', url: TELEGRAM_CHANNEL_URL },
+        { text: '📢 Canal de Alertas', url: TELEGRAM_CHANNEL_URL },
       ],
     ],
   };
@@ -238,7 +290,7 @@ export async function sendTelegramGridBotCreated(
 }
 
 /**
- * 2. 🛒 ORDEN DE COMPRA DEL GRID (Dopamina de Oportunidad y Descuento en Soporte)
+ * 2. ORDEN DE COMPRA / VENTA DEL GRID
  */
 export async function sendTelegramGridOrderFilled(
   params: TelegramGridOrderFilledParams
@@ -265,7 +317,6 @@ export async function sendTelegramGridOrderFilled(
   const nowUtc = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
 
   if (side === 'SELL') {
-    // 💰🔥 MÁXIMO IMPACTO DE DOPAMINA: TOMA DE GANANCIAS
     const calcProfitUsd = profitUsd && profitUsd > 0 ? profitUsd : Number((allocationUsd * (profitPct / 100)).toFixed(2));
     const profitPen = calcProfitUsd * penRate;
     const dualProfit = `+$${calcProfitUsd.toFixed(2)} USDT (~S/ ${profitPen.toFixed(2)} PEN)`;
@@ -273,36 +324,35 @@ export async function sendTelegramGridOrderFilled(
 
     const lines = [
       `━━━━━━━━━━━━━━━━━━━━━━`,
-      `🎉💰 <b>¡TOMA DE GANANCIAS COMPLETADA! — ${coinSymbol}/USDT</b>`,
+      `💰🟢 <b>¡TOMA DE GANANCIAS COMPLETADA! — ${coinSymbol}/USDT</b> 💵`,
       `━━━━━━━━━━━━━━━━━━━━━━`,
       `🤖 <b>Bot:</b> ${botName}`,
-      `📍 <b>Nivel Ejecutado:</b> Malla #${level} / ${totalLevels} de Venta`,
-      `💵 <b>Precio de Venta:</b> ${formatDualPrice(price, price >= 1 ? 2 : 4, penRate)}`,
+      `🎯 <b>Nivel Ejecutado:</b> Malla #${level} / ${totalLevels} de Venta`,
+      `🏷️ <b>Precio de Venta:</b> ${formatDualPrice(price, price >= 1 ? 2 : 4, penRate)}`,
       ``,
-      `🏆 <b>RENDIMIENTO DEL CICLO:</b>`,
-      `  ✨ <b>Retorno Neto:</b> +${profitPct.toFixed(2)}% NETO`,
+      `📊 <b>RENDIMIENTO DEL CICLO:</b>`,
+      `  🟢 <b>Retorno Neto:</b> +${profitPct.toFixed(2)}% NETO`,
       `  💵 <b>Ganancia Acreditada:</b> ${dualProfit}`,
-      `  📈 <b>Acumulado del Bot:</b> ${totalPnlFormatted}`,
-      `  🔄 <b>Ciclos Ganadores:</b> ${cycleCount} completados (100% Win Rate)`,
+      `  🏆 <b>Acumulado del Bot:</b> ${totalPnlFormatted}`,
+      `  🔥 <b>Ciclos Ganadores:</b> ${cycleCount} completados (100% Win Rate)`,
       ``,
-      `✅ <b>Saldo disponible actualizado en tu portafolio.</b>`,
+      `✨ <b>Saldo disponible actualizado en tu portafolio.</b>`,
       `<i>El bot continúa acumulando ganancias automáticamente 24/7.</i>`,
       `━━━━━━━━━━━━━━━━━━━━━━`,
-      `<i>⏱️ ${nowUtc} | Terminal Cuantitativo 2.0</i>`,
+      `<i>⏰ ${nowUtc} | Terminal Cuantitativo</i>`,
     ];
 
     const replyMarkup = {
       inline_keyboard: [
         [
           { text: '💼 Ver Mi Portafolio', url: APP_LIVE_URL },
-          { text: `📊 Trade ${coinSymbol}`, url: `https://www.binance.com/es/trade/${coinSymbol}_USDT` },
+          { text: `📈 Trade ${coinSymbol}`, url: `https://www.binance.com/es/trade/${coinSymbol}_USDT` },
         ],
       ],
     };
 
     return sendTelegramMessage(lines.join('\n'), replyMarkup);
   } else {
-    // 🛒 COMPRA EN SOPORTE CON DESCUENTO
     const dualPrice = formatDualPrice(price, price >= 1 ? 2 : 4, penRate);
     const dualAlloc = formatDualCurrency(allocationUsd, penRate);
     const targetPrice = nextTargetPrice || price * (1 + nextTargetProfitPct / 100);
@@ -310,19 +360,19 @@ export async function sendTelegramGridOrderFilled(
 
     const lines = [
       `━━━━━━━━━━━━━━━━━━━━━━`,
-      `🛒 <b>COMPRA EN SOPORTE EJECUTADA — ${coinSymbol}/USDT</b>`,
+      `📥⚡ <b>COMPRA EN SOPORTE EJECUTADA — ${coinSymbol}/USDT</b> 🟢`,
       `━━━━━━━━━━━━━━━━━━━━━━`,
       `🤖 <b>Bot:</b> ${botName}`,
-      `📍 <b>Nivel del Grid:</b> Malla #${level} / ${totalLevels} (Zona de Acumulación)`,
-      `💰 <b>Precio de Entrada:</b> ${dualPrice}`,
-      `📉 <b>Descuento Capturado:</b> -${discountPct.toFixed(2)}% vs último pico`,
-      `💵 <b>Inversión en Malla:</b> ${dualAlloc}`,
+      `🎯 <b>Nivel del Grid:</b> Malla #${level} / ${totalLevels} (Zona de Acumulación)`,
+      `🏷️ <b>Precio de Entrada:</b> ${dualPrice}`,
+      `🎁 <b>Descuento Capturado:</b> -${discountPct.toFixed(2)}% vs último pico`,
+      `💼 <b>Inversión en Malla:</b> ${dualAlloc}`,
       ``,
       `🎯 <b>Próximo Objetivo:</b>`,
-      `  ➔ Venta automática en ${dualTarget} (<b>+${nextTargetProfitPct.toFixed(2)}% Ganancia</b>)`,
-      `🔄 <b>Estado del Grid:</b> ${level}/${totalLevels} mallas posicionadas activas`,
+      `  ➔ Venta automática en ${dualTarget} (<b>+${nextTargetProfitPct.toFixed(2)}% Ganancia 💰</b>)`,
+      `📊 <b>Estado del Grid:</b> ${level}/${totalLevels} mallas posicionadas activas`,
       `━━━━━━━━━━━━━━━━━━━━━━`,
-      `<i>⏱️ ${nowUtc} | Terminal Cuantitativo 2.0</i>`,
+      `<i>⏰ ${nowUtc} | Terminal Cuantitativo</i>`,
     ];
 
     const replyMarkup = {
@@ -339,7 +389,7 @@ export async function sendTelegramGridOrderFilled(
 }
 
 /**
- * 3. ⚡ SEÑAL CUANTITATIVA / OPORTUNIDAD DE ENTRADA (Claridad y Objetivos TP1, TP2, TP3)
+ * 3. SEÑAL DE ENTRADA / OPORTUNIDAD DE COMPRA
  */
 export async function sendTelegramSignalAlert(
   params: TelegramSignalParams
@@ -347,7 +397,6 @@ export async function sendTelegramSignalAlert(
   const {
     coinSymbol,
     coinName,
-    signalType,
     badge,
     price,
     rsi = 32.5,
@@ -360,36 +409,28 @@ export async function sendTelegramSignalAlert(
     levels,
   } = params;
 
-  const emojiMap = {
-    BUY: '🟢',
-    SELL: '🔴',
-    WAIT: '🟡',
-    AVOID: '⛔',
-  };
-  const emoji = emojiMap[signalType] || '⚡';
   const nowUtc = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
   const dualPrice = formatDualPrice(price, price >= 1 ? 2 : 4, penRate);
 
   const lines = [
     `━━━━━━━━━━━━━━━━━━━━━━`,
-    `<b>${emoji} OPORTUNIDAD CUANTITATIVA: ${coinSymbol}/USDT</b>`,
+    `🚨🎯 <b>¡OPORTUNIDAD DE ENTRADA! — ${coinSymbol}/USDT</b> 🚀`,
     `━━━━━━━━━━━━━━━━━━━━━━`,
     `🪙 <b>Activo:</b> ${coinName} (${coinSymbol})`,
-    `🎯 <b>Condición:</b> <code>${badge}</code>`,
-    `⭐ <b>Confianza Algorítmica:</b> ${confidenceScore}/100 (Alta Probabilidad)`,
-    `💰 <b>Cotización Actual:</b> ${dualPrice}`,
+    `🏷️ <b>Veredicto:</b> <code>${badge}</code>`,
+    `🔥 <b>Confianza del Algoritmo:</b> ${confidenceScore}/100 (Alta Probabilidad)`,
+    `💵 <b>Precio Actual:</b> ${dualPrice}`,
     ``,
-    `📊 <b>MÉTRICAS TÉCNICAS:</b>`,
-    `  • RSI (14): <b>${rsi.toFixed(1)}</b> ${rsi <= 35 ? '(Sobreventa Extrema — Rebote Inminente)' : rsi >= 70 ? '(Sobrecompra)' : '(Equilibrado)'}`,
-    `  • Momentum Cuantitativo: <b>${momentumScore.toFixed(1)}/100</b>`,
-    `  • Volatilidad ATR: <b>${atrPercent.toFixed(2)}%</b>`,
+    `📊 <b>INDICADORES TÉCNICOS:</b>`,
+    `  📈 RSI (14): <b>${rsi.toFixed(1)}</b> ${rsi <= 35 ? '🟢 (Sobreventa — Rebote Inminente)' : rsi >= 70 ? '🔴 (Sobrecompra — Cuidado)' : '⚪ (Rango Equilibrado)'}`,
+    `  ⚡ Fuerza Compradora (Momentum): <b>${momentumScore.toFixed(1)}/100</b>`,
+    `  🌊 Volatilidad ATR: <b>${atrPercent.toFixed(2)}%</b>`,
   ];
 
   if (ema20) {
-    lines.push(`  • EMA-20 Soporte: <b>$${ema20.toFixed(ema20 >= 1 ? 2 : 4)} USDT</b>`);
+    lines.push(`  🔹 Media Móvil EMA-20: <b>$${ema20.toFixed(ema20 >= 1 ? 2 : 4)} USDT</b>`);
   }
 
-  // Calculate dynamic default levels if missing
   const entryLimit = levels?.entryLimit || price * 0.99;
   const tp1 = levels?.takeProfit1 || entryLimit * 1.022;
   const tp2 = levels?.takeProfit2 || entryLimit * 1.045;
@@ -398,27 +439,27 @@ export async function sendTelegramSignalAlert(
   const rrRatio = levels?.riskRewardRatio || 2.45;
 
   lines.push(``);
-  lines.push(`🎯 <b>PLAN DE EJECUCIÓN ESTRATÉGICO:</b>`);
-  lines.push(`  🛒 <b>Precio de Entrada:</b> $${entryLimit.toFixed(entryLimit >= 1 ? 2 : 4)} USDT`);
-  lines.push(`  🎯 <b>TP1 (Conservador):</b> $${tp1.toFixed(tp1 >= 1 ? 2 : 4)} USDT (+2.20%)`);
-  lines.push(`  🎯 <b>TP2 (Swing):</b> $${tp2.toFixed(tp2 >= 1 ? 2 : 4)} USDT (+4.50%)`);
-  lines.push(`  🚀 <b>TP3 (Runner):</b> $${tp3.toFixed(tp3 >= 1 ? 2 : 4)} USDT (+8.00%)`);
-  lines.push(`  🛡️ <b>Stop Loss:</b> $${sl.toFixed(sl >= 1 ? 2 : 4)} USDT (-3.00%)`);
-  lines.push(`  ⚖️ <b>Ratio Riesgo/Beneficio:</b> 1:${rrRatio.toFixed(2)}`);
+  lines.push(`🎯 <b>PLAN DE ENTRADA Y SALIDAS:</b>`);
+  lines.push(`  🔹 <b>Precio de Entrada Sugerido:</b> $${entryLimit.toFixed(entryLimit >= 1 ? 2 : 4)} USDT`);
+  lines.push(`  🟢 <b>Meta 1 (Ganancia Rápida):</b> $${tp1.toFixed(tp1 >= 1 ? 2 : 4)} USDT (+2.20%)`);
+  lines.push(`  🟢 <b>Meta 2 (Ganancia Media):</b> $${tp2.toFixed(tp2 >= 1 ? 2 : 4)} USDT (+4.50%)`);
+  lines.push(`  🚀 <b>Meta 3 (Tendencia Fuerte):</b> $${tp3.toFixed(tp3 >= 1 ? 2 : 4)} USDT (+8.00%)`);
+  lines.push(`  🔴 <b>Stop Loss (Protección):</b> $${sl.toFixed(sl >= 1 ? 2 : 4)} USDT (-3.00%)`);
+  lines.push(`  ⚖️ <b>Relación Riesgo / Beneficio:</b> 1:${rrRatio.toFixed(2)}`);
   lines.push(``);
-  lines.push(`📝 <b>Diagnóstico en Cristiano:</b>`);
+  lines.push(`💡 <b>Diagnóstico del Mercado:</b>`);
   lines.push(`<i>${explanation}</i>`);
   lines.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-  lines.push(`<i>⏱️ ${nowUtc} | Radar Cuantitativo 2.0</i>`);
+  lines.push(`<i>⏰ ${nowUtc} | Crypto Analyzer Pro</i>`);
 
   const replyMarkup = {
     inline_keyboard: [
       [
-        { text: '📡 Abrir Radar Scanner', url: APP_LIVE_URL },
-        { text: `📊 Operar ${coinSymbol} en Binance`, url: `https://www.binance.com/es/trade/${coinSymbol}_USDT` },
+        { text: '📡 Abrir Radar de Oportunidades', url: APP_LIVE_URL },
+        { text: `🟡 Operar ${coinSymbol} en Binance`, url: `https://www.binance.com/es/trade/${coinSymbol}_USDT` },
       ],
       [
-        { text: '🤖 Canal de Alertas', url: TELEGRAM_CHANNEL_URL },
+        { text: '📢 Canal de Alertas', url: TELEGRAM_CHANNEL_URL },
       ],
     ],
   };
@@ -427,7 +468,7 @@ export async function sendTelegramSignalAlert(
 }
 
 /**
- * 4. 💼 TRADE SPOT MANUAL (Confirmación y Transparencia)
+ * 4. TRADE SPOT MANUAL
  */
 export async function sendTelegramSpotTrade(
   params: TelegramSpotTradeParams
@@ -445,20 +486,19 @@ export async function sendTelegramSpotTrade(
   } = params;
 
   const isBuy = side === 'BUY';
-  const emoji = isBuy ? '🟢' : '🔴';
-  const actionTitle = isBuy ? 'COMPRA SPOT EJECUTADA' : 'VENTA SPOT EJECUTADA';
+  const actionTitle = isBuy ? '🟢 COMPRA SPOT EJECUTADA' : '🔴 VENTA SPOT EJECUTADA';
   const dualPrice = formatDualPrice(price, price >= 1 ? 2 : 4, penRate);
   const dualAmount = formatDualCurrency(amountUsd, penRate);
   const nowUtc = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
 
   const lines = [
     `━━━━━━━━━━━━━━━━━━━━━━`,
-    `<b>${emoji} ${actionTitle} — ${coinSymbol}/USDT</b>`,
+    `⚡ <b>${actionTitle} — ${coinSymbol}/USDT</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━`,
     `🪙 <b>Activo:</b> ${coinName} (${coinSymbol})`,
-    `📌 <b>Modalidad:</b> Spot Market (Paper Trading)`,
-    `💰 <b>Precio de Ejecución:</b> ${dualPrice}`,
-    `🔢 <b>Cantidad:</b> ${units.toFixed(units >= 1 ? 4 : 6)} ${coinSymbol}`,
+    `💼 <b>Modalidad:</b> Spot Market (Paper Trading)`,
+    `🏷️ <b>Precio de Ejecución:</b> ${dualPrice}`,
+    `📦 <b>Cantidad:</b> ${units.toFixed(units >= 1 ? 4 : 6)} ${coinSymbol}`,
     `💵 <b>Monto Total:</b> ${dualAmount}`,
   ];
 
@@ -467,21 +507,21 @@ export async function sendTelegramSpotTrade(
     const sign = isGain ? '+' : '';
     const pnlPen = pnlUsd * penRate;
     lines.push(``);
-    lines.push(`🏆 <b>Resultado del Trade:</b>`);
-    lines.push(`  ${isGain ? '🎉' : '⚠️'} <b>PnL Realizado:</b> ${sign}$${pnlUsd.toFixed(2)} USDT (~${sign}S/ ${pnlPen.toFixed(2)} PEN)`);
+    lines.push(`📊 <b>Resultado del Trade:</b>`);
+    lines.push(`  • <b>Ganancia/Pérdida (PnL):</b> ${isGain ? '🟢' : '🔴'} ${sign}$${pnlUsd.toFixed(2)} USDT (~${sign}S/ ${pnlPen.toFixed(2)} PEN)`);
     if (pnlPct !== undefined) {
-      lines.push(`  📈 <b>Retorno:</b> ${sign}${pnlPct.toFixed(2)}%`);
+      lines.push(`  • <b>Retorno:</b> ${isGain ? '🟢' : '🔴'} ${sign}${pnlPct.toFixed(2)}%`);
     }
   }
 
   lines.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-  lines.push(`<i>⏱️ ${nowUtc} | Terminal Cuantitativo 2.0</i>`);
+  lines.push(`<i>⏰ ${nowUtc} | Crypto Analyzer Pro</i>`);
 
   const replyMarkup = {
     inline_keyboard: [
       [
         { text: '💼 Mi Portafolio', url: APP_LIVE_URL },
-        { text: `📊 Spot ${coinSymbol}/USDT`, url: `https://www.binance.com/es/trade/${coinSymbol}_USDT` },
+        { text: `🟡 Spot ${coinSymbol}/USDT`, url: `https://www.binance.com/es/trade/${coinSymbol}_USDT` },
       ],
     ],
   };
@@ -490,7 +530,7 @@ export async function sendTelegramSpotTrade(
 }
 
 /**
- * 5. 🛑 CAMBIO DE ESTADO DE BOT
+ * 5. CAMBIO DE ESTADO DE BOT
  */
 export async function sendTelegramBotStatusChange(
   params: TelegramBotStatusChangeParams
@@ -498,31 +538,31 @@ export async function sendTelegramBotStatusChange(
   const { botName, coinSymbol, strategy, status, capitalUsd, penRate = 3.75 } = params;
 
   const statusMap = {
-    ACTIVE: { emoji: '▶️', text: 'REANUDADO / ACTIVO & MONITOREANDO' },
-    PAUSED: { emoji: '⏸️', text: 'PAUSADO TEMPORALMENTE' },
-    STOPPED: { emoji: '🛑', text: 'DETENIDO Y CAPITAL LIBERADO' },
+    ACTIVE: '🟢 REANUDADO / ACTIVO & OPERANDO',
+    PAUSED: '🟡 PAUSADO TEMPORALMENTE',
+    STOPPED: '🔴 DETENIDO Y CAPITAL LIBERADO',
   };
 
-  const info = statusMap[status] || { emoji: '⚙️', text: status };
+  const statusText = statusMap[status] || status;
   const nowUtc = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
   const dualCapital = formatDualCurrency(capitalUsd, penRate);
 
   const lines = [
     `━━━━━━━━━━━━━━━━━━━━━━`,
-    `<b>${info.emoji} ESTADO DE BOT: ${info.text}</b>`,
+    `🤖⚙️ <b>ESTADO DE BOT: ${statusText}</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━`,
-    `🤖 <b>Bot:</b> ${botName}`,
+    `🏷️ <b>Bot:</b> ${botName}`,
     `🪙 <b>Par:</b> ${coinSymbol}/USDT`,
-    `📌 <b>Estrategia:</b> ${strategy}`,
-    `💵 <b>Capital:</b> ${dualCapital}`,
+    `⚡ <b>Estrategia:</b> ${strategy}`,
+    `💼 <b>Capital:</b> ${dualCapital}`,
     `━━━━━━━━━━━━━━━━━━━━━━`,
-    `<i>⏱️ ${nowUtc} | Crypto Analyzer Pro 2.0</i>`,
+    `<i>⏰ ${nowUtc} | Crypto Analyzer Pro</i>`,
   ];
 
   const replyMarkup = {
     inline_keyboard: [
       [
-        { text: '🚀 Abrir Panel de Bots', url: APP_LIVE_URL },
+        { text: '🤖 Abrir Panel de Bots', url: APP_LIVE_URL },
         { text: '💼 Ver Portafolio', url: APP_LIVE_URL },
       ],
     ],
@@ -532,38 +572,38 @@ export async function sendTelegramBotStatusChange(
 }
 
 /**
- * 6. 🔔 TEST DE ALERTA REAL
+ * 6. TEST DE ALERTA REAL
  */
 export async function sendTelegramTestMessage(): Promise<{ success: boolean; error?: string }> {
   const nowUtc = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
 
   const lines = [
     `━━━━━━━━━━━━━━━━━━━━━━`,
-    `<b>🔔 TEST DE ENLACE — CRYPTO ANALYZER PRO 2.0</b>`,
+    `🔔📡 <b>TEST DE ENLACE — CRYPTO ANALYZER PRO</b> 🚀`,
     `━━━━━━━━━━━━━━━━━━━━━━`,
-    `✅ <b>Estado del Bot:</b> 100% OPERATIVO & EN PRODUCCIÓN`,
+    `🟢 <b>Estado del Bot:</b> 100% OPERATIVO & EN PRODUCCIÓN`,
     `🌐 <b>App Web en Vivo:</b> ${APP_LIVE_URL}`,
-    `🤖 <b>Canal:</b> @CryptoDunnAlerts_bot`,
-    `📱 <b>Chat ID:</b> <code>${TELEGRAM_CHAT_ID}</code>`,
+    `📱 <b>Canal:</b> @CryptoDunnAlerts_bot`,
+    `🔑 <b>Chat ID:</b> <code>${getTelegramChatId()}</code>`,
     ``,
-    `⚡ <b>SISTEMAS CONECTADOS:</b>`,
-    `  • 🚀 <b>Activación de Bots Grid & DCA</b> (con APY % y mallas)`,
-    `  • 🛒 <b>Compras en Soporte</b> (con % de descuento y próximo objetivo)`,
-    `  • 💰 <b>Toma de Ganancias (+2.50% NETO)</b> (con PnL en $USDT y S/ PEN)`,
-    `  • 🎯 <b>Alertas Cuantitativas</b> (con Objetivos TP1, TP2, TP3 y Score)`,
-    `  • 💼 <b>Gestión de Portafolio en Tiempo Real</b>`,
+    `🤖 <b>SISTEMAS CONECTADOS:</b>`,
+    `  ⚡ <b>Activación de Bots Grid & DCA</b> (con APY % y mallas)`,
+    `  📥 <b>Compras en Soporte</b> (con % de descuento y próximo objetivo)`,
+    `  💰 <b>Toma de Ganancias (+2.50% NETO)</b> (con PnL en $USDT y S/ PEN)`,
+    `  🎯 <b>Alertas de Oportunidades & Rebotes</b> (con Metas TP1, TP2, TP3)`,
+    `  💼 <b>Gestión de Portafolio en Tiempo Real</b>`,
     `━━━━━━━━━━━━━━━━━━━━━━`,
-    `<i>⏱️ ${nowUtc} | Terminal Cuantitativo 2.0</i>`,
+    `<i>⏰ ${nowUtc} | Crypto Analyzer Pro</i>`,
   ];
 
   const replyMarkup = {
     inline_keyboard: [
       [
-        { text: '🚀 Abrir Web en Vivo', url: APP_LIVE_URL },
-        { text: '📊 Binance Spot Live', url: 'https://www.binance.com/es/trade/SOL_USDT' },
+        { text: '🌐 Abrir Web en Vivo', url: APP_LIVE_URL },
+        { text: '🟡 Binance Spot Live', url: 'https://www.binance.com/es/trade/SOL_USDT' },
       ],
       [
-        { text: '🤖 Canal de Alertas', url: TELEGRAM_CHANNEL_URL },
+        { text: '📢 Canal de Alertas', url: TELEGRAM_CHANNEL_URL },
       ],
     ],
   };
