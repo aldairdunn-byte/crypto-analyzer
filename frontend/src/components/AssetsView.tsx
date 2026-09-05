@@ -3,6 +3,8 @@ import { COINS, formatDynamicPrice, resolveBotCoin } from '../lib/marketData';
 import { type BotRow, type TradeRow } from '../lib/supabase';
 import { CryptoIcon } from './CryptoIcon';
 import { PortfolioDonutChart, type PortfolioSegment } from './ui/PortfolioDonutChart';
+import { AssetDetailDrawer } from './AssetDetailDrawer';
+import { BotDetailModal } from './BotDetailModal';
 import {
   SquaresFour,
   Robot,
@@ -98,6 +100,11 @@ export const AssetsView = ({
   const [sellModalItem, setSellModalItem] = useState<any | null>(null);
   const [sellPercentage, setSellPercentage] = useState<number>(100);
   const [isSelling, setIsSelling] = useState<boolean>(false);
+
+  // Interactive Drill-Down States (Click to Inspect)
+  const [selectedCoinForDrawer, setSelectedCoinForDrawer] = useState<string | null>(null);
+  const [selectedBotForModal, setSelectedBotForModal] = useState<BotRow | null>(null);
+  const [donutFilterCoinId, setDonutFilterCoinId] = useState<string | null>(null);
 
   // Form states for Add/Edit Modal
   const [selectedCoinId, setSelectedCoinId] = useState<string>('solana');
@@ -233,6 +240,7 @@ export const AssetsView = ({
     // Segment 1: USDT Cash
     segments.push({
       id: 'usdt',
+      coinId: 'usdt',
       symbol: 'USDT',
       label: 'USDT Líquido',
       type: 'CASH',
@@ -246,6 +254,7 @@ export const AssetsView = ({
       const pct = totalPortfolioValueUsd > 0 ? (b.totalValUsd / totalPortfolioValueUsd) * 100 : 0;
       segments.push({
         id: `bot-${b.id}`,
+        coinId: b.coin.id,
         symbol: b.symbol,
         label: `${b.symbol} Bot`,
         type: 'BOT',
@@ -260,6 +269,7 @@ export const AssetsView = ({
       const pct = totalPortfolioValueUsd > 0 ? (s.totalValUsd / totalPortfolioValueUsd) * 100 : 0;
       segments.push({
         id: s.id,
+        coinId: s.coin.id,
         symbol: s.symbol,
         label: `${s.symbol} Spot`,
         type: 'SPOT',
@@ -592,6 +602,8 @@ export const AssetsView = ({
           totalUsd={totalPortfolioValueUsd}
           currencyMode={currencyMode}
           penRate={penRate}
+          selectedSegmentId={donutFilterCoinId}
+          onSelectSegment={(id) => setDonutFilterCoinId(id)}
         />
       </div>
 
@@ -667,18 +679,27 @@ export const AssetsView = ({
             {/* MOBILE VIEW: RESPONSIVE CARDS */}
             <div className="block md:hidden space-y-2.5">
               {consolidatedBots
-                .filter(
-                  (b) =>
-                    !searchQuery ||
-                    b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    b.symbol.toLowerCase().includes(searchQuery.toLowerCase())
-                )
+                .filter((b) => {
+                  if (donutFilterCoinId && donutFilterCoinId !== 'usdt') {
+                    if (b.coin.id.toLowerCase() !== donutFilterCoinId.toLowerCase()) return false;
+                  } else if (donutFilterCoinId === 'usdt') {
+                    return false;
+                  }
+                  if (searchQuery) {
+                    return (
+                      b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      b.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+                    );
+                  }
+                  return true;
+                })
                 .map((botItem) => {
                   const allocPct = totalPortfolioValueUsd > 0 ? (botItem.totalValUsd / totalPortfolioValueUsd) * 100 : 0;
                   return (
                     <div
                       key={botItem.id}
-                      className="surface-card p-3.5 space-y-3 border border-white/10 hover:border-amber-500/30 transition-all shadow-md"
+                      onClick={() => setSelectedBotForModal(botItem.bot)}
+                      className="surface-card p-3.5 space-y-3 border border-white/10 hover:border-amber-500/40 transition-all shadow-md cursor-pointer hover:bg-white/[0.02] active:scale-[0.99] group"
                     >
                       {/* Header Row */}
                       <div className="flex items-center justify-between">
@@ -699,15 +720,17 @@ export const AssetsView = ({
                           </div>
                         </div>
 
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
-                            botItem.status === 'ACTIVE'
-                              ? 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
-                              : 'bg-amber-500/15 text-[#F59E0B] border-amber-500/30'
-                          }`}
-                        >
-                          {botItem.status === 'ACTIVE' ? 'Activo 24/7' : 'Pausado'}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                              botItem.status === 'ACTIVE'
+                                ? 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
+                                : 'bg-amber-500/15 text-[#F59E0B] border-amber-500/30'
+                            }`}
+                          >
+                            {botItem.status === 'ACTIVE' ? 'Activo 24/7' : 'Pausado'}
+                          </span>
+                        </div>
                       </div>
 
                       {/* 2x2 Financial Metrics Bento */}
@@ -749,27 +772,39 @@ export const AssetsView = ({
                       </div>
 
                       {/* Footer Actions */}
-                      <div className="flex items-center justify-end space-x-2 pt-1 border-t border-white/5">
-                        <button
-                          onClick={() => onOpenCoinInTerminal(botItem.coin.id)}
-                          className="px-3 py-1.5 bg-[#F59E0B]/10 hover:bg-[#F59E0B] text-[#F59E0B] hover:text-black rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-[#F59E0B]/20"
-                        >
-                          <ArrowUpRight className="w-3.5 h-3.5" />
-                          <span>Terminal</span>
-                        </button>
-                        {onUpdateBotStatus && (
+                      <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                        <span className="text-[10px] text-[#F59E0B] font-bold flex items-center gap-1 group-hover:underline">
+                          <span>Ver Ficha y Mallas</span>
+                          <ArrowUpRight className="w-3 h-3" />
+                        </span>
+                        <div className="flex items-center space-x-2">
                           <button
-                            onClick={() => onUpdateBotStatus(botItem.bot.id, botItem.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border ${
-                              botItem.status === 'ACTIVE'
-                                ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-black border-amber-500/20'
-                                : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-black border-emerald-500/20'
-                            }`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenCoinInTerminal(botItem.coin.id);
+                            }}
+                            className="px-3 py-1.5 bg-[#F59E0B]/10 hover:bg-[#F59E0B] text-[#F59E0B] hover:text-black rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-[#F59E0B]/20"
                           >
-                            {botItem.status === 'ACTIVE' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                            <span>{botItem.status === 'ACTIVE' ? 'Pausar' : 'Reanudar'}</span>
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                            <span>Terminal</span>
                           </button>
-                        )}
+                          {onUpdateBotStatus && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateBotStatus(botItem.bot.id, botItem.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+                                botItem.status === 'ACTIVE'
+                                  ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-black border-amber-500/20'
+                                  : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-black border-emerald-500/20'
+                              }`}
+                            >
+                              {botItem.status === 'ACTIVE' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                              <span>{botItem.status === 'ACTIVE' ? 'Pausar' : 'Reanudar'}</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -793,19 +828,31 @@ export const AssetsView = ({
                 </thead>
                 <tbody className="divide-y divide-white/5 font-mono">
                   {consolidatedBots
-                    .filter(
-                      (b) =>
-                        !searchQuery ||
-                        b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        b.symbol.toLowerCase().includes(searchQuery.toLowerCase())
-                    )
+                    .filter((b) => {
+                      if (donutFilterCoinId && donutFilterCoinId !== 'usdt') {
+                        if (b.coin.id.toLowerCase() !== donutFilterCoinId.toLowerCase()) return false;
+                      } else if (donutFilterCoinId === 'usdt') {
+                        return false;
+                      }
+                      if (searchQuery) {
+                        return (
+                          b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          b.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+                        );
+                      }
+                      return true;
+                    })
                     .map((botItem) => {
                       const allocPct = totalPortfolioValueUsd > 0 ? (botItem.totalValUsd / totalPortfolioValueUsd) * 100 : 0;
                       return (
-                        <tr key={botItem.id} className="hover:bg-white/[0.03] transition-colors h-14">
+                        <tr
+                          key={botItem.id}
+                          onClick={() => setSelectedBotForModal(botItem.bot)}
+                          className="hover:bg-white/[0.04] transition-colors h-14 cursor-pointer group"
+                        >
                           <td className="pl-3">
                             <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow-md shrink-0">
+                              <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow-md shrink-0 group-hover:scale-105 transition-transform">
                                 <CryptoIcon symbol={botItem.symbol} size={24} />
                               </div>
                               <div>
@@ -815,8 +862,9 @@ export const AssetsView = ({
                                     {botItem.symbol}
                                   </span>
                                 </div>
-                                <div className="text-[10px] text-slate-400 font-sans">
-                                  {botItem.numGrids} Mallas · {botItem.tradesCount} Fills Completados
+                                <div className="text-[10px] text-slate-400 font-sans flex items-center gap-1">
+                                  <span>{botItem.numGrids} Mallas · {botItem.tradesCount} Fills</span>
+                                  <span className="text-[9px] text-[#F59E0B] font-bold opacity-0 group-hover:opacity-100 transition-opacity">· Clic para ver mallas</span>
                                 </div>
                               </div>
                             </div>
@@ -867,7 +915,10 @@ export const AssetsView = ({
                           <td className="text-right pr-3">
                             <div className="flex items-center justify-end space-x-1.5">
                               <button
-                                onClick={() => onOpenCoinInTerminal(botItem.coin.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenCoinInTerminal(botItem.coin.id);
+                                }}
                                 title="Ver en Terminal Pro"
                                 className="p-1.5 text-[#F59E0B] hover:text-white rounded-lg hover:bg-[#F59E0B]/20 bg-[#F59E0B]/10 cursor-pointer transition-all border border-[#F59E0B]/20"
                               >
@@ -876,7 +927,10 @@ export const AssetsView = ({
                               {onUpdateBotStatus && (
                                 botItem.status === 'ACTIVE' ? (
                                   <button
-                                    onClick={() => onUpdateBotStatus(botItem.bot.id, 'PAUSED')}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onUpdateBotStatus(botItem.bot.id, 'PAUSED');
+                                    }}
                                     title="Pausar Bot"
                                     className="p-1.5 text-amber-400 hover:text-white rounded-lg hover:bg-amber-500/10 cursor-pointer transition-all"
                                   >
@@ -884,7 +938,10 @@ export const AssetsView = ({
                                   </button>
                                 ) : (
                                   <button
-                                    onClick={() => onUpdateBotStatus(botItem.bot.id, 'ACTIVE')}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onUpdateBotStatus(botItem.bot.id, 'ACTIVE');
+                                    }}
                                     title="Reanudar Bot"
                                     className="p-1.5 text-emerald-400 hover:text-white rounded-lg hover:bg-emerald-500/10 cursor-pointer transition-all"
                                   >
@@ -919,8 +976,12 @@ export const AssetsView = ({
             {/* MOBILE VIEW: RESPONSIVE CARDS FOR SPOT & USDT CASH */}
             <div className="block md:hidden space-y-2.5">
               {/* USDT Cash Mobile Card */}
-              {(!searchQuery || 'tether usdt efectivo stablecoin dolares'.includes(searchQuery.toLowerCase())) && (
-                <div className="surface-card p-3.5 space-y-3 border border-emerald-500/30 bg-emerald-500/[0.02] shadow-md">
+              {(!donutFilterCoinId || donutFilterCoinId === 'usdt') &&
+                (!searchQuery || 'tether usdt efectivo stablecoin dolares'.includes(searchQuery.toLowerCase())) && (
+                <div
+                  onClick={() => setSelectedCoinForDrawer('usdt')}
+                  className="surface-card p-3.5 space-y-3 border border-emerald-500/30 bg-emerald-500/[0.02] shadow-md cursor-pointer hover:bg-emerald-500/[0.05] active:scale-[0.99] group"
+                >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2.5">
                       <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow shrink-0">
@@ -961,18 +1022,20 @@ export const AssetsView = ({
                   </div>
 
                   <div className="flex items-center justify-between pt-1 border-t border-white/5">
-                    <span className="text-[10px] font-mono text-emerald-400 font-bold">
-                      {stablePct.toFixed(1)}% del Portafolio
+                    <span className="text-[10px] font-mono text-emerald-400 font-bold flex items-center gap-1">
+                      <span>{stablePct.toFixed(1)}% del Portafolio</span>
+                      <span className="text-slate-400 font-sans font-normal">· Clic para ver ficha</span>
                     </span>
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setInputCash(usdtCash);
                         setIsCashModalOpen(true);
                       }}
                       className="px-3 py-1.5 bg-emerald-500/10 hover:bg-[#0ECB81] text-[#0ECB81] hover:text-black rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-emerald-500/20"
                     >
                       <SlidersHorizontal className="w-3.5 h-3.5" />
-                      <span>Ajustar Saldo USDT</span>
+                      <span>Ajustar Saldo</span>
                     </button>
                   </div>
                 </div>
@@ -980,12 +1043,20 @@ export const AssetsView = ({
 
               {/* Spot Holdings Mobile Cards */}
               {consolidatedSpotHoldings
-                .filter(
-                  (s) =>
-                    !searchQuery ||
-                    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    s.symbol.toLowerCase().includes(searchQuery.toLowerCase())
-                )
+                .filter((s) => {
+                  if (donutFilterCoinId && donutFilterCoinId !== 'usdt') {
+                    if (s.coin.id.toLowerCase() !== donutFilterCoinId.toLowerCase()) return false;
+                  } else if (donutFilterCoinId === 'usdt') {
+                    return false;
+                  }
+                  if (searchQuery) {
+                    return (
+                      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      s.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+                    );
+                  }
+                  return true;
+                })
                 .map((item) => {
                   const allocPct = totalPortfolioValueUsd > 0 ? (item.totalValUsd / totalPortfolioValueUsd) * 100 : 0;
                   const isPos = item.pnlUsd >= 0;
@@ -993,7 +1064,8 @@ export const AssetsView = ({
                   return (
                     <div
                       key={item.id}
-                      className="surface-card p-3.5 space-y-3 border border-white/10 hover:border-blue-500/30 transition-all shadow-md"
+                      onClick={() => setSelectedCoinForDrawer(item.coin.id)}
+                      className="surface-card p-3.5 space-y-3 border border-white/10 hover:border-blue-500/40 transition-all shadow-md cursor-pointer hover:bg-white/[0.02] active:scale-[0.99] group"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2.5">
@@ -1013,9 +1085,14 @@ export const AssetsView = ({
                           </div>
                         </div>
 
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-blue-500/15 text-blue-400 border border-blue-500/30">
-                          Spot
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {allocPct.toFixed(1)}%
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                            Spot
+                          </span>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 bg-[#08090C] p-2.5 rounded-xl border border-white/5 text-xs font-mono">
@@ -1055,12 +1132,14 @@ export const AssetsView = ({
                       </div>
 
                       <div className="flex items-center justify-between pt-1 border-t border-white/5">
-                        <span className="text-[10px] font-mono text-slate-400">
-                          {allocPct.toFixed(1)}% Portafolio
+                        <span className="text-[10px] text-blue-400 font-bold flex items-center gap-1 group-hover:underline">
+                          <span>Ver Ficha 360° & TP/SL</span>
+                          <ArrowUpRight className="w-3 h-3" />
                         </span>
                         <div className="flex items-center space-x-1.5">
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setSellModalItem(item);
                               setSellPercentage(100);
                             }}
@@ -1070,20 +1149,27 @@ export const AssetsView = ({
                             <span>Vender</span>
                           </button>
                           <button
-                            onClick={() => onOpenCoinInTerminal(item.coin.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenCoinInTerminal(item.coin.id);
+                            }}
                             className="px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-black rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-blue-500/20"
                           >
                             <ArrowUpRight className="w-3.5 h-3.5" />
                             <span>Terminal</span>
                           </button>
                           <button
-                            onClick={() => handleOpenAddModal(item.coin.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenAddModal(item.coin.id);
+                            }}
                             className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 cursor-pointer transition-all border border-white/5"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               if (confirm(`¿Eliminar ${item.coin.name} de tu custodia?`)) {
                                 onRemoveHolding(item.coin.id);
                               }
@@ -1117,11 +1203,15 @@ export const AssetsView = ({
                 </thead>
                 <tbody className="divide-y divide-white/5 font-mono">
                   {/* Row 1: USDT Cash Row */}
-                  {(!searchQuery || 'tether usdt efectivo stablecoin dolares'.includes(searchQuery.toLowerCase())) && (
-                    <tr className="hover:bg-white/[0.03] transition-colors h-14 bg-emerald-500/[0.02]">
+                  {(!donutFilterCoinId || donutFilterCoinId === 'usdt') &&
+                    (!searchQuery || 'tether usdt efectivo stablecoin dolares'.includes(searchQuery.toLowerCase())) && (
+                    <tr
+                      onClick={() => setSelectedCoinForDrawer('usdt')}
+                      className="hover:bg-white/[0.04] transition-colors h-14 bg-emerald-500/[0.02] cursor-pointer group"
+                    >
                       <td className="pl-3">
                         <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow-md shrink-0">
+                          <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow-md shrink-0 group-hover:scale-105 transition-transform">
                             <CryptoIcon symbol="USDT" size={24} />
                           </div>
                           <div>
@@ -1131,7 +1221,10 @@ export const AssetsView = ({
                                 USDT
                               </span>
                             </div>
-                            <div className="text-[10px] text-slate-400 font-sans">Efectivo Líquido Disponible</div>
+                            <div className="text-[10px] text-slate-400 font-sans flex items-center gap-1">
+                              <span>Efectivo Líquido Disponible</span>
+                              <span className="text-[9px] text-[#0ECB81] font-bold opacity-0 group-hover:opacity-100 transition-opacity">· Clic para ver ficha</span>
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -1169,7 +1262,8 @@ export const AssetsView = ({
                       </td>
                       <td className="text-right pr-3">
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setInputCash(usdtCash);
                             setIsCashModalOpen(true);
                           }}
@@ -1184,21 +1278,33 @@ export const AssetsView = ({
 
                   {/* Spot Holdings Rows */}
                   {consolidatedSpotHoldings
-                    .filter(
-                      (s) =>
-                        !searchQuery ||
-                        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        s.symbol.toLowerCase().includes(searchQuery.toLowerCase())
-                    )
+                    .filter((s) => {
+                      if (donutFilterCoinId && donutFilterCoinId !== 'usdt') {
+                        if (s.coin.id.toLowerCase() !== donutFilterCoinId.toLowerCase()) return false;
+                      } else if (donutFilterCoinId === 'usdt') {
+                        return false;
+                      }
+                      if (searchQuery) {
+                        return (
+                          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          s.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+                        );
+                      }
+                      return true;
+                    })
                     .map((item) => {
                       const allocPct = totalPortfolioValueUsd > 0 ? (item.totalValUsd / totalPortfolioValueUsd) * 100 : 0;
                       const isPos = item.pnlUsd >= 0;
 
                       return (
-                        <tr key={item.id} className="hover:bg-white/[0.03] transition-colors h-14">
+                        <tr
+                          key={item.id}
+                          onClick={() => setSelectedCoinForDrawer(item.coin.id)}
+                          className="hover:bg-white/[0.04] transition-colors h-14 cursor-pointer group"
+                        >
                           <td className="pl-3">
                             <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow-md shrink-0">
+                              <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow-md shrink-0 group-hover:scale-105 transition-transform">
                                 <CryptoIcon symbol={item.symbol} size={24} />
                               </div>
                               <div>
@@ -1208,7 +1314,10 @@ export const AssetsView = ({
                                     {item.symbol}
                                   </span>
                                 </div>
-                                <div className="text-[10px] text-slate-400 font-sans">{item.source}</div>
+                                <div className="text-[10px] text-slate-400 font-sans flex items-center gap-1">
+                                  <span>{item.source}</span>
+                                  <span className="text-[9px] text-blue-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">· Clic para ver ficha 360°</span>
+                                </div>
                               </div>
                             </div>
                           </td>
@@ -1269,7 +1378,8 @@ export const AssetsView = ({
                           <td className="text-right pr-3">
                             <div className="flex items-center justify-end space-x-1.5">
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setSellModalItem(item);
                                   setSellPercentage(100);
                                 }}
@@ -1280,21 +1390,28 @@ export const AssetsView = ({
                                 <span>Vender</span>
                               </button>
                               <button
-                                onClick={() => onOpenCoinInTerminal(item.coin.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenCoinInTerminal(item.coin.id);
+                                }}
                                 title="Operar en Terminal Pro"
                                 className="p-1.5 text-blue-400 hover:text-white rounded-lg hover:bg-blue-500/20 bg-blue-500/10 cursor-pointer transition-all border border-blue-500/20"
                               >
                                 <ArrowUpRight className="w-3.5 h-3.5" />
                               </button>
                               <button
-                                onClick={() => handleOpenAddModal(item.coin.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenAddModal(item.coin.id);
+                                }}
                                 title="Editar posición"
                                 className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 cursor-pointer transition-all"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   if (confirm(`¿Eliminar ${item.coin.name} de tu custodia?`)) {
                                     onRemoveHolding(item.coin.id);
                                   }
@@ -1643,6 +1760,74 @@ export const AssetsView = ({
           </div>
         </div>
       )}
+
+      {/* ─── 5. FICHA TÉCNICA 360° (SIDE DRAWER EN DESKTOP / BOTTOM SHEET EN MÓVIL) ─── */}
+      <AssetDetailDrawer
+        isOpen={!!selectedCoinForDrawer}
+        onClose={() => setSelectedCoinForDrawer(null)}
+        coinId={selectedCoinForDrawer}
+        holding={selectedCoinForDrawer && selectedCoinForDrawer !== 'usdt' ? holdings[selectedCoinForDrawer] : null}
+        activeTrade={trades.find((t) => t.coin_id === selectedCoinForDrawer && t.status === 'OPEN') || null}
+        currentPrice={
+          selectedCoinForDrawer === 'usdt'
+            ? usdtCash
+            : selectedCoinForDrawer
+              ? (livePrices[selectedCoinForDrawer] ?? COINS[selectedCoinForDrawer]?.basePrice ?? 0)
+              : 0
+        }
+        change24h={
+          selectedCoinForDrawer && selectedCoinForDrawer !== 'usdt' && COINS[selectedCoinForDrawer]
+            ? (((livePrices[selectedCoinForDrawer] ?? COINS[selectedCoinForDrawer].basePrice) - COINS[selectedCoinForDrawer].basePrice) / (COINS[selectedCoinForDrawer].basePrice || 1)) * 100
+            : 0
+        }
+        currencyMode={currencyMode}
+        penRate={penRate}
+        onQuickSell={async (cId, pct) => {
+          const h = holdings[cId];
+          if (!h) return;
+          const price = livePrices[cId] ?? COINS[cId]?.basePrice ?? 1;
+          const unitsToSell = (h.units * pct) / 100;
+          const amountUsd = unitsToSell * price;
+          if (onExecuteSpotTrade) {
+            await onExecuteSpotTrade({
+              coinId: cId,
+              side: 'SELL',
+              price,
+              amountUsd,
+            });
+          } else {
+            const remaining = h.units - unitsToSell;
+            if (remaining <= 0.000001) onRemoveHolding(cId);
+            else onAddOrUpdateHolding(cId, remaining, h.avgEntryPrice);
+            onSetUsdtCash(usdtCash + amountUsd);
+          }
+          setFeedbackMessage({
+            text: `¡Venta de ${pct}% de ${COINS[cId]?.symbol || cId} ejecutada exitosamente!`,
+            type: 'SUCCESS',
+          });
+          setTimeout(() => setFeedbackMessage(null), 3500);
+        }}
+        onOpenInTerminal={onOpenCoinInTerminal}
+        onCreateGridBot={(cId) => onOpenCoinInTerminal(cId)}
+        onAdjustCash={() => setIsCashModalOpen(true)}
+      />
+
+      {/* ─── 6. FICHA MAESTRA DE GRID BOT (BOT DETAIL MODAL CON MALLAS Y GANANCIAS) ─── */}
+      <BotDetailModal
+        bot={selectedBotForModal}
+        trades={trades}
+        currentPrice={
+          selectedBotForModal
+            ? (livePrices[resolveBotCoin(selectedBotForModal).id] ?? resolveBotCoin(selectedBotForModal).basePrice)
+            : 0
+        }
+        livePrices={livePrices}
+        currencyMode={currencyMode}
+        penRate={penRate}
+        onClose={() => setSelectedBotForModal(null)}
+        onUpdateBotStatus={onUpdateBotStatus || (async () => {})}
+        onSelectCoin={onOpenCoinInTerminal}
+      />
     </div>
   );
 };

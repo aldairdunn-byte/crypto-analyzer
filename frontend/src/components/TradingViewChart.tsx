@@ -26,6 +26,8 @@ import {
   Cpu,
   Zap,
   BarChart2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { CryptoIcon } from './CryptoIcon';
 import { type TradeRow } from '../lib/supabase';
@@ -80,6 +82,7 @@ export const TradingViewChart = ({
   const [showGridLines, setShowGridLines] = useState<boolean>(true);
   const [showSpotLines, setShowSpotLines] = useState<boolean>(true);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   // Active coin metadata & fundamentals
   const activeCoinMeta: CoinInfo = useMemo(() => {
@@ -420,7 +423,9 @@ export const TradingViewChart = ({
   }, [gridLevels, trades, showGridLines, showSpotLines, coinSymbol]);
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-[#08090C] select-none border-r border-white/10 relative overflow-hidden">
+    <div className={`flex flex-col h-full min-h-0 bg-[#08090C] select-none border-r border-white/10 relative overflow-hidden ${
+      isFullscreen ? 'fixed inset-0 z-50 w-screen h-screen' : ''
+    }`}>
       {/* ─── TIER 1: HIGH-FREQUENCY 24H METRICS & ASSET HEADER ─── */}
       <div className="h-11 sm:h-12 border-b border-white/10 px-3 sm:px-4 flex items-center justify-between text-xs bg-[#0B0E14] shrink-0 gap-2 overflow-x-auto no-scrollbar font-mono">
         {/* Left: Asset Ticker + Category Tag + Info Trigger */}
@@ -593,13 +598,24 @@ export const TradingViewChart = ({
           </div>
         </div>
 
-        <button
-          onClick={onRefresh}
-          className="text-slate-400 hover:text-white transition-colors cursor-pointer p-1 rounded-lg hover:bg-white/5 shrink-0"
-          title="Refrescar Velas de Binance"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center space-x-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="text-slate-400 hover:text-white transition-colors cursor-pointer p-1 rounded-lg hover:bg-white/5"
+            title={isFullscreen ? 'Salir de pantalla completa' : 'Ver gráfico en pantalla completa'}
+          >
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 text-amber-400" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="text-slate-400 hover:text-white transition-colors cursor-pointer p-1 rounded-lg hover:bg-white/5"
+            title="Refrescar Velas de Binance"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Chart Canvas */}
