@@ -115,6 +115,14 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return () => clearInterval(interval);
   }, [refreshPortfolio]);
 
+  // Cross-Device Cloud Sync: Synchronize demo USDT balance from Supabase profile on login
+  useEffect(() => {
+    if (!isLiveMode && profile?.demo_usdt_balance !== undefined && profile.demo_usdt_balance !== null) {
+      setUsdtCashState(profile.demo_usdt_balance);
+      localStorage.setItem('demo_usdt_cash', profile.demo_usdt_balance.toString());
+    }
+  }, [profile?.demo_usdt_balance, isLiveMode]);
+
   // Sync USDT cash to LocalStorage and Auth profile
   const setUsdtCash: React.Dispatch<React.SetStateAction<number>> = (value) => {
     setUsdtCashState((prev) => {

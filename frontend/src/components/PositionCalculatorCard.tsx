@@ -25,6 +25,10 @@ interface PositionCalculatorCardProps {
     side: 'BUY' | 'SELL';
     price: number;
     amountUsd: number;
+    takeProfitPrice?: number;
+    stopLossPrice?: number;
+    strategyType?: 'SPOT_BREAKOUT' | 'SPOT_MANUAL' | 'GRID' | 'DCA';
+    tradeId?: string;
   }) => Promise<void> | void;
 }
 
@@ -307,6 +311,9 @@ export const PositionCalculatorCard = ({
                   side: 'BUY',
                   price: levels.entryLimit,
                   amountUsd: safeCapital,
+                  takeProfitPrice: levels.takeProfit1.price,
+                  stopLossPrice: levels.stopLoss.price,
+                  strategyType: 'SPOT_BREAKOUT',
                 })
               }
               className="w-full bg-gradient-to-r from-[#0ECB81] to-emerald-400 hover:from-emerald-400 hover:to-[#0ECB81] text-black font-black text-xs py-3 px-4 rounded-xl flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg shadow-emerald-500/20 active:scale-98"

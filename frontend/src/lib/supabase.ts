@@ -42,7 +42,14 @@ export interface TradeRow {
   units: number;
   pnl_usd?: number;
   pnl_pct?: number;
-  status: 'OPEN' | 'CLOSED' | 'CANCELLED';
+  fee_usd?: number;
+  fee_rate?: number;
+  gross_pnl_usd?: number;
+  take_profit_price?: number;
+  stop_loss_price?: number;
+  strategy_type?: 'SPOT_BREAKOUT' | 'SPOT_MANUAL' | 'GRID' | 'DCA';
+  order_type?: 'MARKET' | 'LIMIT';
+  status: 'OPEN' | 'CLOSED' | 'CANCELLED' | 'PENDING';
   created_at: string;
 }
 
@@ -171,4 +178,154 @@ export async function fetchMarketCacheFromSupabase(): Promise<MarketCacheRow[]> 
     return [];
   }
 }
+
+// ─── TRADE RECORD SERIALIZATION & SUPABASE SYNC HELPERS ───
+
+export function parseSupabaseTradeRow(raw: any): TradeRow {
+  let meta: any = {};
+  if (raw.entry_reason) {
+    try {
+      meta =
+        typeof raw.entry_reason === 'string' && raw.entry_reason.startsWith('{')
+          ? JSON.parse(raw.entry_reason)
+          : {};
+    } catch {
+      meta = {};
+    }
+  }
+
+  let exitMeta: any = {};
+  if (raw.exit_reason) {
+    try {
+      exitMeta =
+        typeof raw.exit_reason === 'string' && raw.exit_reason.startsWith('{')
+          ? JSON.parse(raw.exit_reason)
+          : {};
+    } catch {
+      exitMeta = {};
+    }
+  }
+
+  const isPending = raw.status === 'OPEN' && meta.is_pending_limit === true;
+  const status = isPending ? ('PENDING' as const) : (raw.status as 'OPEN' | 'CLOSED' | 'CANCELLED');
+
+  return {
+    id: raw.id,
+    user_id: raw.user_id,
+    bot_id: raw.bot_id,
+    coin_id: raw.coin_id,
+    side: raw.side,
+    entry_price: Number(raw.entry_price || 0),
+    exit_price: raw.exit_price ? Number(raw.exit_price) : undefined,
+    amount_usd: Number(raw.amount_usd || 0),
+    units: Number(raw.units || 0),
+    pnl_usd: raw.pnl_usd !== null && raw.pnl_usd !== undefined ? Number(raw.pnl_usd) : undefined,
+    pnl_pct: raw.pnl_pct !== null && raw.pnl_pct !== undefined ? Number(raw.pnl_pct) : undefined,
+    fee_usd: exitMeta.fee_usd ?? meta.fee_usd,
+    fee_rate: meta.fee_rate ?? 0.001,
+    gross_pnl_usd: exitMeta.gross_pnl_usd ?? meta.gross_pnl_usd,
+    take_profit_price: meta.tp,
+    stop_loss_price: meta.sl,
+    strategy_type: meta.strategy || (raw.bot_id ? 'GRID' : 'SPOT_MANUAL'),
+    order_type: meta.order_type || (isPending ? 'LIMIT' : 'MARKET'),
+    status,
+    created_at: raw.created_at || raw.entry_time || new Date().toISOString(),
+  };
+}
+
+export async function persistTradeToSupabase(trade: TradeRow, userId?: string): Promise<boolean> {
+  try {
+    const meta = JSON.stringify({
+      tp: trade.take_profit_price,
+      sl: trade.stop_loss_price,
+      strategy: trade.strategy_type || 'SPOT_MANUAL',
+      order_type: trade.order_type || 'MARKET',
+      is_pending_limit: trade.status === 'PENDING',
+      fee_usd: trade.fee_usd,
+      fee_rate: trade.fee_rate || 0.001,
+    });
+
+    // Supabase table check constraint requires status IN ('OPEN', 'CLOSED', 'CANCELLED')
+    const dbStatus = trade.status === 'PENDING' ? 'OPEN' : trade.status;
+
+    const payload: Record<string, any> = {
+      id: trade.id,
+      coin_id: trade.coin_id,
+      side: trade.side,
+      entry_price: trade.entry_price,
+      exit_price: trade.exit_price || null,
+      units: trade.units,
+      amount_usd: trade.amount_usd,
+      pnl_usd: trade.pnl_usd ?? null,
+      pnl_pct: trade.pnl_pct ?? null,
+      status: dbStatus,
+      entry_reason: meta,
+      entry_time: trade.created_at || new Date().toISOString(),
+    };
+
+    if (userId || trade.user_id) {
+      payload.user_id = userId || trade.user_id;
+    }
+    if (trade.bot_id) {
+      payload.bot_id = trade.bot_id;
+    }
+
+    const { error } = await supabase.from('bot_trades').upsert(payload);
+    if (error) {
+      console.warn('Error persisting trade to Supabase bot_trades:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Exception in persistTradeToSupabase:', err);
+    return false;
+  }
+}
+
+export async function updateTradeStatusInSupabase(
+  tradeId: string,
+  updates: {
+    status: 'OPEN' | 'CLOSED' | 'CANCELLED';
+    exit_price?: number;
+    pnl_usd?: number;
+    pnl_pct?: number;
+    fee_usd?: number;
+    gross_pnl_usd?: number;
+    reason?: string;
+    units?: number;
+    amount_usd?: number;
+  }
+): Promise<boolean> {
+  try {
+    const exitMeta = JSON.stringify({
+      fee_usd: updates.fee_usd,
+      gross_pnl_usd: updates.gross_pnl_usd,
+      reason: updates.reason,
+    });
+
+    const payload: any = {
+      status: updates.status,
+      updated_at: new Date().toISOString(),
+      exit_reason: exitMeta,
+    };
+
+    if (updates.exit_price !== undefined) payload.exit_price = updates.exit_price;
+    if (updates.pnl_usd !== undefined) payload.pnl_usd = updates.pnl_usd;
+    if (updates.pnl_pct !== undefined) payload.pnl_pct = updates.pnl_pct;
+    if (updates.units !== undefined) payload.units = updates.units;
+    if (updates.amount_usd !== undefined) payload.amount_usd = updates.amount_usd;
+    payload.exit_time = new Date().toISOString();
+
+    const { error } = await supabase.from('bot_trades').update(payload).eq('id', tradeId);
+    if (error) {
+      console.warn('Error updating trade status in Supabase bot_trades:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Exception in updateTradeStatusInSupabase:', err);
+    return false;
+  }
+}
+
 

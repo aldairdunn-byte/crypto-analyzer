@@ -265,6 +265,9 @@ export const HeaderTickerBar = ({
                       key={c.id}
                       onClick={() => {
                         onSelectCoin(c.id);
+                        if (activeView !== 'TERMINAL') {
+                          onSelectView('TERMINAL');
+                        }
                         setIsSearchOpen(false);
                         setSearchQuery('');
                       }}

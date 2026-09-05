@@ -1,5 +1,5 @@
-import React from 'react';
-import { Wallet, Bot, PieChart } from 'lucide-react';
+import React, { useState } from 'react';
+import { Wallet, Bot, PieChart, TrendingUp, TrendingDown } from 'lucide-react';
 
 interface TotalEquityCardProps {
   virtualUsdt: number;
@@ -11,6 +11,10 @@ interface TotalEquityCardProps {
   spotPct: number;
   pnl24hPct: number;
   pnl24hUsd: number;
+  pnl7dPct?: number;
+  pnl7dUsd?: number;
+  allTimePnlPct?: number;
+  allTimePnlUsd?: number;
   hideBalances: boolean;
   currencyMode: 'USD' | 'PEN';
   penRate: number;
@@ -26,10 +30,37 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
   spotPct,
   pnl24hPct,
   pnl24hUsd,
+  pnl7dPct,
+  pnl7dUsd,
+  allTimePnlPct,
+  allTimePnlUsd,
   hideBalances,
   currencyMode,
   penRate,
 }) => {
+  const [pnlPeriod, setPnlPeriod] = useState<'24H' | '7D' | 'TOTAL'>('24H');
+
+  const activePnlUsd =
+    pnlPeriod === '7D'
+      ? (pnl7dUsd ?? pnl24hUsd)
+      : pnlPeriod === 'TOTAL'
+        ? (allTimePnlUsd ?? pnl24hUsd)
+        : pnl24hUsd;
+
+  const activePnlPct =
+    pnlPeriod === '7D'
+      ? (pnl7dPct ?? pnl24hPct)
+      : pnlPeriod === 'TOTAL'
+        ? (allTimePnlPct ?? pnl24hPct)
+        : pnl24hPct;
+
+  const isPositive = activePnlUsd >= 0;
+  const sign = isPositive ? '+' : '';
+  const colorTextClass = isPositive ? 'text-[#0ECB81]' : 'text-[#F6465D]';
+  const borderPillClass = isPositive
+    ? 'border-emerald-500/25 bg-emerald-500/10'
+    : 'border-rose-500/25 bg-rose-500/10';
+
   return (
     <div className="bg-[#0D1117] border border-white/[0.08] rounded-2xl p-3.5 sm:p-4 shadow-xl select-none">
       {/* Top Half: Patrimono + PnL + Donut Ring */}
@@ -52,14 +83,42 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
                 : `≈ $ ${virtualUsdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
           </div>
 
-          {/* PnL HOY Small Capsule Box */}
-          <div className="pt-1">
-            <div className="inline-flex items-center justify-between bg-[#08090C] border border-white/[0.08] rounded-xl px-2.5 py-1 text-xs gap-2 sm:gap-3">
-              <span className="text-[9px] text-slate-400 font-bold uppercase">PnL HOY</span>
-              <span className="font-mono font-extrabold text-[#0ECB81]">+{pnl24hPct.toFixed(2)}%</span>
-              <span className="font-mono font-bold text-[#0ECB81]/90">
-                {hideBalances ? '••••' : `+$${pnl24hUsd.toFixed(2)}`}
+          {/* Dynamic PnL Capsule with Period Tabs (24H / 7D / Total) */}
+          <div className="pt-1 flex items-center space-x-1.5 flex-wrap gap-y-1">
+            <div className={`inline-flex items-center justify-between border rounded-xl px-2.5 py-1 text-xs gap-1.5 sm:gap-2.5 transition-colors ${borderPillClass}`}>
+              {isPositive ? (
+                <TrendingUp className="w-3.5 h-3.5 text-[#0ECB81] shrink-0" />
+              ) : (
+                <TrendingDown className="w-3.5 h-3.5 text-[#F6465D] shrink-0" />
+              )}
+              <span className="text-[9px] text-slate-400 font-bold uppercase font-sans">
+                PnL {pnlPeriod === '24H' ? 'HOY' : pnlPeriod === '7D' ? '7D' : 'TOTAL'}
               </span>
+              <span className={`font-mono font-extrabold tabular-nums ${colorTextClass}`}>
+                {sign}{activePnlPct.toFixed(2)}%
+              </span>
+              <span className="text-slate-500 text-[10px]">|</span>
+              <span className={`font-mono font-bold tabular-nums ${colorTextClass}`}>
+                {hideBalances ? '••••' : `${sign}$${activePnlUsd.toFixed(2)}`}
+              </span>
+            </div>
+
+            {/* Quick Period Buttons */}
+            <div className="inline-flex bg-[#08090C] border border-white/10 rounded-lg p-0.5 space-x-0.5 font-mono text-[9.5px]">
+              {(['24H', '7D', 'TOTAL'] as const).map((period) => (
+                <button
+                  key={period}
+                  type="button"
+                  onClick={() => setPnlPeriod(period)}
+                  className={`px-1.5 py-0.5 rounded cursor-pointer transition-all font-bold ${
+                    pnlPeriod === period
+                      ? 'bg-white/15 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {period === '24H' ? '24H' : period === '7D' ? '7D' : 'Todo'}
+                </button>
+              ))}
             </div>
           </div>
         </div>

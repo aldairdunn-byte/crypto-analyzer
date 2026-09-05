@@ -6,6 +6,10 @@ import {
   getDynamicCoinInfo,
   type GridLevelItem,
   formatDynamicPrice,
+  COINS,
+  type CoinInfo,
+  TOP_SPOT_SIGNAL_COIN_IDS,
+  isValidSpotCrypto,
 } from '../lib/marketData';
 import {
   type PlainSpanishNotification,
@@ -15,7 +19,15 @@ import {
   createBotCreatedNotification,
   getInitialSeedNotifications,
 } from '../lib/notifications';
-import { supabase, type BotRow, type TradeRow, type SignalRow } from '../lib/supabase';
+import {
+  supabase,
+  type BotRow,
+  type TradeRow,
+  type SignalRow,
+  parseSupabaseTradeRow,
+  persistTradeToSupabase,
+  updateTradeStatusInSupabase,
+} from '../lib/supabase';
 import {
   sendTelegramGridBotCreated,
   sendTelegramGridOrderFilled,
@@ -66,14 +78,20 @@ interface BotEngineContextType {
     side: 'BUY' | 'SELL';
     price: number;
     amountUsd: number;
+    orderType?: 'MARKET' | 'LIMIT';
+    takeProfitPrice?: number;
+    stopLossPrice?: number;
+    strategyType?: 'SPOT_BREAKOUT' | 'SPOT_MANUAL' | 'GRID' | 'DCA';
+    tradeId?: string;
   }) => Promise<void>;
+  cancelPendingTrade: (tradeId: string) => Promise<void>;
 }
 
 const BotEngineContext = createContext<BotEngineContextType | undefined>(undefined);
 
 export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const { activeCoin, currentPrice, livePrices, coinInfo, analysis } = useMarketData();
+  const { activeCoin, currentPrice, livePrices, allCoinsStats } = useMarketData();
   const { availableUsdt, currencyMode, penRate, setUsdtCash, setCapitalInBots, capitalInBots, holdings, updateHoldingFromTrade } = usePortfolio();
 
   const [bots, setBots] = useState<BotRow[]>(() => {
@@ -139,6 +157,9 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Memory ref for previous prices per coin to ensure strict Tick-Crossing
   const prevPricesRef = useRef<Record<string, number>>({});
+
+  // Tracks which trades have already fired a TP proximity alert this session
+  const proximityAlertedRef = useRef<Set<string>>(new Set());
 
   // Active Grid Orders with persistence
   const [activeGridOrders, setActiveGridOrders] = useState<GridLevelItem[]>(() => {
@@ -235,8 +256,37 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             }
           }
           if (tradesRes.data) {
-            setTrades(tradesRes.data as TradeRow[]);
-            localStorage.setItem('crypto_analyzer_trades', JSON.stringify(tradesRes.data));
+            // Deserialise all rows from Supabase, parsing metadata from entry_reason / exit_reason
+            const cloudTrades: TradeRow[] = (tradesRes.data as any[]).map(parseSupabaseTradeRow);
+
+            // Reconcile with localStorage to guarantee that NO locally created trades are lost
+            const savedTrades = localStorage.getItem('crypto_analyzer_trades');
+            let localTrades: TradeRow[] = [];
+            if (savedTrades) {
+              try {
+                localTrades = JSON.parse(savedTrades);
+              } catch {
+                localTrades = [];
+              }
+            }
+
+            const tradeMap = new Map<string, TradeRow>();
+            localTrades.forEach((t) => tradeMap.set(t.id, t));
+            cloudTrades.forEach((t) => tradeMap.set(t.id, t)); // Cloud DB has latest status
+
+            const mergedTrades = Array.from(tradeMap.values()).sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+
+            setTrades(mergedTrades);
+            localStorage.setItem('crypto_analyzer_trades', JSON.stringify(mergedTrades));
+
+            // Sync any local trade to Supabase that is missing from cloud
+            localTrades.forEach((lt) => {
+              if (!cloudTrades.some((ct) => ct.id === lt.id)) {
+                persistTradeToSupabase(lt, user.id);
+              }
+            });
           }
           if (signalsRes.data && signalsRes.data.length > 0) {
             setSignals(signalsRes.data as SignalRow[]);
@@ -287,13 +337,128 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setCapitalInBots(totalAllocated);
   }, [bots, setCapitalInBots]);
 
+  // 2.A Real-time Stop Loss Execution & Capital Protection
+  useEffect(() => {
+    const activeBots = bots.filter((b) => b.status === 'ACTIVE');
+    if (activeBots.length === 0) return;
+
+    activeBots.forEach((bot) => {
+      const bCoinId = bot.coin_id;
+      const bPrice = bCoinId === activeCoin ? currentPrice : (livePrices[bCoinId] || 0);
+      if (!bPrice || bPrice <= 0) return;
+
+      const cfg = (bot as any).config || (typeof bot.config_json === 'string' ? JSON.parse(bot.config_json) : bot.config_json) || {};
+      const slPrice = Number(cfg.stop_loss);
+
+      if (slPrice && slPrice > 0 && bPrice <= slPrice) {
+        // Stop Loss triggered!
+        // 1. Cancel and remove active grid orders for this bot
+        const botOrders = activeGridOrders.filter((o) => o.botId === bot.id);
+        const unspentCash = botOrders
+          .filter((o) => o.side === 'BUY' && o.status === 'PENDING')
+          .reduce((sum, o) => sum + (o.allocationUsd || 0), 0);
+
+        setActiveGridOrders((prev) => prev.filter((o) => o.botId !== bot.id));
+
+        // 2. Liquidate open buy positions at market price
+        let liquidatedNetUsdt = 0;
+        setTrades((prevTrades) => {
+          return prevTrades.map((t) => {
+            if (t.status === 'OPEN' && t.bot_id === bot.id) {
+              const tradeUnits = t.units || 0;
+              const grossProceeds = tradeUnits * bPrice;
+              const fee = grossProceeds * 0.001; // 0.10% taker fee on market stop liquidation
+              const netProceeds = grossProceeds - fee;
+              liquidatedNetUsdt += netProceeds;
+              const costBasis = t.amount_usd || (tradeUnits * t.entry_price);
+              const grossPnl = grossProceeds - costBasis;
+              const realPnl = netProceeds - costBasis;
+
+              return {
+                ...t,
+                status: 'CLOSED' as const,
+                exit_price: bPrice,
+                fee_usd: Number(fee.toFixed(4)),
+                fee_rate: 0.001,
+                gross_pnl_usd: Number(grossPnl.toFixed(2)),
+                pnl_usd: Number(realPnl.toFixed(2)),
+              };
+            }
+            return t;
+          });
+        });
+
+        // 3. Return remaining capital (unspent allocation + liquidated positions)
+        const totalRefund = Number(
+          (unspentCash + (liquidatedNetUsdt > 0 ? liquidatedNetUsdt : 0)).toFixed(2)
+        );
+        const safeRefund = totalRefund > 0 ? totalRefund : Number(((bot.capital_allocated_usd || 0) * 0.90).toFixed(2));
+
+        setUsdtCash((prev) => prev + safeRefund);
+
+        // 4. Mark bot as STOPPED
+        setBots((prev) =>
+          prev.map((b) => (b.id === bot.id ? { ...b, status: 'STOPPED' as const } : b))
+        );
+
+        const targetCoin = getDynamicCoinInfo(bot.coin_id);
+
+        addToast({
+          type: 'WARNING',
+          title: `🚨 Stop Loss Ejecutado: ${bot.name}`,
+          message: `Precio cayó a $${bPrice.toFixed(2)} (Stop Loss: $${slPrice.toFixed(2)}). Bot liquidado a mercado para proteger capital. $${safeRefund.toFixed(2)} USDT devueltos a disponible.`,
+        });
+
+        pushNotification({
+          id: crypto.randomUUID(),
+          coinId: targetCoin.id,
+          coinSymbol: targetCoin.symbol,
+          coinName: targetCoin.name,
+          category: 'DANGER',
+          badge: 'STOP LOSS',
+          badgeColor: 'text-rose-400',
+          badgeBg: 'bg-rose-500/10',
+          badgeBorder: 'border-rose-500/30',
+          headline: `Stop Loss Ejecutado: ${bot.name}`,
+          plainExplanation: `El precio rompió el soporte configurado en $${slPrice.toFixed(2)}. Mallas canceladas y capital protegido en $${safeRefund.toFixed(2)} USDT.`,
+          highlightText: `$${safeRefund.toFixed(2)} USDT`,
+          actionText: 'Ver Portafolio',
+          actionCoinId: targetCoin.id,
+          timestamp: Date.now(),
+          timeAgo: 'Ahora',
+          isRead: false,
+        });
+
+        sendTelegramBotStatusChange({
+          botName: bot.name,
+          coinSymbol: targetCoin.symbol,
+          strategy: bot.strategy as any,
+          status: 'STOPPED',
+          capitalUsd: bot.capital_allocated_usd,
+          penRate,
+        });
+      }
+    });
+  }, [bots, currentPrice, livePrices, activeCoin, activeGridOrders, setUsdtCash, addToast, pushNotification, penRate]);
+
   // 2. Real-time Simulation Engine & Continuous Grid Recycling (Tick Crossing)
   useEffect(() => {
     if (activeGridOrders.length === 0) return;
 
     setActiveGridOrders((prevOrders) => {
       let updated = false;
-      const nextOrders = prevOrders.map((order) => {
+      // Strict Multi-Tenancy & Orphan Isolation: Purge any order without an ACTIVE parent bot
+      const validOrders = prevOrders.filter((order) => {
+        if (!order.botId) return false;
+        const parentBot = bots.find((b) => b.id === order.botId);
+        return Boolean(parentBot && parentBot.status === 'ACTIVE');
+      });
+
+      if (validOrders.length !== prevOrders.length) {
+        updated = true;
+      }
+
+      const nextOrders = validOrders.map((order) => {
         const orderCoinId = order.coinId || activeCoin;
         const orderCoin = getDynamicCoinInfo(orderCoinId);
         const orderPrice = orderCoinId === activeCoin ? currentPrice : (livePrices[orderCoinId] || order.price);
@@ -301,14 +466,6 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         if (order.status !== 'PENDING') {
           return order;
-        }
-
-        // Only trigger orders whose parent bot is currently ACTIVE
-        if (order.botId) {
-          const parentBot = bots.find((b) => b.id === order.botId);
-          if (parentBot && parentBot.status !== 'ACTIVE') {
-            return order;
-          }
         }
 
         // Strict Tick Crossing condition
@@ -319,12 +476,42 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (isTriggered) {
           updated = true;
           const decimals = orderCoin?.decimals || 2;
-          const profitPct = 2.50; // 2.50% neto por escalón
-          const profitUsd = order.side === 'SELL' ? Number((order.allocationUsd * (profitPct / 100)).toFixed(2)) : 0;
-          const actualEntryPrice = order.side === 'BUY' ? order.price : (order.entryPrice || Number((order.price / (1 + profitPct / 100)).toFixed(decimals)));
 
-          if (profitUsd > 0) {
-            setUsdtCash((prev) => prev + profitUsd);
+          // Extract realistic grid spacing from parent bot config
+          const parentBot = bots.find((b) => b.id === order.botId);
+          const cfg = (parentBot as any)?.config_json || (parentBot as any)?.config || {};
+          const low = Number(cfg.price_low) || (order.price * 0.95);
+          const high = Number(cfg.price_high) || (order.price * 1.05);
+          const grids = Number(cfg.num_grids) || 8;
+          const step = grids > 1 ? (high - low) / (grids - 1) : (order.price * 0.02);
+
+          // Realistic entry price tracking
+          const actualEntryPrice = order.side === 'BUY'
+            ? order.price
+            : (order.entryPrice && order.entryPrice > 0 ? order.entryPrice : Number(Math.max(0.000001, order.price - step).toFixed(decimals)));
+
+          // Real raw profit percentage between sell price and actual entry price
+          const rawProfitPct = order.side === 'SELL' && actualEntryPrice > 0
+            ? ((order.price - actualEntryPrice) / actualEntryPrice) * 100
+            : 0;
+
+          // Exchange fee deduction: 0.10% buy fee + 0.10% sell fee = 0.20% round-trip fee (Binance VIP0 standard)
+          const exchangeFeeRate = order.side === 'SELL' ? 0.002 : 0.001;
+          const feeUsd = Number((order.allocationUsd * exchangeFeeRate).toFixed(4));
+          const grossProfitUsd = order.side === 'SELL'
+            ? Number((order.allocationUsd * (rawProfitPct / 100)).toFixed(2))
+            : 0;
+          const netProfitUsd = order.side === 'SELL'
+            ? Number(Math.max(0.01, grossProfitUsd - feeUsd).toFixed(2))
+            : 0;
+          const netProfitPct = order.side === 'SELL' && order.allocationUsd > 0
+            ? Number(((netProfitUsd / order.allocationUsd) * 100).toFixed(2))
+            : 0;
+          const profitUsd = netProfitUsd;
+          const profitPct = netProfitPct;
+
+          if (netProfitUsd > 0) {
+            setUsdtCash((prev) => prev + netProfitUsd);
           }
 
           // Record Trade with explicit bot_id attribution
@@ -338,8 +525,12 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             exit_price: order.side === 'SELL' ? order.price : undefined,
             amount_usd: order.allocationUsd,
             units: Number((order.allocationUsd / order.price).toFixed(6)),
+            fee_usd: feeUsd,
+            fee_rate: exchangeFeeRate,
+            gross_pnl_usd: order.side === 'SELL' ? grossProfitUsd : undefined,
             status: order.side === 'BUY' ? 'OPEN' : 'CLOSED',
-            pnl_usd: profitUsd > 0 ? profitUsd : undefined,
+            pnl_usd: netProfitUsd > 0 ? netProfitUsd : undefined,
+            pnl_pct: netProfitPct > 0 ? netProfitPct : undefined,
             created_at: new Date().toISOString(),
           };
 
@@ -359,7 +550,11 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     ...t,
                     status: 'CLOSED' as const,
                     exit_price: order.price,
-                    pnl_usd: profitUsd,
+                    fee_usd: feeUsd,
+                    fee_rate: exchangeFeeRate,
+                    gross_pnl_usd: grossProfitUsd,
+                    pnl_usd: netProfitUsd,
+                    pnl_pct: netProfitPct,
                   };
                 }
                 return t;
@@ -394,12 +589,12 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
           const symbol = orderCoin?.symbol || orderCoinId.toUpperCase();
 
-          // Continuous Grid Recycling:
-          // BUY filled -> convert to SELL at next upper price (+2.5%), remembering exact buy price
-          // SELL filled -> convert to BUY at lower price (-2.5%)
+          // Continuous Grid Recycling with real arithmetic step:
+          // BUY filled -> convert to SELL at next upper step (+step), storing exact entry price
+          // SELL filled -> convert to BUY at lower step (-step)
           const nextSide = order.side === 'BUY' ? ('SELL' as const) : ('BUY' as const);
           const nextPrice = Number(
-            (order.side === 'BUY' ? order.price * (1 + profitPct / 100) : order.price / (1 + profitPct / 100)).toFixed(decimals)
+            (order.side === 'BUY' ? order.price + step : Math.max(0.000001, order.price - step)).toFixed(decimals)
           );
 
           const recycledOrder: GridLevelItem = {
@@ -415,7 +610,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             title: `Orden de Grid Ejecutada: ${order.side} ${symbol}`,
             message:
               order.side === 'SELL'
-                ? `Venta a ${formatDynamicPrice(order.price, decimals, currencyMode, penRate)} (Entrada: ${formatDynamicPrice(actualEntryPrice, decimals, currencyMode, penRate)}). ¡+${formatDynamicPrice(profitUsd, 2, currencyMode, penRate)} USDT acreditados!`
+                ? `Venta a ${formatDynamicPrice(order.price, decimals, currencyMode, penRate)} (Entrada: ${formatDynamicPrice(actualEntryPrice, decimals, currencyMode, penRate)}). ¡+${formatDynamicPrice(profitUsd, 2, currencyMode, penRate)} USDT netos (+${profitPct.toFixed(2)}%) acreditados!`
                 : `Compra completada a ${formatDynamicPrice(order.price, decimals, currencyMode, penRate)} por $${order.allocationUsd.toFixed(2)} USDT. Orden de venta colocada en ${formatDynamicPrice(nextPrice, decimals, currencyMode, penRate)}`,
           });
 
@@ -718,16 +913,23 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   }, [bots, user, setUsdtCash, addToast]);
 
-  // Real Spot Execution Engine (Buy / Sell)
+  // Real Spot Execution Engine (Buy / Sell, Market & Limit)
   const executeSpotTrade = useCallback(async (trade: {
     coinId: string;
     side: 'BUY' | 'SELL';
     price: number;
     amountUsd: number;
+    orderType?: 'MARKET' | 'LIMIT';
+    takeProfitPrice?: number;
+    stopLossPrice?: number;
+    strategyType?: 'SPOT_BREAKOUT' | 'SPOT_MANUAL' | 'GRID' | 'DCA';
+    tradeId?: string;
   }) => {
     const targetCoin = getDynamicCoinInfo(trade.coinId);
-    const effectivePrice = trade.price > 0 ? trade.price : (livePrices[trade.coinId] || targetCoin.basePrice);
+    const liveMarketPrice = livePrices[trade.coinId] || (trade.coinId === activeCoin ? currentPrice : targetCoin.basePrice);
+    const effectivePrice = trade.price > 0 ? trade.price : liveMarketPrice;
     const units = effectivePrice > 0 ? trade.amountUsd / effectivePrice : 0;
+    const orderType = trade.orderType || 'MARKET';
 
     if (trade.side === 'BUY') {
       if (trade.amountUsd > availableUsdt) {
@@ -739,10 +941,77 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         throw new Error('Saldo insuficiente para orden spot');
       }
 
-      // Deduct USDT cash and update holding
+      // Check if this should be placed as a PENDING limit order
+      const isBreakout = trade.strategyType === 'SPOT_BREAKOUT';
+      const isPendingLimit =
+        orderType === 'LIMIT' &&
+        trade.price > 0 &&
+        (isBreakout
+          ? trade.price > liveMarketPrice * 1.002
+          : trade.price < liveMarketPrice * 0.998);
+
+      if (isPendingLimit) {
+        // Reserve USDT cash so it cannot be double-spent
+        setUsdtCash((prev) => Math.max(0, prev - trade.amountUsd));
+
+        const pendingTrade: TradeRow = {
+          id: crypto.randomUUID(),
+          user_id: user?.id,
+          coin_id: trade.coinId,
+          side: 'BUY',
+          entry_price: trade.price,
+          exit_price: trade.price,
+          amount_usd: trade.amountUsd,
+          units: Number(units.toFixed(targetCoin.decimals)),
+          fee_usd: 0,
+          fee_rate: 0.001,
+          take_profit_price: trade.takeProfitPrice,
+          stop_loss_price: trade.stopLossPrice,
+          strategy_type: trade.strategyType || 'SPOT_MANUAL',
+          order_type: 'LIMIT',
+          status: 'PENDING',
+          created_at: new Date().toISOString(),
+        };
+
+        setTrades((prev) => [pendingTrade, ...prev]);
+        // Persist pending limit order to Supabase
+        persistTradeToSupabase(pendingTrade, user?.id);
+
+        addToast({
+          type: 'INFO',
+          title: `🎯 Orden Límite Programada: ${targetCoin.symbol}`,
+          message: `Esperando ${isBreakout ? 'rompimiento' : 'retroceso'} a $${trade.price.toFixed(targetCoin.decimals)}. $${trade.amountUsd.toFixed(2)} USDT reservados.${trade.takeProfitPrice ? ` TP: $${trade.takeProfitPrice.toFixed(targetCoin.decimals)}` : ''}`,
+        });
+
+        pushNotification({
+          id: crypto.randomUUID(),
+          coinId: targetCoin.id,
+          coinSymbol: targetCoin.symbol,
+          coinName: targetCoin.name,
+          category: 'BUY_OPPORTUNITY',
+          badge: 'ORDEN LÍMITE',
+          badgeColor: 'text-amber-400',
+          badgeBg: 'bg-amber-500/10',
+          badgeBorder: 'border-amber-500/30',
+          headline: `🎯 Orden Límite: ${targetCoin.symbol}`,
+          plainExplanation: `Esperando precio de compra a $${trade.price.toFixed(targetCoin.decimals)} por $${trade.amountUsd.toFixed(2)} USDT.${trade.takeProfitPrice ? ` Take Profit fijado en $${trade.takeProfitPrice.toFixed(targetCoin.decimals)}.` : ''}`,
+          highlightText: `$${trade.amountUsd.toFixed(2)} USDT`,
+          actionText: 'Ver en Posiciones',
+          actionCoinId: targetCoin.id,
+          timestamp: Date.now(),
+          timeAgo: 'Ahora',
+          isRead: false,
+        });
+
+        return;
+      }
+
+      // Deduct USDT cash and update holding for immediate fill
       setUsdtCash((prev) => Math.max(0, prev - trade.amountUsd));
       updateHoldingFromTrade(trade.coinId, 'BUY', units, effectivePrice);
 
+      const feeUsd = Number((trade.amountUsd * 0.001).toFixed(4));
+      const strategyType = trade.strategyType || 'SPOT_MANUAL';
       const newTrade: TradeRow = {
         id: crypto.randomUUID(),
         user_id: user?.id,
@@ -752,15 +1021,23 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         exit_price: effectivePrice,
         amount_usd: trade.amountUsd,
         units: Number(units.toFixed(targetCoin.decimals)),
+        fee_usd: feeUsd,
+        fee_rate: 0.001,
+        take_profit_price: trade.takeProfitPrice,
+        stop_loss_price: trade.stopLossPrice,
+        strategy_type: strategyType,
+        order_type: orderType,
         status: 'OPEN',
         created_at: new Date().toISOString(),
       };
       setTrades((prev) => [newTrade, ...prev]);
+      // Persist immediate spot buy to Supabase
+      persistTradeToSupabase(newTrade, user?.id);
 
       addToast({
         type: 'BUY',
-        title: `Compra Spot: ${targetCoin.symbol}`,
-        message: `Comprados ${units.toFixed(targetCoin.decimals)} ${targetCoin.symbol} por $${trade.amountUsd.toFixed(2)} USDT a $${effectivePrice.toFixed(targetCoin.decimals)}.`,
+        title: isBreakout ? `Ruptura Spot: ${targetCoin.symbol}` : `Compra Spot: ${targetCoin.symbol}`,
+        message: `Comprados ${units.toFixed(targetCoin.decimals)} ${targetCoin.symbol} por $${trade.amountUsd.toFixed(2)} USDT a $${effectivePrice.toFixed(targetCoin.decimals)}.${trade.takeProfitPrice ? ` TP: $${trade.takeProfitPrice.toFixed(targetCoin.decimals)}` : ''}`,
       });
 
       // Telegram spot trade notification (respects notify_spot_trades toggle)
@@ -784,12 +1061,12 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         coinSymbol: targetCoin.symbol,
         coinName: targetCoin.name,
         category: 'BUY_OPPORTUNITY',
-        badge: 'COMPRA SPOT',
-        badgeColor: 'text-[#0ECB81]',
-        badgeBg: 'bg-emerald-500/10',
-        badgeBorder: 'border-emerald-500/30',
-        headline: `Compra Spot: ${targetCoin.symbol}`,
-        plainExplanation: `Adquiridos ${units.toFixed(targetCoin.decimals)} ${targetCoin.symbol} por $${trade.amountUsd.toFixed(2)} USDT a $${effectivePrice.toFixed(targetCoin.decimals)}.`,
+        badge: isBreakout ? 'RUPTURA SPOT' : 'COMPRA SPOT',
+        badgeColor: isBreakout ? 'text-cyan-400' : 'text-[#0ECB81]',
+        badgeBg: isBreakout ? 'bg-cyan-500/10' : 'bg-emerald-500/10',
+        badgeBorder: isBreakout ? 'border-cyan-500/30' : 'border-emerald-500/30',
+        headline: isBreakout ? `Ruptura Spot: ${targetCoin.symbol}` : `Compra Spot: ${targetCoin.symbol}`,
+        plainExplanation: `Adquiridos ${units.toFixed(targetCoin.decimals)} ${targetCoin.symbol} por $${trade.amountUsd.toFixed(2)} USDT a $${effectivePrice.toFixed(targetCoin.decimals)}.${trade.takeProfitPrice ? ` Objetivo Take Profit: $${trade.takeProfitPrice.toFixed(targetCoin.decimals)}.` : ''}`,
         highlightText: `$${trade.amountUsd.toFixed(2)} USDT`,
         actionText: 'Ver en Portafolio',
         actionCoinId: targetCoin.id,
@@ -813,33 +1090,135 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       const sellUnits = Math.min(units, availableUnits > 0 ? availableUnits : units);
       const proceeds = sellUnits * effectivePrice;
+      const feeUsd = Number((proceeds * 0.001).toFixed(4)); // 0.10% taker fee on spot sell
+      const netProceeds = Number((proceeds - feeUsd).toFixed(2));
       const costBasis = currentHolding ? sellUnits * currentHolding.avgEntryPrice : proceeds;
-      const profitUsd = proceeds - costBasis;
-      const profitPct = costBasis > 0 ? (profitUsd / costBasis) * 100 : 0;
+      const grossProfitUsd = proceeds - costBasis;
+      const netProfitUsd = netProceeds - costBasis;
+      const profitUsd = netProfitUsd;
+      const profitPct = costBasis > 0 ? (netProfitUsd / costBasis) * 100 : 0;
 
-      // Credit USDT cash and decrease holding
-      setUsdtCash((prev) => prev + proceeds);
+      // Credit USDT cash (net of fee) and decrease holding
+      setUsdtCash((prev) => prev + netProceeds);
       updateHoldingFromTrade(trade.coinId, 'SELL', sellUnits, effectivePrice);
 
-      const newTrade: TradeRow = {
-        id: crypto.randomUUID(),
-        user_id: user?.id,
-        coin_id: trade.coinId,
-        side: 'SELL',
-        entry_price: currentHolding?.avgEntryPrice || effectivePrice,
-        exit_price: effectivePrice,
-        amount_usd: proceeds,
-        units: Number(sellUnits.toFixed(targetCoin.decimals)),
-        pnl_usd: Number(profitUsd.toFixed(2)),
-        status: 'CLOSED',
-        created_at: new Date().toISOString(),
-      };
-      setTrades((prev) => [newTrade, ...prev]);
+      // Close or partially close open trade in state & persist to Supabase
+      setTrades((prev) => {
+        let handled = false;
+        const result: TradeRow[] = [];
+
+        for (const t of prev) {
+          if (!handled && t.status === 'OPEN' && t.coin_id === trade.coinId && (trade.tradeId ? t.id === trade.tradeId : true)) {
+            handled = true;
+            const isPartialClose = sellUnits < t.units - 0.000001;
+
+            if (isPartialClose) {
+              // ── PARTIAL CLOSE: keep remaining position OPEN, create CLOSED record for sold portion ──
+              const remainingUnits = Number((t.units - sellUnits).toFixed(targetCoin.decimals));
+              const remainingAmountUsd = Number((remainingUnits * t.entry_price).toFixed(2));
+
+              // Keep the original trade open with reduced size
+              result.push({
+                ...t,
+                units: remainingUnits,
+                amount_usd: remainingAmountUsd,
+              });
+
+              // Create a new CLOSED trade record for the sold portion
+              const partialCostBasis = sellUnits * t.entry_price;
+              const partialGrossPnl = proceeds - partialCostBasis;
+              const partialNetPnl = netProceeds - partialCostBasis;
+              const partialPnlPct = partialCostBasis > 0 ? (partialNetPnl / partialCostBasis) * 100 : 0;
+
+              const closedPartial: TradeRow = {
+                id: crypto.randomUUID(),
+                user_id: user?.id,
+                coin_id: trade.coinId,
+                bot_id: t.bot_id,
+                side: 'SELL',
+                entry_price: t.entry_price,
+                exit_price: effectivePrice,
+                amount_usd: proceeds,
+                units: Number(sellUnits.toFixed(targetCoin.decimals)),
+                fee_usd: feeUsd,
+                fee_rate: 0.001,
+                take_profit_price: t.take_profit_price,
+                stop_loss_price: t.stop_loss_price,
+                strategy_type: t.strategy_type,
+                order_type: 'MARKET',
+                gross_pnl_usd: Number(partialGrossPnl.toFixed(2)),
+                pnl_usd: Number(partialNetPnl.toFixed(2)),
+                pnl_pct: Number(partialPnlPct.toFixed(2)),
+                status: 'CLOSED',
+                created_at: new Date().toISOString(),
+              };
+              result.push(closedPartial);
+
+              // Update original trade and insert closed partial in Supabase
+              updateTradeStatusInSupabase(t.id, {
+                status: 'OPEN',
+                units: remainingUnits,
+                amount_usd: remainingAmountUsd,
+              });
+              persistTradeToSupabase(closedPartial, user?.id);
+            } else {
+              // ── FULL CLOSE: mark the entire trade as CLOSED ──
+              result.push({
+                ...t,
+                status: 'CLOSED' as const,
+                exit_price: effectivePrice,
+                gross_pnl_usd: Number(grossProfitUsd.toFixed(2)),
+                pnl_usd: Number(netProfitUsd.toFixed(2)),
+                pnl_pct: Number(profitPct.toFixed(2)),
+                fee_usd: Number(((t.fee_usd || 0) + feeUsd).toFixed(4)),
+              });
+
+              // Persist full closure in Supabase
+              updateTradeStatusInSupabase(t.id, {
+                status: 'CLOSED',
+                exit_price: effectivePrice,
+                gross_pnl_usd: Number(grossProfitUsd.toFixed(2)),
+                pnl_usd: Number(netProfitUsd.toFixed(2)),
+                pnl_pct: Number(profitPct.toFixed(2)),
+                fee_usd: Number(((t.fee_usd || 0) + feeUsd).toFixed(4)),
+                reason: 'MANUAL_SELL',
+              });
+            }
+          } else {
+            result.push(t);
+          }
+        }
+
+        if (!handled) {
+          // No matching open trade found — create standalone closed record
+          const standaloneTrade: TradeRow = {
+            id: crypto.randomUUID(),
+            user_id: user?.id,
+            coin_id: trade.coinId,
+            side: 'SELL',
+            entry_price: currentHolding?.avgEntryPrice || effectivePrice,
+            exit_price: effectivePrice,
+            amount_usd: proceeds,
+            units: Number(sellUnits.toFixed(targetCoin.decimals)),
+            fee_usd: feeUsd,
+            fee_rate: 0.001,
+            gross_pnl_usd: Number(grossProfitUsd.toFixed(2)),
+            pnl_usd: Number(netProfitUsd.toFixed(2)),
+            pnl_pct: Number(profitPct.toFixed(2)),
+            status: 'CLOSED',
+            created_at: new Date().toISOString(),
+          };
+          result.unshift(standaloneTrade);
+          persistTradeToSupabase(standaloneTrade, user?.id);
+        }
+
+        return result;
+      });
 
       addToast({
-        type: profitUsd >= 0 ? 'PROFIT' : 'SELL',
+        type: netProfitUsd >= 0 ? 'PROFIT' : 'SELL',
         title: `Venta Spot: ${targetCoin.symbol}`,
-        message: `Vendidos ${sellUnits.toFixed(targetCoin.decimals)} ${targetCoin.symbol} por $${proceeds.toFixed(2)} USDT. PnL: ${profitUsd >= 0 ? '+' : ''}$${profitUsd.toFixed(2)} (${profitPct.toFixed(2)}%).`,
+        message: `Vendidos ${sellUnits.toFixed(targetCoin.decimals)} ${targetCoin.symbol} por $${proceeds.toFixed(2)} USDT (Fee: -$${feeUsd.toFixed(2)}). PnL Neto: ${netProfitUsd >= 0 ? '+' : ''}$${netProfitUsd.toFixed(2)} (${profitPct.toFixed(2)}%).`,
       });
 
       // Telegram spot trade notification (respects notify_spot_trades toggle)
@@ -879,9 +1258,308 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         isRead: false,
       });
     }
-  }, [availableUsdt, livePrices, user, holdings, updateHoldingFromTrade, setUsdtCash, addToast, pushNotification]);
+  }, [availableUsdt, livePrices, user, holdings, updateHoldingFromTrade, setUsdtCash, addToast, pushNotification, currencyMode, penRate]);
 
-  // Periodic DCA Bot Execution Worker
+  // Automated Take Profit & Stop Loss Engine for Open Spot / Breakout Trades
+  useEffect(() => {
+    const openSpotTrades = trades.filter(
+      (t) => t.status === 'OPEN' && !t.bot_id && (t.take_profit_price || t.stop_loss_price)
+    );
+    if (openSpotTrades.length === 0) return;
+
+    openSpotTrades.forEach((trade) => {
+      const tradeCoin = getDynamicCoinInfo(trade.coin_id);
+      const curP = trade.coin_id === activeCoin ? currentPrice : (livePrices[trade.coin_id] || 0);
+      if (!curP || curP <= 0) return;
+
+      const isTp = Boolean(trade.take_profit_price && trade.take_profit_price > 0 && curP >= trade.take_profit_price);
+      const isSl = Boolean(trade.stop_loss_price && trade.stop_loss_price > 0 && curP <= trade.stop_loss_price);
+
+      // ── Proximity Alert: within 1.5% of Take Profit ──
+      if (
+        !isTp &&
+        trade.take_profit_price &&
+        trade.take_profit_price > 0 &&
+        curP > 0
+      ) {
+        const distPct = ((trade.take_profit_price - curP) / curP) * 100;
+        if (distPct > 0 && distPct <= 1.5 && !proximityAlertedRef.current.has(trade.id)) {
+          proximityAlertedRef.current.add(trade.id);
+          addToast({
+            type: 'INFO',
+            title: `🔔 Cerca del Take Profit: ${tradeCoin.symbol}`,
+            message: `El precio está a solo ${distPct.toFixed(1)}% de tu TP ($${trade.take_profit_price.toFixed(tradeCoin.decimals)}). Considera tomar ganancias parciales.`,
+          });
+          // Telegram proximity alert (respects user toggle)
+          const shouldNotify = localStorage.getItem('crypto_analyzer_notify_spot_trades') !== 'false';
+          if (shouldNotify) {
+            sendTelegramSpotTrade({
+              coinSymbol: tradeCoin.symbol,
+              coinName: tradeCoin.name,
+              side: 'BUY', // contextual — it's a proximity alert, not a trade
+              price: curP,
+              amountUsd: trade.amount_usd,
+              units: trade.units,
+              currencyMode,
+              penRate,
+            }).catch(() => {}); // fire-and-forget
+          }
+        }
+      }
+
+      if (isTp || isSl) {
+        const sellUnits = trade.units || (trade.entry_price > 0 ? trade.amount_usd / trade.entry_price : 0);
+        const proceeds = sellUnits * curP;
+        const feeUsd = Number((proceeds * 0.001).toFixed(4));
+        const netProceeds = Number((proceeds - feeUsd).toFixed(2));
+        const costBasis = trade.amount_usd || (sellUnits * trade.entry_price);
+        const grossPnl = proceeds - costBasis;
+        const netPnl = netProceeds - costBasis;
+        const pnlPct = costBasis > 0 ? (netPnl / costBasis) * 100 : 0;
+
+        // Refund cash to USDT available & update holding
+        setUsdtCash((prev) => prev + netProceeds);
+        updateHoldingFromTrade(trade.coin_id, 'SELL', sellUnits, curP);
+
+        // Mark trade as CLOSED in trades array
+        setTrades((prev) =>
+          prev.map((t) =>
+            t.id === trade.id
+              ? {
+                  ...t,
+                  status: 'CLOSED' as const,
+                  exit_price: curP,
+                  gross_pnl_usd: Number(grossPnl.toFixed(2)),
+                  pnl_usd: Number(netPnl.toFixed(2)),
+                  pnl_pct: Number(pnlPct.toFixed(2)),
+                  fee_usd: Number(((t.fee_usd || 0) + feeUsd).toFixed(4)),
+                }
+              : t
+          )
+        );
+
+        // Persist Auto TP/SL closure to Supabase bot_trades
+        updateTradeStatusInSupabase(trade.id, {
+          status: 'CLOSED',
+          exit_price: curP,
+          pnl_usd: Number(netPnl.toFixed(2)),
+          pnl_pct: Number(pnlPct.toFixed(2)),
+          fee_usd: Number(((trade.fee_usd || 0) + feeUsd).toFixed(4)),
+          gross_pnl_usd: Number(grossPnl.toFixed(2)),
+          reason: isTp ? 'AUTO_TAKE_PROFIT' : 'AUTO_STOP_LOSS',
+        });
+
+        if (isTp) {
+          addToast({
+            type: 'PROFIT',
+            title: `🎯 Take Profit Ejecutado: ${tradeCoin.symbol}`,
+            message: `Precio tocó $${curP.toFixed(tradeCoin.decimals)} (Objetivo: $${trade.take_profit_price?.toFixed(tradeCoin.decimals)}). Ganancia neta: +$${netPnl.toFixed(2)} USDT (+${pnlPct.toFixed(2)}%). Saldo acreditado.`,
+          });
+          pushNotification({
+            id: crypto.randomUUID(),
+            coinId: tradeCoin.id,
+            coinSymbol: tradeCoin.symbol,
+            coinName: tradeCoin.name,
+            category: 'PROFIT',
+            badge: 'TAKE PROFIT',
+            badgeColor: 'text-[#0ECB81]',
+            badgeBg: 'bg-emerald-500/10',
+            badgeBorder: 'border-emerald-500/30',
+            headline: `🎯 Take Profit Ejecutado: ${tradeCoin.symbol}`,
+            plainExplanation: `Venta automática por objetivo alcanzado a $${curP.toFixed(tradeCoin.decimals)} con ganancia neta de +$${netPnl.toFixed(2)} USDT (+${pnlPct.toFixed(2)}%).`,
+            highlightText: `+$${netPnl.toFixed(2)} USDT`,
+            actionText: 'Ver Historial',
+            actionCoinId: tradeCoin.id,
+            timestamp: Date.now(),
+            timeAgo: 'Ahora',
+            isRead: false,
+          });
+          sendTelegramSpotTrade({
+            coinSymbol: tradeCoin.symbol,
+            coinName: tradeCoin.name,
+            side: 'SELL',
+            price: curP,
+            amountUsd: proceeds,
+            units: Number(sellUnits.toFixed(tradeCoin.decimals)),
+            pnlUsd: Number(netPnl.toFixed(2)),
+            pnlPct: Number(pnlPct.toFixed(2)),
+            currencyMode,
+            penRate,
+          });
+        } else {
+          addToast({
+            type: 'WARNING',
+            title: `🛡️ Stop Loss Ejecutado: ${tradeCoin.symbol}`,
+            message: `Precio cayó a $${curP.toFixed(tradeCoin.decimals)} (Protección: $${trade.stop_loss_price?.toFixed(tradeCoin.decimals)}). Pérdida limitada a -$${Math.abs(netPnl).toFixed(2)} USDT (${pnlPct.toFixed(2)}%).`,
+          });
+          pushNotification({
+            id: crypto.randomUUID(),
+            coinId: tradeCoin.id,
+            coinSymbol: tradeCoin.symbol,
+            coinName: tradeCoin.name,
+            category: 'BUY_OPPORTUNITY',
+            badge: 'STOP LOSS',
+            badgeColor: 'text-rose-400',
+            badgeBg: 'bg-rose-500/10',
+            badgeBorder: 'border-rose-500/30',
+            headline: `🛡️ Stop Loss Activado: ${tradeCoin.symbol}`,
+            plainExplanation: `Venta preventiva ejecutada a $${curP.toFixed(tradeCoin.decimals)} para cortar pérdidas y proteger el capital restante.`,
+            highlightText: `-$${Math.abs(netPnl).toFixed(2)} USDT`,
+            actionText: 'Ver Historial',
+            actionCoinId: tradeCoin.id,
+            timestamp: Date.now(),
+            timeAgo: 'Ahora',
+            isRead: false,
+          });
+        }
+
+        // Telegram Auto TP/SL Execution notification (respects notify_spot_trades toggle)
+        const shouldNotifySpot = localStorage.getItem('crypto_analyzer_notify_spot_trades') !== 'false';
+        if (shouldNotifySpot) {
+          sendTelegramSpotTrade({
+            coinSymbol: tradeCoin.symbol,
+            coinName: tradeCoin.name,
+            side: 'SELL',
+            price: curP,
+            amountUsd: proceeds,
+            units: Number(sellUnits.toFixed(tradeCoin.decimals)),
+            pnlUsd: Number(netPnl.toFixed(2)),
+            pnlPct: Number(pnlPct.toFixed(2)),
+            currencyMode,
+            penRate,
+          });
+        }
+      }
+    });
+  }, [trades, currentPrice, livePrices, activeCoin, setUsdtCash, updateHoldingFromTrade, addToast, pushNotification, currencyMode, penRate]);
+
+  // Automated Execution Engine for Pending Limit Orders (Spot Breakout / Dip Buys)
+  useEffect(() => {
+    const pendingTrades = trades.filter((t) => t.status === 'PENDING' && !t.bot_id);
+    if (pendingTrades.length === 0) return;
+
+    pendingTrades.forEach((trade) => {
+      const tradeCoin = getDynamicCoinInfo(trade.coin_id);
+      const curP = trade.coin_id === activeCoin ? currentPrice : (livePrices[trade.coin_id] || 0);
+      if (!curP || curP <= 0) return;
+
+      const isBreakout = trade.strategy_type === 'SPOT_BREAKOUT';
+      const isTriggered = isBreakout
+        ? curP >= trade.entry_price
+        : curP <= trade.entry_price;
+
+      if (isTriggered) {
+        const fillPrice = trade.entry_price > 0 ? trade.entry_price : curP;
+        const units = fillPrice > 0 ? trade.amount_usd / fillPrice : 0;
+        const feeUsd = Number((trade.amount_usd * 0.001).toFixed(4));
+
+        // Update holding with acquired units
+        updateHoldingFromTrade(trade.coin_id, 'BUY', units, fillPrice);
+
+        const updatedPendingTrade: TradeRow = {
+          ...trade,
+          status: 'OPEN' as const,
+          entry_price: fillPrice,
+          units: Number(units.toFixed(tradeCoin.decimals)),
+          fee_usd: feeUsd,
+        };
+
+        setTrades((prev) =>
+          prev.map((t) => (t.id === trade.id ? updatedPendingTrade : t))
+        );
+
+        // Persist filled limit order to Supabase
+        persistTradeToSupabase(updatedPendingTrade, user?.id);
+
+        soundFx.playBuy();
+        addToast({
+          type: 'BUY',
+          title: `🚀 ¡Orden Límite Ejecutada! ${tradeCoin.symbol}`,
+          message: `Comprados ${units.toFixed(tradeCoin.decimals)} ${tradeCoin.symbol} a $${fillPrice.toFixed(tradeCoin.decimals)} (Fee: -$${feeUsd.toFixed(4)}). Monitoreando Take Profit en $${trade.take_profit_price?.toFixed(tradeCoin.decimals) || 'Manual'}.`,
+        });
+
+        pushNotification({
+          id: crypto.randomUUID(),
+          coinId: tradeCoin.id,
+          coinSymbol: tradeCoin.symbol,
+          coinName: tradeCoin.name,
+          category: 'BUY_OPPORTUNITY',
+          badge: 'LÍMITE EJECUTADA',
+          badgeColor: 'text-[#0ECB81]',
+          badgeBg: 'bg-emerald-500/10',
+          badgeBorder: 'border-emerald-500/30',
+          headline: `🚀 Orden Límite Ejecutada: ${tradeCoin.symbol}`,
+          plainExplanation: `Tu orden de compra programada a $${fillPrice.toFixed(tradeCoin.decimals)} se ha llenado con éxito por $${trade.amount_usd.toFixed(2)} USDT.${trade.take_profit_price ? ` Vigilando Take Profit de salida en $${trade.take_profit_price.toFixed(tradeCoin.decimals)}.` : ''}`,
+          highlightText: `$${trade.amount_usd.toFixed(2)} USDT`,
+          actionText: 'Ver Posiciones',
+          actionCoinId: tradeCoin.id,
+          timestamp: Date.now(),
+          timeAgo: 'Ahora',
+          isRead: false,
+        });
+
+        const shouldNotifySpotBuy = localStorage.getItem('crypto_analyzer_notify_spot_trades') !== 'false';
+        if (shouldNotifySpotBuy) {
+          sendTelegramSpotTrade({
+            coinSymbol: tradeCoin.symbol,
+            coinName: tradeCoin.name,
+            side: 'BUY',
+            price: fillPrice,
+            amountUsd: trade.amount_usd,
+            units: Number(units.toFixed(tradeCoin.decimals)),
+            currencyMode,
+            penRate,
+          });
+        }
+      }
+    });
+  }, [trades, currentPrice, livePrices, activeCoin, updateHoldingFromTrade, addToast, pushNotification, currencyMode, penRate, user]);
+
+  // Cancel a Pending Limit Order and refund reserved USDT
+  const cancelPendingTrade = useCallback(async (tradeId: string) => {
+    const target = trades.find((t) => t.id === tradeId && t.status === 'PENDING');
+    if (!target) return;
+
+    // Refund reserved USDT cash to user's wallet
+    setUsdtCash((prev) => prev + target.amount_usd);
+
+    setTrades((prev) =>
+      prev.map((t) => (t.id === tradeId ? { ...t, status: 'CANCELLED' as const } : t))
+    );
+
+    // Update cancelled order in Supabase
+    updateTradeStatusInSupabase(tradeId, {
+      status: 'CANCELLED',
+      reason: 'USER_CANCELLED',
+    });
+
+    const coin = getDynamicCoinInfo(target.coin_id);
+    addToast({
+      type: 'INFO',
+      title: 'Orden Límite Cancelada',
+      message: `Se canceló la orden programada de ${coin.symbol}. $${target.amount_usd.toFixed(2)} USDT reembolsados a disponible.`,
+    });
+
+    pushNotification({
+      id: crypto.randomUUID(),
+      coinId: coin.id,
+      coinSymbol: coin.symbol,
+      coinName: coin.name,
+      category: 'BUY_OPPORTUNITY',
+      badge: 'ORDEN CANCELADA',
+      badgeColor: 'text-slate-400',
+      badgeBg: 'bg-slate-500/10',
+      badgeBorder: 'border-slate-500/30',
+      headline: `Orden Cancelada: ${coin.symbol}`,
+      plainExplanation: `La orden pendiente a $${target.entry_price} fue cancelada. Reembolsados $${target.amount_usd.toFixed(2)} USDT.`,
+      highlightText: `$${target.amount_usd.toFixed(2)} USDT`,
+      actionText: 'Ver Portafolio',
+      actionCoinId: coin.id,
+      timestamp: Date.now(),
+      timeAgo: 'Ahora',
+      isRead: false,
+    });
+  }, [trades, setUsdtCash, addToast, pushNotification]);
   useEffect(() => {
     const activeDcaBots = bots.filter((b) => b.status === 'ACTIVE' && b.strategy === 'DCA');
     if (activeDcaBots.length === 0) return;
@@ -909,6 +1587,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           created_at: new Date().toISOString(),
         };
         setTrades((prev) => [dcaTrade, ...prev]);
+        persistTradeToSupabase(dcaTrade, user?.id);
 
         addToast({
           type: 'BUY',
@@ -971,98 +1650,184 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   }, [user]);
 
-  // 5. Automated Quantitative Signal Dispatcher (Telegram + In-App Drawer + Supabase)
-  const lastSignalDispatchRef = useRef<Record<string, number>>({});
+  // 5. Autonomous Proactive Market Scanner (Strict Top-15 Spot Only + Persistent Cooldown + Warmup Guard)
+  const mountTimeRef = useRef<number>(Date.now());
+  const lastSignalDispatchRef = useRef<Record<string, number>>((() => {
+    try {
+      const saved = localStorage.getItem('crypto_analyzer_last_signals_dispatched');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  })());
 
   useEffect(() => {
-    if (!analysis || !coinInfo) return;
     const shouldNotifySignals = localStorage.getItem('crypto_analyzer_notify_signals') !== 'false';
-
-    // Only dispatch on actionable high-conviction signals: BUY or AVOID or SELL
-    if (analysis.signalType === 'WAIT') return;
+    if (!shouldNotifySignals || !allCoinsStats || Object.keys(allCoinsStats).length === 0) return;
 
     const now = Date.now();
-    const lastSent = lastSignalDispatchRef.current[activeCoin] || 0;
-    // Minimum 15 minutes between alerts for the same coin to avoid spam
-    if (now - lastSent < 15 * 60 * 1000) return;
 
-    lastSignalDispatchRef.current[activeCoin] = now;
+    // 1. COLD-START GRACE PERIOD: Ignore automated scanner signals for the first 12 seconds after mount.
+    // This allows WebSocket prices to connect and Supabase data to load cleanly, eliminating mount storms.
+    if (now - mountTimeRef.current < 12_000) return;
 
-    // Persist signal to Supabase signals table
-    try {
-      supabase.from('signals').insert({
-        coin_id: activeCoin,
-        status: analysis.signalType === 'BUY' ? 'BUY' : analysis.signalType === 'AVOID' ? 'AVOID' : 'WAIT',
-        badge: analysis.badge,
-        risk_level: analysis.signalType === 'AVOID' ? 'ALTO' : analysis.signalType === 'BUY' ? 'BAJO' : 'MEDIO',
-        can_buy_now: analysis.signalType === 'BUY',
-        price: currentPrice,
-        rsi: analysis.rsi,
-        ema20: analysis.ema20,
-        atr: analysis.atr,
-        atr_pct: analysis.atrPercent,
-        momentum_score: analysis.momentumScore,
-        plain_explanation: analysis.plainExplanation,
-      }).then(({ error }) => {
-        if (error) console.info('Supabase signal insert note:', error.message);
-      });
-    } catch {
-      // Ignore
-    }
+    // 2. GLOBAL TELEGRAM THROTTLE: Maximum 1 automated signal alert per 15 minutes to avoid spamming the channel.
+    const lastGlobalTelegram = Number(localStorage.getItem('crypto_analyzer_last_global_telegram_time') || '0');
+    const canSendGlobalTelegram = now - lastGlobalTelegram >= 15 * 60 * 1000;
 
-    // Dispatch to Telegram if enabled
-    if (shouldNotifySignals) {
-      sendTelegramSignalAlert({
-        coinId: activeCoin,
-        coinSymbol: coinInfo.symbol,
-        coinName: coinInfo.name,
-        signalType: analysis.signalType,
-        badge: analysis.badge,
-        price: currentPrice,
-        rsi: analysis.rsi,
-        ema20: analysis.ema20,
-        atrPercent: analysis.atrPercent,
-        momentumScore: analysis.momentumScore,
-        confidenceScore: Math.round(analysis.momentumScore),
-        explanation: analysis.plainExplanation,
-        currencyMode,
-        penRate,
-        levels: {
-          entryLimit: analysis.levels.entryLimit,
-          takeProfit1: analysis.levels.takeProfit1.price,
-          takeProfit1Pct: analysis.levels.takeProfit1.pct,
-          takeProfit2: analysis.levels.takeProfit2.price,
-          takeProfit2Pct: analysis.levels.takeProfit2.pct,
-          takeProfit3: analysis.levels.takeProfit3.price,
-          takeProfit3Pct: analysis.levels.takeProfit3.pct,
-          stopLoss: analysis.levels.stopLoss.price,
-          stopLossPct: analysis.levels.stopLoss.pct,
-          riskRewardRatio: analysis.levels.riskRewardRatio,
-        },
-      });
-    }
-
-    // Also push to in-app Notification Drawer
-    pushNotification({
-      id: crypto.randomUUID(),
-      coinId: activeCoin,
-      category: analysis.signalType === 'BUY' ? 'BUY_OPPORTUNITY' : analysis.signalType === 'AVOID' ? 'DANGER' : 'GRID_SETUP',
-      actionCoinId: activeCoin,
-      coinSymbol: coinInfo.symbol,
-      coinName: coinInfo.name,
-      badge: analysis.badge,
-      badgeColor: analysis.signalType === 'BUY' ? '#0ECB81' : analysis.signalType === 'AVOID' ? '#F6465D' : '#F59E0B',
-      badgeBg: analysis.signalType === 'BUY' ? 'rgba(14, 203, 129, 0.15)' : analysis.signalType === 'AVOID' ? 'rgba(246, 70, 93, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-      badgeBorder: analysis.signalType === 'BUY' ? 'rgba(14, 203, 129, 0.3)' : analysis.signalType === 'AVOID' ? 'rgba(246, 70, 93, 0.3)' : 'rgba(245, 158, 11, 0.3)',
-      headline: `${coinInfo.name} (${coinInfo.symbol}): ${analysis.badge}`,
-      plainExplanation: analysis.plainExplanation,
-      highlightText: `RSI en ${analysis.rsi.toFixed(1)} · Entrada sugerida en $${analysis.levels.entryLimit.toFixed(coinInfo.decimals)} USDT`,
-      actionText: `Operar ${coinInfo.symbol}`,
-      timeAgo: 'Hace un momento',
-      timestamp: Date.now(),
-      isRead: false,
+    // Scan all curated spot majors and high-liquidity spot tokens
+    const targetCoins: CoinInfo[] = Object.values(COINS).filter((c) => {
+      const stat = allCoinsStats[c.id];
+      const vol = stat?.vol24h || 0;
+      return TOP_SPOT_SIGNAL_COIN_IDS.has(c.id) || (vol >= 20_000_000 && isValidSpotCrypto(c.symbol, vol, true));
     });
-  }, [analysis, activeCoin, coinInfo, currentPrice, currencyMode, penRate, pushNotification]);
+
+    let dispatchedInThisCycle = false;
+
+    for (const targetCoin of targetCoins) {
+      if (dispatchedInThisCycle) break;
+
+      const stat = allCoinsStats[targetCoin.id];
+      if (!stat || !stat.price || stat.price <= 0) continue;
+
+      const rsi = stat.rsi || 50;
+      const change24h = stat.change24h || 0;
+      const momentum = stat.momentum || 50;
+      const price = stat.price;
+      const vol24h = stat.vol24h || 0;
+
+      // High-Conviction Technical Signal Criteria:
+      // 1. Extreme Oversold on Major: RSI <= 33.0
+      // 2. Strong pullback into Key Support: 24h drop <= -5.0% with RSI <= 38.0
+      // 3. Strong Bullish Breakout / Rally: 24h gain >= +4.0%, vol24h >= $20M, and (momentum >= 60 or rsi >= 56)
+      const isOversold = rsi <= 33.0;
+      const isSupportDip = change24h <= -5.0 && rsi <= 38.0;
+      const isBullishBreakout = change24h >= 4.0 && vol24h >= 20_000_000 && (momentum >= 60 || rsi >= 56);
+
+      if (isOversold || isSupportDip || isBullishBreakout) {
+        // 1. Persistent Browser Cooldown (90 minutes across reloads & sessions)
+        const lastSent = lastSignalDispatchRef.current[targetCoin.id] || 0;
+        if (now - lastSent < 90 * 60 * 1000) continue;
+
+        // 2. Cloud Mutex: Check if ANY client already persisted this signal in Supabase in last 90 minutes
+        const recentCloudSignal = signals.some(
+          (s) => s.coin_id === targetCoin.id && s.created_at && (now - new Date(s.created_at).getTime()) < 90 * 60 * 1000
+        );
+        if (recentCloudSignal) {
+          lastSignalDispatchRef.current[targetCoin.id] = now;
+          localStorage.setItem(
+            'crypto_analyzer_last_signals_dispatched',
+            JSON.stringify(lastSignalDispatchRef.current)
+          );
+          continue;
+        }
+
+        // Save cooldown timestamp in persistent memory
+        lastSignalDispatchRef.current[targetCoin.id] = now;
+        localStorage.setItem(
+          'crypto_analyzer_last_signals_dispatched',
+          JSON.stringify(lastSignalDispatchRef.current)
+        );
+        dispatchedInThisCycle = true;
+
+        const decimals = targetCoin.decimals || 2;
+        const entryLimit = Number((price * (isBullishBreakout ? 1.002 : 0.99)).toFixed(decimals));
+        const tp1 = Number((entryLimit * (isBullishBreakout ? 1.035 : 1.022)).toFixed(decimals));
+        const tp2 = Number((entryLimit * (isBullishBreakout ? 1.070 : 1.045)).toFixed(decimals));
+        const tp3 = Number((entryLimit * (isBullishBreakout ? 1.120 : 1.080)).toFixed(decimals));
+        const sl = Number((entryLimit * (isBullishBreakout ? 0.965 : 0.970)).toFixed(decimals));
+
+        const badge = isBullishBreakout
+          ? '🚀 RALLY EN CURSO · RUPTURA ALCISTA'
+          : isOversold
+          ? 'SOBREVENTA · REBOTE INMINENTE'
+          : 'SOPORTE CLAVE · OPORTUNIDAD';
+
+        const explanation = isBullishBreakout
+          ? `Fuerte presión compradora (+${change24h.toFixed(2)}%) con volumen institucional de $${((vol24h) / 1_000_000).toFixed(1)}M. Rompiendo resistencias técnicas con momentum sólido.`
+          : isOversold
+          ? `RSI en nivel de sobreventa extrema (${rsi.toFixed(1)}) en zona de soporte institucional. Alta probabilidad de rebote técnico.`
+          : `Corrección del ${change24h.toFixed(2)}% alcanzando piso técnico principal con volumen de absorción.`;
+
+        // Persist signal to Supabase Cloud
+        try {
+          supabase.from('signals').insert({
+            coin_id: targetCoin.id,
+            status: 'BUY',
+            badge,
+            risk_level: 'BAJO',
+            can_buy_now: true,
+            price,
+            rsi,
+            atr_pct: 2.8,
+            momentum_score: momentum,
+            plain_explanation: explanation,
+          }).then(({ error }) => {
+            if (error) console.info('Supabase signal note:', error.message);
+          });
+        } catch {}
+
+        // Dispatch to Telegram Channel (throttled globally to max 1 alert per 15 minutes)
+        if (canSendGlobalTelegram) {
+          localStorage.setItem('crypto_analyzer_last_global_telegram_time', String(now));
+          sendTelegramSignalAlert({
+            coinId: targetCoin.id,
+            coinSymbol: targetCoin.symbol,
+            coinName: targetCoin.name,
+            signalType: 'BUY',
+            badge,
+            price,
+            rsi,
+            atrPercent: 2.8,
+            momentumScore: momentum,
+            confidenceScore: Math.round(momentum),
+            explanation,
+            currencyMode,
+            penRate,
+            levels: {
+              entryLimit,
+              takeProfit1: tp1,
+              takeProfit1Pct: isBullishBreakout ? 3.50 : 2.20,
+              takeProfit2: tp2,
+              takeProfit2Pct: isBullishBreakout ? 7.00 : 4.50,
+              takeProfit3: tp3,
+              takeProfit3Pct: isBullishBreakout ? 12.00 : 8.00,
+              stopLoss: sl,
+              stopLossPct: -3.00,
+              riskRewardRatio: 2.45,
+            },
+          });
+        }
+
+        // Push to in-app Notification Drawer only if not already recently added for this coin
+        const alreadyInDrawer = notifications.some(
+          (n) => n.coinId === targetCoin.id && (now - n.timestamp) < 90 * 60 * 1000
+        );
+
+        if (!alreadyInDrawer) {
+          pushNotification({
+            id: crypto.randomUUID(),
+            coinId: targetCoin.id,
+            category: 'BUY_OPPORTUNITY',
+            actionCoinId: targetCoin.id,
+            coinSymbol: targetCoin.symbol,
+            coinName: targetCoin.name,
+            badge,
+            badgeColor: '#0ECB81',
+            badgeBg: 'rgba(14, 203, 129, 0.15)',
+            badgeBorder: 'rgba(14, 203, 129, 0.3)',
+            headline: `${targetCoin.name} (${targetCoin.symbol}): ${badge}`,
+            plainExplanation: explanation,
+            highlightText: `RSI en ${rsi.toFixed(1)} · Entrada sugerida en $${entryLimit.toFixed(decimals)} USDT`,
+            actionText: `Operar ${targetCoin.symbol}`,
+            timeAgo: 'Hace un momento',
+            timestamp: now,
+            isRead: false,
+          });
+        }
+      }
+    }
+  }, [allCoinsStats, currencyMode, penRate, pushNotification, signals, notifications]);
 
   // Update timeAgo every 30 seconds
   useEffect(() => {
@@ -1126,6 +1891,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         handleDeleteBot,
         handleStopAllBots,
         executeSpotTrade,
+        cancelPendingTrade,
         resetAllBotEngine,
         clearTradeHistory,
       }}

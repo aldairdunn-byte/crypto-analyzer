@@ -100,9 +100,10 @@ export const NotificationsDrawer = ({
               <button
                 onClick={onClearAllNotifications}
                 title="Limpiar todas las notificaciones"
-                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-all cursor-pointer"
+                className="px-2 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-rose-500/20 active:scale-95"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="text-[11px]">Vaciar</span>
               </button>
             )}
 

@@ -232,17 +232,125 @@ export function getCoinFundamentals(coin: CoinInfo): CoinFundamentalData {
 }
 
 /**
- * Universal dynamic resolver for any coin ID or symbol (Curated or discovered from Binance).
+/**
+ * Systematic Rule-Based Sanitizer for Spot Cryptocurrencies:
+ * Automatically detects and purges non-crypto assets, commodities, forex/fiat,
+ * stablecoins, leveraged tokens, futures multipliers, and synthetic derivatives.
  */
+const FIAT_STABLECOIN_SYMBOLS = new Set([
+  'usdc', 'fdusd', 'tusd', 'eur', 'usdp', 'aeur', 'busd', 'dai', 'wbtc', 'usde',
+  'ustc', 'euri', 'aud', 'gbp', 'brl', 'try', 'rub', 'cop', 'mxn', 'ars', 'clp', 'cad', 'chf', 'jpy'
+]);
+
+export const isValidSpotCrypto = (idOrSymbol: string, vol24h: number = 0, isCurated: boolean = false): boolean => {
+  if (!idOrSymbol) return false;
+  const clean = idOrSymbol.toLowerCase().trim();
+  const base = clean.replace(/usdt$/, '');
+
+  // 1. Curated major coins are always valid
+  if (isCurated && (COINS[clean] || COINS[base])) return true;
+
+  // 2. Reject fiat & stablecoins
+  if (FIAT_STABLECOIN_SYMBOLS.has(clean) || FIAT_STABLECOIN_SYMBOLS.has(base)) return false;
+
+  // 3. Reject leveraged tokens (UP, DOWN, BEAR, BULL)
+  if (/(up|down|bear|bull)$/i.test(base)) return false;
+
+  // 4. Reject commodities, equity tokens, warrants, oil, metal synthetics
+  if (/^(xau|xag|xaut|copper|oil|csop|skhyb|warrant|gold|silver|natgas|spcx|sqqq|tqqq|cohr|hype|anthropic)/i.test(base)) return false;
+
+  // 5. Reject futures multipliers and single/double digit pure numbers (e.g. 1000PEPE, 1000SHIB, 4, etc.)
+  // Allow legitimate coins like 1inch
+  if (/^(1000|1000000|0g)\w+/i.test(base) || /^\d{1,2}$/.test(base)) return false;
+
+  // 6. Reject symbols with non-alphanumeric chars or abnormal length
+  if (!/^[a-z0-9]+$/i.test(base) || base.length > 12 || base.length < 2) return false;
+
+  // 7. Liquidity threshold for dynamically discovered pairs: at least $1.5M 24h volume
+  if (vol24h > 0 && vol24h < 1_500_000 && !isCurated) return false;
+
+  return true;
+};
+
+export const isNonSpotToken = (idOrSymbol: string): boolean => {
+  return !isValidSpotCrypto(idOrSymbol, 5_000_000, false);
+};
+
+/**
+ * Whitelist oficial de Criptomonedas Spot de Alta Liquidez para Alertas de Señales de Mercado.
+ * Excluye estrictamente acciones, tokens sintéticos y activos ilíquidos.
+ */
+export const TOP_SPOT_SIGNAL_COIN_IDS = new Set([
+  'bitcoin',
+  'ethereum',
+  'solana',
+  'binancecoin',
+  'ripple',
+  'cardano',
+  'avalanche',
+  'sui',
+  'polkadot',
+  'chainlink',
+  'near',
+  'render',
+  'dogecoin',
+  'pepe',
+  'toncoin',
+  'arbitrum',
+  'optimism',
+  'polygon',
+  'aptos',
+  'fantom',
+  'injective',
+  'sei',
+  'tia',
+  'bittensor',
+  'kaspa',
+  'jupiter',
+  'worldcoin',
+  'floki',
+  'shiba-inu',
+  'uniswap',
+]);
+
 export const getDynamicCoinInfo = (idOrSymbol: string): CoinInfo => {
   if (!idOrSymbol) return COINS.solana;
   const clean = idOrSymbol.toLowerCase().trim();
   const upper = idOrSymbol.toUpperCase().trim();
 
   // Filter out known invalid non-spot tokens
-  if (clean === 'anthropic' || clean === 'anthropicusdt') {
+  if (isNonSpotToken(clean)) {
     return COINS.solana;
   }
+
+  // Canonical major symbol mapping
+  const CANONICAL_ALIASES: Record<string, string> = {
+    bnb: 'binancecoin',
+    btc: 'bitcoin',
+    eth: 'ethereum',
+    sol: 'solana',
+    ada: 'cardano',
+    xrp: 'ripple',
+    avax: 'avalanche',
+    dot: 'polkadot',
+    link: 'chainlink',
+    doge: 'dogecoin',
+    shib: 'shiba-inu',
+    matic: 'polygon',
+    pol: 'polygon',
+    arb: 'arbitrum',
+    op: 'optimism',
+    ftm: 'fantom',
+    inj: 'injective',
+    uni: 'uniswap',
+    sui: 'sui',
+    ton: 'toncoin',
+    rndr: 'render',
+    render: 'render',
+    fet: 'fetch-ai',
+  };
+  const canonicalId = CANONICAL_ALIASES[clean] || CANONICAL_ALIASES[clean.replace(/usdt$/, '')];
+  if (canonicalId && COINS[canonicalId]) return COINS[canonicalId];
 
   // 1. Direct key match in COINS
   if (COINS[clean]) return COINS[clean];
@@ -425,6 +533,10 @@ export async function fetchRealBinanceKlines(
   limit: number = 300,
   basePrice: number = 100
 ): Promise<CandleData[]> {
+  if (isNonSpotToken(binanceSymbol)) {
+    return generateBackupCandles(basePrice, limit, interval);
+  }
+
   try {
     const endpoints = [
       `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=${limit}`,
@@ -457,7 +569,7 @@ export async function fetchRealBinanceKlines(
     }));
   } catch (err) {
     console.warn(`Could not fetch live klines for ${binanceSymbol}, using fallback:`, err);
-    return generateBackupCandles(basePrice, limit);
+    return generateBackupCandles(basePrice, limit, interval);
   }
 }
 
@@ -468,7 +580,7 @@ export async function fetchRealBinance24hStats(binanceSymbol: string) {
   try {
     let res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSymbol}`);
     if (!res.ok) {
-      res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${binanceSymbol}`);
+      res = await fetch(`https://data-api.binance.vision/api/v3/ticker/24hr?symbol=${binanceSymbol}`);
     }
     if (!res.ok) throw new Error(`Binance 24hr error: ${res.statusText}`);
     const data = await res.json();
@@ -487,27 +599,18 @@ export async function fetchRealBinance24hStats(binanceSymbol: string) {
 }
 
 /**
- * Fetch all 24h ticker statistics in a SINGLE ultra-fast call (~150ms) from Binance Public API.
- * Dynamically ingests all active USDT trading pairs on Binance Spot AND Futures, filtering by liquidity (>= $2.0M volume)
- * to expand the catalog dynamically to 140-180+ coins with 100% real prices.
+ * Fetch all 24h ticker statistics in a SINGLE ultra-fast call (~150ms) exclusively from Binance Spot API.
+ * Ingests only verified tradeable Spot pairs, filtering out derivatives, fiat, leveraged tokens,
+ * and commodities with systematic algorithmic sanitization.
  */
 export async function fetchAllCoins24hStats(): Promise<Record<string, { price: number; change24h: number; high24h: number; low24h: number; vol24h: number; change7d: number; rsi: number; momentum: number }>> {
   try {
-    const [spotRes, futuresRes] = await Promise.allSettled([
-      fetch('https://data-api.binance.vision/api/v3/ticker/24hr').catch(() => fetch('https://api.binance.com/api/v3/ticker/24hr')),
-      fetch('https://fapi.binance.com/fapi/v1/ticker/24hr').catch(() => null),
-    ]);
+    // Exclusively query Binance Spot endpoints (Never query fapi / Futures to avoid synthetic pollution)
+    const spotRes = await fetch('https://data-api.binance.vision/api/v3/ticker/24hr')
+      .catch(() => fetch('https://api.binance.com/api/v3/ticker/24hr'));
 
     const spotData: Array<{ symbol: string; lastPrice: string; priceChangePercent: string; highPrice: string; lowPrice: string; quoteVolume: string }> =
-      spotRes.status === 'fulfilled' && spotRes.value && spotRes.value.ok ? await spotRes.value.json() : [];
-
-    const futuresData: Array<{ symbol: string; lastPrice: string; priceChangePercent: string; highPrice: string; lowPrice: string; quoteVolume: string }> =
-      futuresRes.status === 'fulfilled' && futuresRes.value && futuresRes.value.ok ? await futuresRes.value.json() : [];
-
-    const EXCLUDED_SYMBOLS = new Set([
-      'USDCUSDT', 'FDUSDUSDT', 'TUSDUSDT', 'EURUSDT', 'USDPUSDT', 'AEURUSDT', 'BUSDUSDT', 'DAIUSDT', 'WBTCUSDT', 'USDEUSDT',
-      'USTCUSDT', 'EURIUSDT',
-    ]);
+      spotRes && spotRes.ok ? await spotRes.json() : [];
 
     // Build curated lookup table by Binance Symbol
     const curatedByBinanceSym = new Map<string, CoinInfo>();
@@ -515,42 +618,91 @@ export async function fetchAllCoins24hStats(): Promise<Record<string, { price: n
       curatedByBinanceSym.set(c.binanceSymbol, c);
     });
 
+    const CANONICAL_BASE_TO_ID: Record<string, string> = {
+      BNB: 'binancecoin',
+      BTC: 'bitcoin',
+      ETH: 'ethereum',
+      SOL: 'solana',
+      ADA: 'cardano',
+      XRP: 'ripple',
+      AVAX: 'avalanche',
+      DOT: 'polkadot',
+      LINK: 'chainlink',
+      NEAR: 'near',
+      RENDER: 'render',
+      RNDR: 'render',
+      DOGE: 'dogecoin',
+      PEPE: 'pepe',
+      SHIB: 'shiba-inu',
+      MATIC: 'polygon',
+      POL: 'polygon',
+      ARB: 'arbitrum',
+      OP: 'optimism',
+      SUI: 'sui',
+      TON: 'toncoin',
+      FET: 'fetch-ai',
+      UNI: 'uniswap',
+      AAVE: 'aave',
+      INJ: 'injective',
+      SEI: 'sei',
+      TIA: 'tia',
+      TAO: 'bittensor',
+      KAS: 'kaspa',
+      JUP: 'jupiter',
+      WLD: 'worldcoin',
+      FLOKI: 'floki',
+    };
+
+    const AI_SYMBOLS = new Set(['FET', 'RENDER', 'RNDR', 'NEAR', 'AGIX', 'OCEAN', 'WLD', 'TAO', 'AKT', 'GRT', 'AR', 'IO', 'ATH', 'AI', 'JASMY']);
+    const L2_SYMBOLS = new Set(['ARB', 'OP', 'MATIC', 'POL', 'STRK', 'MNT', 'METIS', 'ZK', 'MANTA', 'IMX']);
+    const DEFI_SYMBOLS = new Set(['UNI', 'AAVE', 'MKR', 'CRV', 'SNX', 'COMP', 'LDO', 'PENDLE', 'JUP', 'RAY', 'RUNE', 'INJ', 'ENA']);
+    const MEME_SYMBOLS = new Set(['DOGE', 'SHIB', 'PEPE', 'FLOKI', 'BONK', 'WIF', 'BOME', 'MEME', 'TURBO', 'NEIRO', 'POPCAT', '1MBABYDOGE']);
+
     const result: Record<string, { price: number; change24h: number; high24h: number; low24h: number; vol24h: number; change7d: number; rsi: number; momentum: number }> = {};
     const seenSymbols = new Set<string>();
 
     const processItem = (item: { symbol: string; lastPrice: string; priceChangePercent: string; highPrice: string; lowPrice: string; quoteVolume: string }) => {
       if (!item.symbol.endsWith('USDT')) return;
-      if (EXCLUDED_SYMBOLS.has(item.symbol)) return;
       if (seenSymbols.has(item.symbol)) return;
-      // Skip leveraged tokens
-      if (item.symbol.includes('UPUSDT') || item.symbol.includes('DOWNUSDT') || item.symbol.includes('BEARUSDT') || item.symbol.includes('BULLUSDT')) return;
 
+      const baseSymbol = item.symbol.replace(/USDT$/, '');
       const vol24h = parseFloat(item.quoteVolume) || 0;
-      const isCurated = curatedByBinanceSym.has(item.symbol);
+      const isCurated = curatedByBinanceSym.has(item.symbol) || Boolean(CANONICAL_BASE_TO_ID[baseSymbol]);
 
-      // Liquidity Hard Gate: Volume >= $2.0M USDT (or in curated list)
-      if (vol24h < 2_000_000 && !isCurated) return;
+      // Systematic Rule-Based Sanitizer: rejects fiat, leveraged, commodity synthetics, warrants
+      if (!isValidSpotCrypto(baseSymbol, vol24h, isCurated)) return;
 
       seenSymbols.add(item.symbol);
 
-      const baseSymbol = item.symbol.replace(/USDT$/, '');
       const price = parseFloat(item.lastPrice) || 1.0;
       const change24h = parseFloat(item.priceChangePercent) || 0;
       const high24h = parseFloat(item.highPrice) || price * 1.03;
       const low24h = parseFloat(item.lowPrice) || price * 0.97;
 
       let coinInfo: CoinInfo;
-      if (isCurated) {
+      const canonicalId = CANONICAL_BASE_TO_ID[baseSymbol];
+
+      if (canonicalId && COINS[canonicalId]) {
+        coinInfo = COINS[canonicalId];
+      } else if (isCurated && curatedByBinanceSym.has(item.symbol)) {
         coinInfo = curatedByBinanceSym.get(item.symbol)!;
       } else {
         const id = baseSymbol.toLowerCase();
         const decimals = price >= 1000 ? 2 : price >= 1 ? 2 : price >= 0.01 ? 4 : price >= 0.0001 ? 6 : 8;
+
+        let category: 'TOP' | 'AI' | 'L2' | 'DEFI' | 'MEME' = 'TOP';
+        if (AI_SYMBOLS.has(baseSymbol)) category = 'AI';
+        else if (L2_SYMBOLS.has(baseSymbol)) category = 'L2';
+        else if (DEFI_SYMBOLS.has(baseSymbol)) category = 'DEFI';
+        else if (MEME_SYMBOLS.has(baseSymbol)) category = 'MEME';
+        else if (vol24h >= 60_000_000) category = 'TOP';
+
         coinInfo = {
           id,
           name: baseSymbol,
           symbol: baseSymbol,
           binanceSymbol: item.symbol,
-          category: 'TOP',
+          category,
           basePrice: price,
           decimals,
         };
@@ -560,10 +712,10 @@ export async function fetchAllCoins24hStats(): Promise<Record<string, { price: n
       // Estimate 7d trend from 24h momentum + range position
       const rangePos = high24h > low24h ? (price - low24h) / (high24h - low24h) : 0.5;
       const change7d = Number((change24h * 1.35 + (rangePos - 0.5) * 4).toFixed(2));
-      
+
       // Realistic Wilder RSI estimate calibrated to 24h delta & range position
       const rsi = Math.max(15, Math.min(88, Number((48 + change24h * 1.6 + (rangePos - 0.5) * 12).toFixed(1))));
-      
+
       // Institutional Momentum Score (0-100) weighting Volume & 24h change
       const volBonus = vol24h > 200_000_000 ? 6 : vol24h > 50_000_000 ? 3 : 0;
       const momentum = Math.max(10, Math.min(96, Math.round(50 + change24h * 2.0 + volBonus)));
@@ -572,7 +724,6 @@ export async function fetchAllCoins24hStats(): Promise<Record<string, { price: n
     };
 
     spotData.forEach(processItem);
-    futuresData.forEach(processItem);
 
     try {
       localStorage.setItem('crypto_analyzer_last_ticker_stats', JSON.stringify(result));
@@ -614,6 +765,10 @@ export async function fetchRealBinanceDepth(
   limit: number = 20,
   basePrice: number = 100
 ): Promise<{ asks: OrderBookItem[]; bids: OrderBookItem[] }> {
+  if (isNonSpotToken(binanceSymbol)) {
+    return generateOrderBook(basePrice, limit);
+  }
+
   try {
     let res = await fetch(`https://api.binance.com/api/v3/depth?symbol=${binanceSymbol}&limit=${limit}`);
     if (!res.ok) {
@@ -862,10 +1017,27 @@ export interface OrderBookItem {
   depthPct: number;
 }
 
-export function generateBackupCandles(basePrice: number = 100, count: number = 80): CandleData[] {
+const INTERVAL_SECONDS_MAP: Record<string, number> = {
+  '1m': 60,
+  '5m': 300,
+  '15m': 900,
+  '30m': 1800,
+  '1h': 3600,
+  '4h': 14400,
+  '1d': 86400,
+  '3d': 259200,
+  '1w': 604800,
+  '1M': 2592000,
+};
+
+export function generateBackupCandles(
+  basePrice: number = 100,
+  count: number = 80,
+  interval: string = '1h'
+): CandleData[] {
   const candles: CandleData[] = [];
   const now = Math.floor(Date.now() / 1000);
-  const intervalSeconds = 300;
+  const intervalSeconds = INTERVAL_SECONDS_MAP[interval] || 3600;
   let currentPrice = basePrice * 0.98;
   const decimals = basePrice >= 1000 ? 2 : basePrice >= 1 ? 2 : basePrice >= 0.01 ? 4 : 8;
 

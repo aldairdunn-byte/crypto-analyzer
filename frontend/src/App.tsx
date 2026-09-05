@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { MarketDataProvider, useMarketData } from './contexts/MarketDataContext';
 import { PortfolioProvider, usePortfolio } from './contexts/PortfolioContext';
 import { BotEngineProvider, useBotEngine } from './contexts/BotEngineContext';
+import { calculateRealisticPortfolioPerformance } from './lib/portfolioMath';
 
 import { DashboardView } from './components/DashboardView';
 import { HeaderTickerBar } from './components/HeaderTickerBar';
@@ -84,6 +85,7 @@ const MainContent: React.FC = () => {
     handleUpdateBotStatus,
     handleStopAllBots,
     executeSpotTrade,
+    cancelPendingTrade,
     resetAllBotEngine,
     clearTradeHistory,
   } = useBotEngine();
@@ -94,12 +96,17 @@ const MainContent: React.FC = () => {
   const [isNotificationsDrawerOpen, setIsNotificationsDrawerOpen] = useState<boolean>(false);
   const [terminalIntent, setTerminalIntent] = useState<StrategyRecommendation | null>(null);
 
-  // Spot execution helper (for manual trading)
+  // Spot execution helper (for manual, limit & breakout trading)
   const handleExecuteSpotTrade = async (trade: {
     coinId: string;
     side: 'BUY' | 'SELL';
     price: number;
     amountUsd: number;
+    orderType?: 'MARKET' | 'LIMIT';
+    takeProfitPrice?: number;
+    stopLossPrice?: number;
+    strategyType?: 'SPOT_BREAKOUT' | 'SPOT_MANUAL' | 'GRID' | 'DCA';
+    tradeId?: string;
   }) => {
     await executeSpotTrade(trade);
   };
@@ -133,6 +140,17 @@ const MainContent: React.FC = () => {
   const activeHigh24h = activeCoinStats?.high24h ?? currentPrice * 1.03;
   const activeLow24h = activeCoinStats?.low24h ?? currentPrice * 0.97;
   const activeVol24h = activeCoinStats?.vol24h ?? 15000000;
+
+  // Single Source of Truth for Realistic Portfolio Performance (24H, 7D, All-Time)
+  const portfolioPerf = useMemo(() => {
+    return calculateRealisticPortfolioPerformance(
+      trades,
+      holdings,
+      livePrices,
+      allCoinsStats,
+      virtualUsdt
+    );
+  }, [trades, holdings, livePrices, allCoinsStats, virtualUsdt]);
 
   return (
     <div className="h-screen w-screen bg-[#08090C] text-[#F8FAFC] flex flex-col font-sans overflow-hidden select-none">
@@ -176,8 +194,12 @@ const MainContent: React.FC = () => {
               capitalInBots={capitalInBots}
               availableUsdt={availableUsdt}
               totalSpotValue={totalSpotValue}
-              pnl24hUsd={trades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0)}
-              pnl24hPct={virtualUsdt > 0 ? (trades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0) / virtualUsdt) * 100 : 0}
+              pnl24hUsd={portfolioPerf.pnl24hUsd}
+              pnl24hPct={portfolioPerf.pnl24hPct}
+              pnl7dUsd={portfolioPerf.pnl7dUsd}
+              pnl7dPct={portfolioPerf.pnl7dPct}
+              allTimePnlUsd={portfolioPerf.allTimePnlUsd}
+              allTimePnlPct={portfolioPerf.allTimePnlPct}
               signals={signals}
               currencyMode={currencyMode}
               penRate={penRate}
@@ -201,6 +223,7 @@ const MainContent: React.FC = () => {
                 <TradingViewChart
                   candles={candles}
                   gridLevels={displayGridLevels}
+                  trades={trades}
                   coinSymbol={coinInfo.symbol}
                   coinInfo={coinInfo}
                   currentPrice={currentPrice}
@@ -336,11 +359,14 @@ const MainContent: React.FC = () => {
                 gridLevels={displayGridLevels}
                 currentPrice={currentPrice}
                 livePrices={livePrices}
+                rsi={analysis?.rsi}
                 currencyMode={currencyMode}
                 penRate={penRate}
                 onUpdateBotStatus={handleUpdateBotStatus}
                 onSelectCoin={handleOpenCoinInTerminal}
                 onClearTrades={clearTradeHistory}
+                onExecuteSpotTrade={handleExecuteSpotTrade}
+                onCancelTrade={cancelPendingTrade}
               />
             </div>
           </div>

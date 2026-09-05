@@ -7,6 +7,7 @@ Silencio Inteligente (Mute en Supabase), Rate Limiting en memoria y Agrupación 
 
 import os
 import time
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -695,18 +696,21 @@ if __name__ == "__main__":
             try:
                 if sb.is_configured:
                     active_bots = sb.get_active_bots()
-                    if active_bots:
+                    open_trades = sb.get_open_trades()
+
+                    if active_bots or open_trades:
                         try:
                             resp = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=4)
                             if resp.status_code == 200:
                                 price_list = resp.json()
                                 binance_map = {item["symbol"]: float(item["price"]) for item in price_list if "symbol" in item and "price" in item}
-                                
-                                for bot in active_bots:
+
+                                # 1. Evaluar Grid Bots activos
+                                for bot in (active_bots or []):
                                     coin_id = str(bot.get("coin_id") or "solana").lower()
                                     b_symbol = BINANCE_SYMBOLS.get(coin_id, f"{coin_id.upper()[:4]}USDT")
                                     live_price = binance_map.get(b_symbol)
-                                    
+
                                     if live_price and live_price > 0:
                                         evaluate_active_grid_bot_tick(
                                             bot=bot,
@@ -714,6 +718,84 @@ if __name__ == "__main__":
                                             client=sb,
                                             telegram_notifier=notifier
                                         )
+
+                                # 2. Evaluar Órdenes Spot Abiertas 24/7 (Auto TP / Stop Loss / Límite)
+                                for trade in (open_trades or []):
+                                    try:
+                                        coin_id = str(trade.get("coin_id") or "").lower()
+                                        b_symbol = BINANCE_SYMBOLS.get(coin_id, f"{coin_id.upper()[:4]}USDT")
+                                        cur_p = binance_map.get(b_symbol)
+                                        if not cur_p or cur_p <= 0:
+                                            continue
+
+                                        raw_meta = trade.get("entry_reason") or ""
+                                        meta = {}
+                                        if isinstance(raw_meta, str) and raw_meta.startswith("{"):
+                                            meta = json.loads(raw_meta)
+
+                                        # A. Orden Límite Pendiente (Llenado automático en la nube)
+                                        if meta.get("is_pending_limit"):
+                                            limit_p = float(trade.get("entry_price") or 0.0)
+                                            is_breakout = meta.get("strategy") == "SPOT_BREAKOUT"
+                                            is_triggered = cur_p >= limit_p if is_breakout else cur_p <= limit_p
+                                            if is_triggered and limit_p > 0:
+                                                meta["is_pending_limit"] = False
+                                                u_endpoint = f"{sb.url}/rest/v1/bot_trades?id=eq.{trade['id']}"
+                                                requests.patch(u_endpoint, headers=sb._get_headers(), json={
+                                                    "status": "OPEN",
+                                                    "entry_price": cur_p,
+                                                    "entry_reason": json.dumps(meta),
+                                                    "updated_at": datetime.now(timezone.utc).isoformat()
+                                                }, timeout=sb.timeout)
+
+                                                notifier.send_spot_trade_alert(
+                                                    coin_id=coin_id,
+                                                    side="BUY",
+                                                    price=cur_p,
+                                                    amount_usd=float(trade.get("amount_usd", 0.0)),
+                                                    units=float(trade.get("units", 0.0))
+                                                )
+                                                continue
+
+                                        # B. Take Profit & Stop Loss para posiciones activas
+                                        tp = float(meta.get("tp") or 0.0)
+                                        sl = float(meta.get("sl") or 0.0)
+                                        is_tp = tp > 0 and cur_p >= tp
+                                        is_sl = sl > 0 and cur_p <= sl
+
+                                        if is_tp or is_sl:
+                                            units = float(trade.get("units") or 0.0)
+                                            cost = float(trade.get("amount_usd") or 0.0)
+                                            proceeds = units * cur_p
+                                            fee = proceeds * 0.001
+                                            net_proceeds = proceeds - fee
+                                            net_pnl = net_proceeds - cost
+                                            pnl_pct = (net_pnl / cost * 100) if cost > 0 else 0.0
+
+                                            exit_reason = json.dumps({
+                                                "fee_usd": round(fee, 4),
+                                                "gross_pnl_usd": round(proceeds - cost, 2),
+                                                "reason": "AUTO_TAKE_PROFIT" if is_tp else "AUTO_STOP_LOSS"
+                                            })
+
+                                            sb.close_trade(
+                                                trade_id=trade["id"],
+                                                exit_price=cur_p,
+                                                exit_reason=exit_reason
+                                            )
+
+                                            notifier.send_spot_trade_alert(
+                                                coin_id=coin_id,
+                                                side="SELL",
+                                                price=cur_p,
+                                                amount_usd=proceeds,
+                                                units=units,
+                                                pnl_usd=round(net_pnl, 2),
+                                                pnl_pct=round(pnl_pct, 2)
+                                            )
+                                    except Exception as tr_err:
+                                        logger.debug(f"Error evaluando spot trade 24/7: {tr_err}")
+
                         except Exception as net_err:
                             logger.warning(f"Error consultando Binance Ticker: {net_err}")
                 time.sleep(15)

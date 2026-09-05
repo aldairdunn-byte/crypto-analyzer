@@ -1,5 +1,5 @@
 export const DEFAULT_TELEGRAM_BOT_TOKEN = '8897887741:AAFPzheKMItIIa6xNwn_ipd_pqZd_rLx9vU';
-export const DEFAULT_TELEGRAM_CHAT_ID = '1996733499';
+export const DEFAULT_TELEGRAM_CHAT_ID = '-1004384607143'; // Canal: CryptoAnalyzer Alerts (global para todos los usuarios)
 
 export function getTelegramBotToken(): string {
   try {
@@ -10,12 +10,16 @@ export function getTelegramBotToken(): string {
 }
 
 export function getTelegramChatId(): string {
-  try {
-    const custom = localStorage.getItem('crypto_analyzer_telegram_chat_id');
-    if (custom && custom.trim().length > 0) return custom.trim();
-  } catch {}
-  return import.meta.env.VITE_TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
+  // GLOBAL: Todas las alertas van al canal CryptoAnalyzer Alerts
+  // Se ignora cualquier valor guardado en localStorage para garantizar
+  // que todos los usuarios envian al mismo canal con atribucion por nombre.
+  return DEFAULT_TELEGRAM_CHAT_ID;
 }
+
+// Limpieza: borrar cualquier chat_id viejo guardado en localStorage
+try {
+  localStorage.removeItem('crypto_analyzer_telegram_chat_id');
+} catch {}
 
 export function setTelegramCredentials(botToken: string, chatId: string): void {
   try {
@@ -41,6 +45,33 @@ export function resetTelegramCredentials(): void {
 
 const TELEGRAM_CHANNEL_URL = 'https://t.me/CryptoDunnAlerts_bot';
 const APP_LIVE_URL = 'https://frontend-two-lyart-49.vercel.app';
+
+/**
+ * Obtiene el nombre visible del usuario logueado para atribuir alertas en grupos.
+ * Lee el email de Supabase Auth almacenado en localStorage y extrae la parte antes del @.
+ * Fallback: "Operador Demo" si no hay sesión activa.
+ */
+export function getUserDisplayName(): string {
+  try {
+    // Supabase stores auth in sb-<ref>-auth-token
+    const keys = Object.keys(localStorage);
+    const authKey = keys.find((k) => k.startsWith('sb-') && k.endsWith('-auth-token'));
+    if (authKey) {
+      const raw = localStorage.getItem(authKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const email = parsed?.user?.email || parsed?.session?.user?.email;
+        if (email && typeof email === 'string') {
+          return email.split('@')[0];
+        }
+      }
+    }
+    // Fallback: check custom key some apps use
+    const fallbackEmail = localStorage.getItem('crypto_analyzer_user_email');
+    if (fallbackEmail) return fallbackEmail.split('@')[0];
+  } catch {}
+  return 'Operador Demo';
+}
 
 export interface TelegramSignalParams {
   coinId: string;
@@ -155,10 +186,27 @@ export async function sendTelegramMessage(
   }
   lastSentTimestamp = Date.now();
 
+  // Inject user attribution tag for group chat identification
+  const displayName = getUserDisplayName();
+  // Prepend user tag after the first separator line (━━━) if present, otherwise at the start
+  let attributedText = text;
+  const separatorIdx = text.indexOf('\n');
+  if (separatorIdx > 0 && text.startsWith('━')) {
+    // Insert after the first separator line
+    const secondLineIdx = text.indexOf('\n', separatorIdx + 1);
+    if (secondLineIdx > 0) {
+      // Inject user tag into the headline (second line)
+      const firstLine = text.substring(0, separatorIdx);
+      const secondLine = text.substring(separatorIdx + 1, secondLineIdx);
+      const rest = text.substring(secondLineIdx);
+      attributedText = `${firstLine}\n${secondLine}\n👤 <b>Operador:</b> ${displayName}${rest}`;
+    }
+  }
+
   const endpoint = `https://api.telegram.org/bot${token}/sendMessage`;
   const payload: Record<string, any> = {
     chat_id: chatId,
-    text,
+    text: attributedText,
     parse_mode: 'HTML',
     disable_web_page_preview: true,
   };

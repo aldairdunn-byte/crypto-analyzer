@@ -28,10 +28,12 @@ import {
   BarChart2,
 } from 'lucide-react';
 import { CryptoIcon } from './CryptoIcon';
+import { type TradeRow } from '../lib/supabase';
 
 interface TradingViewChartProps {
   candles: CandleData[];
   gridLevels: GridLevelItem[];
+  trades?: TradeRow[];
   coinSymbol: string;
   coinInfo?: CoinInfo;
   currentPrice?: number;
@@ -51,6 +53,7 @@ interface TradingViewChartProps {
 export const TradingViewChart = ({
   candles,
   gridLevels,
+  trades = [],
   coinSymbol,
   coinInfo,
   currentPrice = 0,
@@ -75,6 +78,7 @@ export const TradingViewChart = ({
 
   const [showEma, setShowEma] = useState<boolean>(true);
   const [showGridLines, setShowGridLines] = useState<boolean>(true);
+  const [showSpotLines, setShowSpotLines] = useState<boolean>(true);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState<boolean>(false);
 
   // Active coin metadata & fundamentals
@@ -218,32 +222,23 @@ export const TradingViewChart = ({
     };
   }, []);
 
-  const lastChartStateRef = useRef<{
+  const lastActiveContextRef = useRef<{
     coin: string;
-    firstTime: number;
-    lastTime: number;
-    count: number;
+    interval: string;
   }>({
     coin: '',
-    firstTime: 0,
-    lastTime: 0,
-    count: 0,
+    interval: '',
   });
 
   useEffect(() => {
     if (!candleSeriesRef.current || !candles || candles.length === 0) return;
 
-    const currentFirstTime = Number(candles[0]?.time || 0);
-    const currentLastTime = Number(candles[candles.length - 1]?.time || 0);
-    const currentCount = candles.length;
-    const prev = lastChartStateRef.current;
+    const isCoinOrIntervalChange =
+      lastActiveContextRef.current.coin !== coinSymbol ||
+      lastActiveContextRef.current.interval !== activeInterval;
 
-    const isNewDataset =
-      prev.coin !== coinSymbol ||
-      prev.firstTime !== currentFirstTime ||
-      Math.abs(prev.count - currentCount) > 2;
-
-    if (isNewDataset) {
+    if (isCoinOrIntervalChange) {
+      // Full dataset replacement on coin or timeframe switch
       candleSeriesRef.current.setData(candles as any);
 
       const emaData = calculateEMA20(candles);
@@ -265,34 +260,39 @@ export const TradingViewChart = ({
         chartRef.current?.timeScale().fitContent();
       });
 
-      lastChartStateRef.current = {
+      lastActiveContextRef.current = {
         coin: coinSymbol,
-        firstTime: currentFirstTime,
-        lastTime: currentLastTime,
-        count: currentCount,
+        interval: activeInterval,
       };
     } else {
+      // Seamless real-time tick/candle update without changing zoom or panning
       const lastCandle = candles[candles.length - 1];
       if (lastCandle) {
-        candleSeriesRef.current.update(lastCandle as any);
+        try {
+          candleSeriesRef.current.update(lastCandle as any);
 
-        if (showEma && emaSeriesRef.current) {
-          const emaData = calculateEMA20(candles);
-          const lastEma = emaData[emaData.length - 1];
-          if (lastEma) emaSeriesRef.current.update(lastEma as any);
-        }
+          if (showEma && emaSeriesRef.current) {
+            const emaData = calculateEMA20(candles);
+            const lastEma = emaData[emaData.length - 1];
+            if (lastEma) emaSeriesRef.current.update(lastEma as any);
+          }
 
-        if (volumeSeriesRef.current) {
-          volumeSeriesRef.current.update({
-            time: lastCandle.time as any,
-            value: lastCandle.volume ?? 100,
-            color: lastCandle.close >= lastCandle.open ? 'rgba(14, 203, 129, 0.25)' : 'rgba(246, 70, 93, 0.25)',
-          });
+          if (volumeSeriesRef.current) {
+            volumeSeriesRef.current.update({
+              time: lastCandle.time as any,
+              value: lastCandle.volume ?? 100,
+              color: lastCandle.close >= lastCandle.open ? 'rgba(14, 203, 129, 0.25)' : 'rgba(246, 70, 93, 0.25)',
+            });
+          }
+        } catch {
+          // If a timestamp gap occurs, safely resync data without crashing
+          candleSeriesRef.current.setData(candles as any);
         }
       }
     }
-  }, [candles, coinSymbol, showEma]);
+  }, [candles, coinSymbol, activeInterval, showEma]);
 
+  // Handle user toggling showEma independently
   useEffect(() => {
     if (!emaSeriesRef.current || !candles || candles.length === 0) return;
     if (showEma) {
@@ -301,7 +301,7 @@ export const TradingViewChart = ({
     } else {
       emaSeriesRef.current.setData([]);
     }
-  }, [showEma, candles]);
+  }, [showEma]);
 
   useEffect(() => {
     if (!candleSeriesRef.current) return;
@@ -313,6 +313,7 @@ export const TradingViewChart = ({
     });
     priceLinesRef.current = [];
 
+    // 1. Draw Grid Bot Levels
     if (showGridLines && gridLevels && gridLevels.length > 0) {
       const activeCoinLevels = gridLevels.filter((lvl) => {
         if (!lvl.coinId) return true;
@@ -345,7 +346,78 @@ export const TradingViewChart = ({
         }
       });
     }
-  }, [gridLevels, showGridLines, coinSymbol]);
+
+    // 2. Draw Spot Trades & Orders (Entry, Take Profit, Stop Loss)
+    if (showSpotLines && trades && trades.length > 0) {
+      const activeSpotTrades = trades.filter((t) => {
+        if (t.status !== 'OPEN' && t.status !== 'PENDING') return false;
+        const targetSym = coinSymbol.toLowerCase();
+        const tradeId = t.coin_id.toLowerCase();
+        if (tradeId === targetSym) return true;
+        const coinKey = Object.keys(COINS).find(
+          (k) => k.toLowerCase() === tradeId || COINS[k].symbol.toLowerCase() === tradeId
+        );
+        if (coinKey && COINS[coinKey].symbol.toLowerCase() === targetSym) return true;
+        return tradeId.includes(targetSym);
+      });
+
+      activeSpotTrades.forEach((tr) => {
+        const isPending = tr.status === 'PENDING';
+
+        // Entrada / Compra Price Line
+        if (tr.entry_price > 0) {
+          const entryColor = isPending ? '#F59E0B' : tr.strategy_type === 'SPOT_BREAKOUT' ? '#22D3EE' : '#3888FF';
+          const entryTitle = isPending
+            ? `📍 COMPRA LÍMITE ($${tr.amount_usd.toFixed(0)}U)`
+            : `📍 ENTRADA SPOT ($${tr.amount_usd.toFixed(0)}U)`;
+
+          const entryLine = candleSeriesRef.current?.createPriceLine({
+            price: tr.entry_price,
+            color: entryColor,
+            lineWidth: 2,
+            lineStyle: isPending ? LineStyle.Dotted : LineStyle.Solid,
+            axisLabelVisible: true,
+            title: entryTitle,
+            axisLabelColor: entryColor,
+            axisLabelTextColor: '#08090C',
+          });
+          if (entryLine) priceLinesRef.current.push(entryLine);
+        }
+
+        // Take Profit Price Line
+        if (tr.take_profit_price && tr.take_profit_price > 0) {
+          const gainPct = tr.entry_price > 0 ? ((tr.take_profit_price - tr.entry_price) / tr.entry_price) * 100 : 0;
+          const tpLine = candleSeriesRef.current?.createPriceLine({
+            price: tr.take_profit_price,
+            color: '#0ECB81',
+            lineWidth: 2,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `🎯 TAKE PROFIT (+${gainPct.toFixed(1)}%)`,
+            axisLabelColor: '#0ECB81',
+            axisLabelTextColor: '#08090C',
+          });
+          if (tpLine) priceLinesRef.current.push(tpLine);
+        }
+
+        // Stop Loss Price Line
+        if (tr.stop_loss_price && tr.stop_loss_price > 0) {
+          const lossPct = tr.entry_price > 0 ? ((tr.stop_loss_price - tr.entry_price) / tr.entry_price) * 100 : 0;
+          const slLine = candleSeriesRef.current?.createPriceLine({
+            price: tr.stop_loss_price,
+            color: '#F6465D',
+            lineWidth: 2,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `🛑 STOP LOSS (${lossPct.toFixed(1)}%)`,
+            axisLabelColor: '#F6465D',
+            axisLabelTextColor: '#FFFFFF',
+          });
+          if (slLine) priceLinesRef.current.push(slLine);
+        }
+      });
+    }
+  }, [gridLevels, trades, showGridLines, showSpotLines, coinSymbol]);
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-[#08090C] select-none border-r border-white/10 relative overflow-hidden">
@@ -504,6 +576,19 @@ export const TradingViewChart = ({
               title="Mostrar / Ocultar líneas del Grid en el gráfico"
             >
               <span>Grid ({gridLevels.length})</span>
+            </button>
+
+            {/* Spot / TP-SL Lines Toggle */}
+            <button
+              onClick={() => setShowSpotLines(!showSpotLines)}
+              className={`px-2 py-0.5 rounded-md text-[9.5px] font-mono font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                showSpotLines
+                  ? 'text-[#0ECB81] bg-emerald-500/15 border-emerald-500/30 font-black'
+                  : 'text-slate-500 bg-white/5 border-white/5 line-through'
+              }`}
+              title="Mostrar / Ocultar órdenes Spot y Take Profit / Stop Loss en el gráfico"
+            >
+              <span>Spot / TP-SL</span>
             </button>
           </div>
         </div>

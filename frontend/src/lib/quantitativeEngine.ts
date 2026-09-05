@@ -4,7 +4,7 @@
  * Puerto 100% fiel de engine.py a TypeScript.
  */
 
-import { type CoinInfo, COINS } from './marketData';
+import { type CoinInfo, COINS, isValidSpotCrypto } from './marketData';
 
 export interface DynamicLevelItem {
   price: number;
@@ -390,19 +390,30 @@ export function evaluateGridSuitability(
   atrPercent: number = 2.8
 ): GridSuitabilityMetrics {
   const hasCandles = closes.length >= 20;
-
-  const chop = hasCandles ? calculateChoppinessIndex(highs, lows, closes, 14) : Math.max(35, Math.min(80, 58 - Math.abs(change24h) * 1.8));
-  const adx = hasCandles ? calculateAdx(highs, lows, closes, 14) : Math.max(10, Math.min(65, 14 + Math.abs(change24h) * 1.5));
-  const emaCrosses = hasCandles ? calculateEmaCrossCount(closes, 20) : Math.max(3, Math.min(22, Math.round(14 - Math.abs(change24h) * 0.6)));
-  const r2 = hasCandles ? calculateLinearRegressionR2(closes, 48) : Math.min(0.8, Number((Math.abs(change24h) * 0.03).toFixed(3)));
+  const absDelta = Math.abs(change24h);
+  // Dynamic calibration: directional breakouts have high ADX and low CHOP (penalizing grid bots)
+  const chop = hasCandles
+    ? calculateChoppinessIndex(highs, lows, closes, 14)
+    : Math.max(22, Math.min(78, 62 - absDelta * 3.6));
+  const adx = hasCandles
+    ? calculateAdx(highs, lows, closes, 14)
+    : Math.max(12, Math.min(75, 14 + absDelta * 3.5));
+  const emaCrosses = hasCandles
+    ? calculateEmaCrossCount(closes, 20)
+    : Math.max(2, Math.min(22, Math.round(15 - absDelta * 1.5)));
+  const r2 = hasCandles
+    ? calculateLinearRegressionR2(closes, 48)
+    : Math.min(0.95, Number((absDelta * 0.08).toFixed(3)));
   const natr = atrPercent > 0 ? atrPercent : 2.5;
 
-  // Canal de 7 días / histórico
-  const minLow = lows.length > 0 ? Math.min(...lows) : currentPrice * 0.94;
-  const maxHigh = highs.length > 0 ? Math.max(...highs) : currentPrice * 1.06;
+  // Canal de 24h / 7 días
+  const minLow = lows.length > 0 ? Math.min(...lows) : currentPrice * (1 - Math.max(0.02, absDelta * 0.01));
+  const maxHigh = highs.length > 0 ? Math.max(...highs) : currentPrice * (1 + Math.max(0.02, absDelta * 0.01));
   const channelPositionPct = maxHigh > minLow
     ? Math.max(0, Math.min(100, ((currentPrice - minLow) / (maxHigh - minLow)) * 100))
-    : 50.0;
+    : change24h > 0
+    ? Math.min(95, 50 + change24h * 4.5)
+    : Math.max(5, 50 + change24h * 4.5);
 
   // ─── 1. Sub-Score CHOP & ADX (35% peso) ───
   let sChopAdx = 50;
@@ -429,7 +440,7 @@ export function evaluateGridSuitability(
   let sPos = 50;
   if (channelPositionPct >= 35 && channelPositionPct <= 65) sPos = 100;
   else if (channelPositionPct >= 20 && channelPositionPct <= 80) sPos = 75;
-  else sPos = 30;
+  else sPos = 25;
 
   // ─── 5. Sub-Score Volumen y Liquidez (10% peso) ───
   let sVol = 50;
@@ -828,9 +839,9 @@ export function scanMarketDecisionHeroes(
     return { bestGridBot: sol, bestBuy: sol, leaderWait: btc, topGainer: eth };
   }
 
-  // Filter for institutional liquidity (volume >= $2.0M)
-  const liquidPool = evaluations.filter((e) => e.volume24h >= 2_000_000);
-  const activePool = liquidPool.length >= 10 ? liquidPool : evaluations;
+  // Filter strictly for institutional liquidity and verified spot crypto assets
+  const liquidPool = evaluations.filter((e) => e.volume24h >= 1_500_000 && isValidSpotCrypto(e.coin.symbol, e.volume24h, true));
+  const activePool = liquidPool.length >= 8 ? liquidPool : evaluations.filter((e) => isValidSpotCrypto(e.coin.symbol, e.volume24h, true));
 
   // 1. Top Gainer Real de Binance (Mayor subida 24h, desempate por volumen)
   const topGainer = activePool.reduce((prev, current) => {
@@ -893,4 +904,115 @@ export function scanMarketDecisionHeroes(
   }
 
   return { bestGridBot, bestBuy, leaderWait, topGainer };
+}
+
+// ─── EXIT SIGNAL ADVISOR ("¿Cuándo Vender?") ────────────────────────────────
+
+export type ExitSignalStatus = 'HOLD' | 'TAKE_PARTIAL_50' | 'EXIT_ALL';
+
+export interface ExitSignalResult {
+  status: ExitSignalStatus;
+  badge: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  explanation: string;
+  distanceToTpPct: number | null;
+  distanceToSlPct: number | null;
+}
+
+/**
+ * Evaluates whether the user should hold, take partial profit, or exit entirely.
+ *
+ * Decision Logic:
+ * ┌──────────────────────────────────────────────────────────────────┐
+ * │ 🟢 MANTENER     — RSI 0–72, healthy trend, let profits run     │
+ * │ 🟡 TOMA PARCIAL — RSI 72–80 OR within 1.5% of TP              │
+ * │ 🔴 SALIDA TOTAL — RSI > 80 (extreme overbought) or SL hit     │
+ * └──────────────────────────────────────────────────────────────────┘
+ */
+export function evaluateExitSignal(
+  currentPrice: number,
+  entryPrice: number,
+  rsi: number | undefined,
+  takeProfitPrice: number | null | undefined,
+  stopLossPrice: number | null | undefined,
+): ExitSignalResult {
+  const effectiveRsi = rsi ?? 50; // Default neutral if unknown
+
+  // Distance metrics
+  const distanceToTpPct =
+    takeProfitPrice && takeProfitPrice > 0 && currentPrice > 0
+      ? ((takeProfitPrice - currentPrice) / currentPrice) * 100
+      : null;
+
+  const distanceToSlPct =
+    stopLossPrice && stopLossPrice > 0 && currentPrice > 0
+      ? ((currentPrice - stopLossPrice) / currentPrice) * 100
+      : null;
+
+  const pnlPct = entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
+
+  // ── PHASE 3: EXIT ALL — extreme overbought or stop loss breach ──
+  if (effectiveRsi > 80) {
+    return {
+      status: 'EXIT_ALL',
+      badge: '🔴 SALIDA SUGERIDA',
+      color: '#F6465D',
+      bgColor: 'rgba(246, 70, 93, 0.12)',
+      borderColor: 'rgba(246, 70, 93, 0.35)',
+      explanation: `RSI extremo (${effectiveRsi.toFixed(0)}). Zona de agotamiento — toma el 100% de la ganancia antes de un retroceso.`,
+      distanceToTpPct,
+      distanceToSlPct,
+    };
+  }
+
+  if (stopLossPrice && stopLossPrice > 0 && currentPrice <= stopLossPrice) {
+    return {
+      status: 'EXIT_ALL',
+      badge: '🔴 STOP LOSS TOCADO',
+      color: '#F6465D',
+      bgColor: 'rgba(246, 70, 93, 0.12)',
+      borderColor: 'rgba(246, 70, 93, 0.35)',
+      explanation: `Precio actual ($${currentPrice.toFixed(2)}) alcanzó el Stop Loss. Cierra la posición para limitar la pérdida.`,
+      distanceToTpPct,
+      distanceToSlPct,
+    };
+  }
+
+  // ── PHASE 2: TAKE PARTIAL 50% — overbought zone or near TP ──
+  const isNearTp = distanceToTpPct !== null && distanceToTpPct <= 1.5 && distanceToTpPct > 0;
+  const isOverbought = effectiveRsi > 72;
+
+  if (isOverbought || isNearTp) {
+    const reason = isNearTp
+      ? `A solo ${distanceToTpPct!.toFixed(1)}% del Take Profit. Asegura el 50% de ganancia y deja correr el resto sin riesgo.`
+      : `RSI en zona de resistencia (${effectiveRsi.toFixed(0)}). Cobra el 50% de ganancia y sube el SL a break-even.`;
+
+    return {
+      status: 'TAKE_PARTIAL_50',
+      badge: '🟡 TOMA PARCIAL 50%',
+      color: '#F59E0B',
+      bgColor: 'rgba(245, 158, 11, 0.12)',
+      borderColor: 'rgba(245, 158, 11, 0.35)',
+      explanation: reason,
+      distanceToTpPct,
+      distanceToSlPct,
+    };
+  }
+
+  // ── PHASE 1: HOLD — healthy trend, let profits run ──
+  return {
+    status: 'HOLD',
+    badge: '🟢 MANTENER',
+    color: '#0ECB81',
+    bgColor: 'rgba(14, 203, 129, 0.12)',
+    borderColor: 'rgba(14, 203, 129, 0.35)',
+    explanation:
+      pnlPct > 0
+        ? `Tendencia saludable (RSI ${effectiveRsi.toFixed(0)}). Deja correr la ganancia (+${pnlPct.toFixed(1)}%) hacia el Take Profit.`
+        : `RSI neutral (${effectiveRsi.toFixed(0)}). Mantén la posición — el precio aún no ha alcanzado zona de toma de beneficios.`,
+    distanceToTpPct,
+    distanceToSlPct,
+  };
 }

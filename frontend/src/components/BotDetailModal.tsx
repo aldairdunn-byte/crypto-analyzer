@@ -59,6 +59,18 @@ export const BotDetailModal = ({
   const closedTrades = botTrades.filter((t) => t.status === 'CLOSED');
   const arbitrajesCount = closedTrades.length;
   const estimatedPnLUsd = closedTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0);
+  const totalBotFeesUsd = botTrades.reduce((acc, t) => {
+    const fee = typeof t.fee_usd === 'number'
+      ? t.fee_usd
+      : ((t.amount_usd || 0) * (t.side === 'SELL' ? 0.002 : 0.001));
+    return acc + fee;
+  }, 0);
+  const grossPnLUsd = closedTrades.reduce((acc, t) => {
+    if (typeof t.gross_pnl_usd === 'number') return acc + t.gross_pnl_usd;
+    const fee = typeof t.fee_usd === 'number' ? t.fee_usd : ((t.amount_usd || 0) * 0.002);
+    return acc + ((t.pnl_usd || 0) + fee);
+  }, 0);
+  const feeToProfitRatio = grossPnLUsd > 0 ? (totalBotFeesUsd / grossPnLUsd) * 100 : 0;
   const pnlRoiPct = (estimatedPnLUsd / (bot.capital_allocated_usd || 1)) * 100;
   const pnlPen = estimatedPnLUsd * penRate;
   const capitalPen = bot.capital_allocated_usd * penRate;
@@ -200,6 +212,48 @@ export const BotDetailModal = ({
               </div>
               <span className="text-[10px] text-slate-500 font-semibold">Base de Inicio</span>
             </div>
+          </div>
+
+          {/* Fee & Efficiency Audit Strip */}
+          <div className="bg-[#08090C] p-3 rounded-xl border border-white/5 font-mono text-xs">
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/5 flex-wrap gap-1">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="font-bold text-white text-[10.5px] uppercase tracking-wider">Auditoría de Comisiones (Binance VIP0)</span>
+              </div>
+              <span className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-full border ${
+                feeToProfitRatio > 35 
+                  ? 'bg-rose-500/15 text-[#F6465D] border-rose-500/30' 
+                  : 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
+              }`}>
+                {feeToProfitRatio > 35 ? '⚠️ Fricción Alta' : '✓ Fricción Saludable'} ({feeToProfitRatio.toFixed(1)}%)
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                <span className="text-[9px] text-slate-400 uppercase font-semibold block">PnL Bruto</span>
+                <span className="font-bold text-white text-xs tabular-nums">
+                  +{formatDynamicPrice(grossPnLUsd, 2, currencyMode, penRate)}
+                </span>
+              </div>
+              <div className="bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                <span className="text-[9px] text-amber-400/90 uppercase font-semibold block">Fees Pagados</span>
+                <span className="font-bold text-amber-400 text-xs tabular-nums">
+                  -{formatDynamicPrice(totalBotFeesUsd, 2, currencyMode, penRate)}
+                </span>
+              </div>
+              <div className="bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                <span className="text-[9px] text-emerald-400 uppercase font-semibold block">PnL Neto Real</span>
+                <span className="font-black text-[#0ECB81] text-xs tabular-nums">
+                  +{formatDynamicPrice(estimatedPnLUsd, 2, currencyMode, penRate)}
+                </span>
+              </div>
+            </div>
+            {feeToProfitRatio > 35 && (
+              <div className="text-[10px] text-amber-300/80 mt-2 bg-amber-500/10 p-2 rounded-lg border border-amber-500/20">
+                💡 <b>Sugerencia Cuantitativa:</b> Las comisiones representan el {feeToProfitRatio.toFixed(1)}% del beneficio bruto. Recomendamos ampliar el espaciado de mallas para maximizar el margen neto por ciclo.
+              </div>
+            )}
           </div>
 
           {/* Price Range Visualizer Box */}

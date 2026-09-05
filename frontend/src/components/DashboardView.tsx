@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   COINS,
   fetchAllCoins24hStats,
+  isValidSpotCrypto,
 } from '../lib/marketData';
 import { type SignalRow } from '../lib/supabase';
 import {
@@ -24,6 +25,10 @@ interface DashboardViewProps {
   totalSpotValue?: number;
   pnl24hUsd?: number;
   pnl24hPct?: number;
+  pnl7dUsd?: number;
+  pnl7dPct?: number;
+  allTimePnlUsd?: number;
+  allTimePnlPct?: number;
   signals?: SignalRow[];
   currencyMode: 'USD' | 'PEN';
   penRate?: number;
@@ -53,6 +58,10 @@ export const DashboardView = ({
   totalSpotValue = 0,
   pnl24hUsd = 0,
   pnl24hPct = 0,
+  pnl7dUsd = 0,
+  pnl7dPct = 0,
+  allTimePnlUsd = 0,
+  allTimePnlPct = 0,
   currencyMode,
   penRate = 3.75,
   isLiveMode,
@@ -80,7 +89,9 @@ export const DashboardView = ({
     }
   }, [externalStats]);
 
-  const coinsList = useMemo(() => Object.values(COINS), [allStats]);
+  const coinsList = useMemo(() => {
+    return Object.values(COINS).filter((c) => isValidSpotCrypto(c.symbol, allStats[c.id]?.vol24h, true));
+  }, [allStats]);
 
   // Fetch 24h real market stats from Binance
   const loadMarketStats = useCallback(async () => {
@@ -273,6 +284,10 @@ export const DashboardView = ({
         spotPct={spotPct}
         pnl24hPct={pnl24hPct}
         pnl24hUsd={pnl24hUsd}
+        pnl7dPct={pnl7dPct}
+        pnl7dUsd={pnl7dUsd}
+        allTimePnlPct={allTimePnlPct}
+        allTimePnlUsd={allTimePnlUsd}
         hideBalances={hideBalances}
         currencyMode={currencyMode}
         penRate={penRate}

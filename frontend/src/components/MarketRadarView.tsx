@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { COINS, formatDynamicPrice, fetchAllCoins24hStats } from '../lib/marketData';
+import { COINS, formatDynamicPrice, fetchAllCoins24hStats, isValidSpotCrypto } from '../lib/marketData';
 import { type SignalRow } from '../lib/supabase';
 import {
   evaluateCoinQuantitative,
@@ -68,8 +68,10 @@ export const MarketRadarView = ({
     new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   );
 
-  // Dynamically populated list from Binance Ingestion
-  const coinsList = useMemo(() => Object.values(COINS), []);
+  // Dynamically populated list from Binance Ingestion, reactive to allCoinsStats updates
+  const coinsList = useMemo(() => {
+    return Object.values(COINS).filter((c) => isValidSpotCrypto(c.symbol, allCoinsStats[c.id]?.vol24h, true));
+  }, [allCoinsStats]);
 
   useEffect(() => {
     localStorage.setItem('crypto_analyzer_radar_view_mode', viewMode);

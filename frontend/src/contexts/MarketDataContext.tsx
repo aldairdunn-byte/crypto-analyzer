@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import {
   COINS,
   getDynamicCoinInfo,
+  isNonSpotToken,
   type CandleData,
   type OrderBookItem,
   type QuantitativeAnalysis,
@@ -35,7 +36,10 @@ const MarketDataContext = createContext<MarketDataContextType | undefined>(undef
 export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeCoin, setActiveCoinState] = useState<string>(() => {
     const saved = localStorage.getItem('crypto_analyzer_active_coin');
-    if (saved && COINS[saved] && saved !== 'anthropic') return saved;
+    if (saved) {
+      const resolved = getDynamicCoinInfo(saved);
+      if (resolved && resolved.id && !isNonSpotToken(resolved.id)) return resolved.id;
+    }
     try {
       localStorage.setItem('crypto_analyzer_active_coin', 'solana');
     } catch {}
@@ -43,8 +47,9 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   });
 
   const setActiveCoin = useCallback((coinId: string) => {
-    const clean = (coinId || '').toLowerCase().trim();
-    const valid = COINS[clean] && clean !== 'anthropic' ? clean : 'solana';
+    if (!coinId) return;
+    const resolved = getDynamicCoinInfo(coinId);
+    const valid = resolved && resolved.id && !isNonSpotToken(resolved.id) ? resolved.id : 'solana';
     setActiveCoinState(valid);
     try {
       localStorage.setItem('crypto_analyzer_active_coin', valid);
@@ -153,7 +158,17 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         ]);
 
         if (isMounted) {
-          if (klineData.length > 0) setCandles(klineData);
+          if (klineData.length > 0) {
+            // Strictly sort and deduplicate candles by timestamp ascending
+            const sorted = [...klineData].sort((a, b) => a.time - b.time);
+            const deduped: CandleData[] = [];
+            for (let i = 0; i < sorted.length; i++) {
+              if (i === 0 || sorted[i].time > deduped[deduped.length - 1].time) {
+                deduped.push(sorted[i]);
+              }
+            }
+            setCandles(deduped);
+          }
           if (depthData.bids.length > 0 || depthData.asks.length > 0) {
             const maxB = depthData.bids.length > 0 ? depthData.bids[depthData.bids.length - 1].total : 0;
             const maxA = depthData.asks.length > 0 ? depthData.asks[depthData.asks.length - 1].total : 0;
@@ -170,10 +185,27 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
 
     loadData();
-    const interval = setInterval(loadData, 15_000);
+    // Only poll orderbook depth periodically (not entire kline history) to avoid resetting candles
+    const depthInterval = setInterval(async () => {
+      try {
+        if (!isMounted) return;
+        const effectiveBasePrice = livePrices[activeCoin] || coinInfo.basePrice;
+        const depthData = await fetchRealBinanceDepth(coinInfo.binanceSymbol, 15, effectiveBasePrice);
+        if (depthData.bids.length > 0 || depthData.asks.length > 0) {
+          const maxB = depthData.bids.length > 0 ? depthData.bids[depthData.bids.length - 1].total : 0;
+          const maxA = depthData.asks.length > 0 ? depthData.asks[depthData.asks.length - 1].total : 0;
+          setOrderBook({
+            bids: depthData.bids,
+            asks: depthData.asks,
+            maxTotal: Math.max(maxB, maxA, 1),
+          });
+        }
+      } catch {}
+    }, 10_000);
+
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      clearInterval(depthInterval);
     };
   }, [activeCoin, timeframe, coinInfo.binanceSymbol]);
 
@@ -213,13 +245,14 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               };
 
               setCandles((prev) => {
-                if (prev.length < 10) return prev; // Wait for full historical loadData()
+                if (!prev || prev.length < 5) return prev;
                 const last = prev[prev.length - 1];
                 if (last.time === candle.time) {
                   const copy = [...prev];
                   copy[copy.length - 1] = candle;
                   return copy;
                 } else if (candle.time > last.time) {
+                  // Next interval candle started
                   return [...prev.slice(1), candle];
                 }
                 return prev;
