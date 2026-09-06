@@ -300,7 +300,10 @@ export const BottomActivityPanel = ({
                   return (
                     <div
                       key={bot.id}
-                      onClick={() => setSelectedBotForInspection(bot)}
+                      onClick={() => {
+                        setSelectedBotForInspection(bot);
+                        onSelectCoin?.(coinInfo.id);
+                      }}
                       className="glass-card rounded-2xl p-4 border border-white/10 hover:border-[#F59E0B]/50 transition-all shadow-xl space-y-3 relative group overflow-hidden cursor-pointer hover:shadow-amber-500/10 active:scale-[0.99]"
                     >
                       {/* Ambient background glow */}
@@ -515,7 +518,11 @@ export const BottomActivityPanel = ({
 
                             return (
                               <tr key={ord.id} className="hover:bg-white/[0.03] transition-colors h-9">
-                                <td className="pl-3 font-bold text-white font-sans flex items-center space-x-1.5 py-2">
+                                <td
+                                  onClick={() => coinInfo && onSelectCoin?.(coinInfo.id)}
+                                  className="pl-3 font-bold text-white font-sans flex items-center space-x-1.5 py-2 cursor-pointer hover:text-amber-400 transition-colors"
+                                  title={`Ver ${coinInfo?.symbol || ord.coin_id} en Terminal`}
+                                >
                                   <CryptoIcon symbol={coinInfo?.symbol || ord.coin_id} size={16} />
                                   <span>{ord.coin_id.toUpperCase()}</span>
                                 </td>
@@ -618,7 +625,11 @@ export const BottomActivityPanel = ({
 
                             return (
                               <tr key={pos.id} className="hover:bg-white/[0.03] transition-colors h-9">
-                                <td className="pl-3 font-bold text-white font-sans flex items-center space-x-1.5 py-2">
+                                <td
+                                  onClick={() => coinInfo && onSelectCoin?.(coinInfo.id)}
+                                  className="pl-3 font-bold text-white font-sans flex items-center space-x-1.5 py-2 cursor-pointer hover:text-amber-400 transition-colors"
+                                  title={`Ver ${coinInfo?.symbol || pos.coin_id} en Terminal`}
+                                >
                                   <CryptoIcon symbol={coinInfo?.symbol || pos.coin_id} size={16} />
                                   <span>{pos.coin_id.toUpperCase()}</span>
                                 </td>

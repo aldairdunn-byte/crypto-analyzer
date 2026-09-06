@@ -135,9 +135,7 @@ export const ActiveBotsPanel: React.FC<ActiveBotsPanelProps> = ({
                   const pricePctInRange = Math.max(0, Math.min(100, highRange > lowRange ? ((currentP - lowRange) / (highRange - lowRange)) * 100 : 50));
                   const numGrids = config.num_grids || 6;
 
-                  const botTrades = trades.filter((t) =>
-                    t.bot_id ? t.bot_id === bot.id : t.coin_id === coinInfo.id && bot.id === bots[0]?.id
-                  );
+                  const botTrades = trades.filter((t) => t.bot_id === bot.id);
                   const closed = botTrades.filter((t) => t.status === 'CLOSED');
                   const arbitrajesCount = closed.length;
                   const estimatedPnLUsd = closed.reduce((acc, t) => acc + (t.pnl_usd || 0), 0);

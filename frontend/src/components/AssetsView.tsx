@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { COINS, formatDynamicPrice, resolveBotCoin } from '../lib/marketData';
+import { COINS, getDynamicCoinInfo, formatDynamicPrice, resolveBotCoin } from '../lib/marketData';
 import { type BotRow, type TradeRow } from '../lib/supabase';
 import { CryptoIcon } from './CryptoIcon';
 import { PortfolioDonutChart, type PortfolioSegment } from './ui/PortfolioDonutChart';
@@ -170,15 +170,7 @@ export const AssetsView = ({
     // Process manual holdings
     for (const [cId, h] of Object.entries(holdings)) {
       if (h.units > 0.000001) {
-        const coin = COINS[cId] || {
-          id: cId,
-          name: cId.toUpperCase(),
-          symbol: cId.toUpperCase(),
-          binanceSymbol: `${cId.toUpperCase()}USDT`,
-          category: 'TOP' as const,
-          basePrice: h.avgEntryPrice,
-          decimals: 2,
-        };
+        const coin = getDynamicCoinInfo(cId);
         const currentPrice = livePrices[cId] ?? coin.basePrice;
         const totalValUsd = h.units * currentPrice;
         const investedUsd = h.units * (h.avgEntryPrice || coin.basePrice);

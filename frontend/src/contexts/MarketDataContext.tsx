@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   COINS,
   getDynamicCoinInfo,
-  isNonSpotToken,
+  isValidSpotCrypto,
   type CandleData,
   type OrderBookItem,
   type QuantitativeAnalysis,
@@ -38,18 +38,15 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const saved = localStorage.getItem('crypto_analyzer_active_coin');
     if (saved) {
       const resolved = getDynamicCoinInfo(saved);
-      if (resolved && resolved.id && !isNonSpotToken(resolved.id)) return resolved.id;
+      if (resolved && resolved.id) return resolved.id;
     }
-    try {
-      localStorage.setItem('crypto_analyzer_active_coin', 'solana');
-    } catch {}
-    return 'solana';
+    return 'bitcoin';
   });
 
   const setActiveCoin = useCallback((coinId: string) => {
     if (!coinId) return;
     const resolved = getDynamicCoinInfo(coinId);
-    const valid = resolved && resolved.id && !isNonSpotToken(resolved.id) ? resolved.id : 'solana';
+    const valid = resolved && resolved.id ? resolved.id : 'bitcoin';
     setActiveCoinState(valid);
     try {
       localStorage.setItem('crypto_analyzer_active_coin', valid);
@@ -60,12 +57,21 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [livePrices, setLivePrices] = useState<Record<string, number>>(() => {
     try {
       const cached = localStorage.getItem('crypto_analyzer_live_prices_cache');
-      return cached ? JSON.parse(cached) : {};
+      if (!cached) return {};
+      const parsed = JSON.parse(cached);
+      const sanitized: Record<string, number> = {};
+      Object.entries(parsed).forEach(([id, p]: [string, any]) => {
+        if (typeof p === 'number' && p > 0 && isValidSpotCrypto(id, 100_000, true)) {
+          sanitized[id] = p;
+        }
+      });
+      return sanitized;
     } catch {
       return {};
     }
   });
   const [candles, setCandles] = useState<CandleData[]>([]);
+  const klineCacheRef = useRef<Record<string, CandleData[]>>({});
   const [orderBook, setOrderBook] = useState<{ bids: OrderBookItem[]; asks: OrderBookItem[]; maxTotal: number }>({
     bids: [],
     asks: [],
@@ -74,7 +80,15 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [allCoinsStats, setAllCoinsStats] = useState<Record<string, any>>(() => {
     try {
       const cached = localStorage.getItem('crypto_analyzer_market_stats_cache');
-      return cached ? JSON.parse(cached) : {};
+      if (!cached) return {};
+      const parsed = JSON.parse(cached);
+      const sanitized: Record<string, any> = {};
+      Object.entries(parsed).forEach(([id, data]: [string, any]) => {
+        if (data && data.price > 0 && isValidSpotCrypto(id, data.vol24h, true)) {
+          sanitized[id] = data;
+        }
+      });
+      return sanitized;
     } catch {
       return {};
     }
@@ -110,7 +124,7 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [refreshPenRate]);
 
   const coinInfo = useMemo(() => getDynamicCoinInfo(activeCoin), [activeCoin]);
-  const currentPrice = livePrices[activeCoin] || coinInfo.basePrice;
+  const currentPrice = livePrices[activeCoin] || allCoinsStats[activeCoin]?.price || coinInfo.basePrice;
 
   // 1. Initial 24h stats for all coins with persistent caching
   const refreshMarketData = useCallback(async () => {
@@ -148,6 +162,12 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // 2. Fetch Klines & OrderBook when activeCoin or timeframe changes
   useEffect(() => {
     let isMounted = true;
+    const cacheKey = `${coinInfo.binanceSymbol}_${timeframe}`;
+
+    // Instant switch from in-memory cache if already loaded (zero latency & no deformed flash)
+    if (klineCacheRef.current[cacheKey] && klineCacheRef.current[cacheKey].length > 0) {
+      setCandles(klineCacheRef.current[cacheKey]);
+    }
 
     const loadData = async () => {
       try {
@@ -167,6 +187,7 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 deduped.push(sorted[i]);
               }
             }
+            klineCacheRef.current[cacheKey] = deduped;
             setCandles(deduped);
           }
           if (depthData.bids.length > 0 || depthData.asks.length > 0) {
@@ -215,6 +236,7 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let isDisposed = false;
     let retryDelay = 1000;
+    const cacheKey = `${coinInfo.binanceSymbol}_${timeframe}`;
 
     const connectWebSocket = () => {
       if (isDisposed) return;
@@ -250,10 +272,13 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 if (last.time === candle.time) {
                   const copy = [...prev];
                   copy[copy.length - 1] = candle;
+                  klineCacheRef.current[cacheKey] = copy;
                   return copy;
                 } else if (candle.time > last.time) {
                   // Next interval candle started
-                  return [...prev.slice(1), candle];
+                  const nextArr = [...prev.slice(1), candle];
+                  klineCacheRef.current[cacheKey] = nextArr;
+                  return nextArr;
                 }
                 return prev;
               });

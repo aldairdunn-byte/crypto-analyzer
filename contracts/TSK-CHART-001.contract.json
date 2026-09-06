@@ -1,0 +1,65 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-CHART-001",
+  "epic_id": "EPC-TERMINAL",
+  "goal": "Fix candlestick timeframe switching via klineCacheRef, format single currency prefix, bind crosshair OHLCV listener, and set dynamic price decimals",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/components/TradingViewChart.tsx",
+      "frontend/src/contexts/MarketDataContext.tsx"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ]
+  },
+
+  "depends_on": [],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/marketData.ts",
+    "function_signatures": [
+      "export function formatDynamicPrice(price: number, decimals: number, currencyMode: 'USD' | 'PEN', penRate: number): string"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Add klineCacheRef in MarketDataContext.tsx to store cached CandleData arrays keyed by coin and interval",
+    "Remove duplicate currency prefixes in TradingViewChart.tsx header metric strip",
+    "Subscribe crosshair movement listener on Lightweight Charts instance to populate hoveredCandle state",
+    "Set priceFormat precision on candlestick series matching coin decimals",
+    "Run unit tests in chart_data.test.js with node --test"
+  ],
+
+  "commands": {
+    "test": "node --test src/__tests__/chart_data.test.js",
+    "lint": "npx oxlint",
+    "typecheck": "npx tsc -b"
+  },
+
+  "acceptance_criteria": [
+    "expect(formatDynamicPrice(1.43, 2, 'USD', 3.8)).toBe('$1.43')",
+    "expect(formatDynamicPrice(1.00, 2, 'PEN', 3.8)).toBe('S/3.80')",
+    "expect(formatDynamicPrice(0.00001735, 8, 'USD', 3.8)).toBe('$0.00001735')",
+    "expect(deduplicateCandles(raw).length).toBe(2)",
+    "expect(calculateEMA(candles, 20).length).toBe(11)"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "Browser verification confirms OHLCV crosshair and timeframe switching"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/components/TradingViewChart.tsx frontend/src/contexts/MarketDataContext.tsx"
+  }
+}

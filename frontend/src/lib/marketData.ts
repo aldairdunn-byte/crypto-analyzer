@@ -13,35 +13,31 @@ export interface CoinInfo {
 
 export const COINS: Record<string, CoinInfo> = {
   // ─── 1. TOP LAYER-1 & MAJORS (23) ───
-  bitcoin: { id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC', binanceSymbol: 'BTCUSDT', category: 'TOP', basePrice: 68450.00, decimals: 2 },
-  ethereum: { id: 'ethereum', name: 'Ethereum', symbol: 'ETH', binanceSymbol: 'ETHUSDT', category: 'TOP', basePrice: 2615.00, decimals: 2 },
-  solana: { id: 'solana', name: 'Solana', symbol: 'SOL', binanceSymbol: 'SOLUSDT', category: 'TOP', basePrice: 145.20, decimals: 2 },
-  binancecoin: { id: 'binancecoin', name: 'BNB Chain', symbol: 'BNB', binanceSymbol: 'BNBUSDT', category: 'TOP', basePrice: 578.40, decimals: 2 },
-  ripple: { id: 'ripple', name: 'Ripple', symbol: 'XRP', binanceSymbol: 'XRPUSDT', category: 'TOP', basePrice: 0.5420, decimals: 4 },
-  cardano: { id: 'cardano', name: 'Cardano', symbol: 'ADA', binanceSymbol: 'ADAUSDT', category: 'TOP', basePrice: 0.3540, decimals: 4 },
-  avalanche: { id: 'avalanche', name: 'Avalanche', symbol: 'AVAX', binanceSymbol: 'AVAXUSDT', category: 'TOP', basePrice: 27.80, decimals: 2 },
-  sui: { id: 'sui', name: 'Sui Network', symbol: 'SUI', binanceSymbol: 'SUIUSDT', category: 'TOP', basePrice: 1.82, decimals: 2 },
-  polkadot: { id: 'polkadot', name: 'Polkadot', symbol: 'DOT', binanceSymbol: 'DOTUSDT', category: 'TOP', basePrice: 4.25, decimals: 2 },
-  chainlink: { id: 'chainlink', name: 'Chainlink', symbol: 'LINK', binanceSymbol: 'LINKUSDT', category: 'TOP', basePrice: 11.45, decimals: 2 },
+  bitcoin: { id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC', binanceSymbol: 'BTCUSDT', category: 'TOP', basePrice: 89500.00, decimals: 2 },
+  ethereum: { id: 'ethereum', name: 'Ethereum', symbol: 'ETH', binanceSymbol: 'ETHUSDT', category: 'TOP', basePrice: 2280.00, decimals: 2 },
+  solana: { id: 'solana', name: 'Solana', symbol: 'SOL', binanceSymbol: 'SOLUSDT', category: 'TOP', basePrice: 178.20, decimals: 2 },
+  binancecoin: { id: 'binancecoin', name: 'BNB Chain', symbol: 'BNB', binanceSymbol: 'BNBUSDT', category: 'TOP', basePrice: 615.40, decimals: 2 },
+  ripple: { id: 'ripple', name: 'Ripple', symbol: 'XRP', binanceSymbol: 'XRPUSDT', category: 'TOP', basePrice: 1.4200, decimals: 4 },
+  cardano: { id: 'cardano', name: 'Cardano', symbol: 'ADA', binanceSymbol: 'ADAUSDT', category: 'TOP', basePrice: 0.7840, decimals: 4 },
+  avalanche: { id: 'avalanche', name: 'Avalanche', symbol: 'AVAX', binanceSymbol: 'AVAXUSDT', category: 'TOP', basePrice: 28.80, decimals: 2 },
+  sui: { id: 'sui', name: 'Sui Network', symbol: 'SUI', binanceSymbol: 'SUIUSDT', category: 'TOP', basePrice: 2.85, decimals: 2 },
+  polkadot: { id: 'polkadot', name: 'Polkadot', symbol: 'DOT', binanceSymbol: 'DOTUSDT', category: 'TOP', basePrice: 5.25, decimals: 2 },
+  chainlink: { id: 'chainlink', name: 'Chainlink', symbol: 'LINK', binanceSymbol: 'LINKUSDT', category: 'TOP', basePrice: 18.45, decimals: 2 },
   polygon: { id: 'polygon', name: 'Polygon', symbol: 'POL', binanceSymbol: 'POLUSDT', category: 'TOP', basePrice: 0.3850, decimals: 4 },
-  toncoin: { id: 'toncoin', name: 'The Open Network', symbol: 'TON', binanceSymbol: 'TONUSDT', category: 'TOP', basePrice: 5.20, decimals: 2 },
-  tron: { id: 'tron', name: 'TRON', symbol: 'TRX', binanceSymbol: 'TRXUSDT', category: 'TOP', basePrice: 0.1580, decimals: 4 },
+  tron: { id: 'tron', name: 'TRON', symbol: 'TRX', binanceSymbol: 'TRXUSDT', category: 'TOP', basePrice: 0.2480, decimals: 4 },
   aptos: { id: 'aptos', name: 'Aptos', symbol: 'APT', binanceSymbol: 'APTUSDT', category: 'TOP', basePrice: 8.90, decimals: 2 },
   celestia: { id: 'celestia', name: 'Celestia', symbol: 'TIA', binanceSymbol: 'TIAUSDT', category: 'TOP', basePrice: 5.10, decimals: 2 },
   cosmos: { id: 'cosmos', name: 'Cosmos', symbol: 'ATOM', binanceSymbol: 'ATOMUSDT', category: 'TOP', basePrice: 4.80, decimals: 2 },
   sei: { id: 'sei', name: 'Sei Network', symbol: 'SEI', binanceSymbol: 'SEIUSDT', category: 'TOP', basePrice: 0.4200, decimals: 4 },
-  kaspa: { id: 'kaspa', name: 'Kaspa', symbol: 'KAS', binanceSymbol: 'KASUSDT', category: 'TOP', basePrice: 0.1250, decimals: 4 },
-  hedera: { id: 'hedera', name: 'Hedera', symbol: 'HBAR', binanceSymbol: 'HBARUSDT', category: 'TOP', basePrice: 0.0520, decimals: 4 },
-  algorand: { id: 'algorand', name: 'Algorand', symbol: 'ALGO', binanceSymbol: 'ALGOUSDT', category: 'TOP', basePrice: 0.1320, decimals: 4 },
-  'internet-computer': { id: 'internet-computer', name: 'Internet Computer', symbol: 'ICP', binanceSymbol: 'ICPUSDT', category: 'TOP', basePrice: 8.50, decimals: 2 },
-  vechain: { id: 'vechain', name: 'VeChain', symbol: 'VET', binanceSymbol: 'VETUSDT', category: 'TOP', basePrice: 0.0240, decimals: 4 },
-  filecoin: { id: 'filecoin', name: 'Filecoin', symbol: 'FIL', binanceSymbol: 'FILUSDT', category: 'TOP', basePrice: 3.80, decimals: 2 },
+  hedera: { id: 'hedera', name: 'Hedera', symbol: 'HBAR', binanceSymbol: 'HBARUSDT', category: 'TOP', basePrice: 0.2250, decimals: 4 },
+  algorand: { id: 'algorand', name: 'Algorand', symbol: 'ALGO', binanceSymbol: 'ALGOUSDT', category: 'TOP', basePrice: 0.2820, decimals: 4 },
+  'internet-computer': { id: 'internet-computer', name: 'Internet Computer', symbol: 'ICP', binanceSymbol: 'ICPUSDT', category: 'TOP', basePrice: 11.50, decimals: 2 },
+  vechain: { id: 'vechain', name: 'VeChain', symbol: 'VET', binanceSymbol: 'VETUSDT', category: 'TOP', basePrice: 0.0340, decimals: 4 },
+  filecoin: { id: 'filecoin', name: 'Filecoin', symbol: 'FIL', binanceSymbol: 'FILUSDT', category: 'TOP', basePrice: 4.80, decimals: 2 },
 
-  // ─── 2. BITCOIN ECOSYSTEM & BREAKOUTS (4) ───
+  // ─── 2. BITCOIN ECOSYSTEM & BREAKOUTS (2) ───
   stacks: { id: 'stacks', name: 'Stacks (Bitcoin L2)', symbol: 'STX', binanceSymbol: 'STXUSDT', category: 'TOP', basePrice: 1.85, decimals: 2 },
   ordinals: { id: 'ordinals', name: 'Ordinals', symbol: 'ORDI', binanceSymbol: 'ORDIUSDT', category: 'TOP', basePrice: 38.50, decimals: 2 },
-  sats: { id: 'sats', name: '1000SATS (Ordinals)', symbol: '1000SATS', binanceSymbol: '1000SATSUSDT', category: 'MEME', basePrice: 0.000285, decimals: 6 },
-  'pax-gold': { id: 'pax-gold', name: 'PAX Gold', symbol: 'PAXG', binanceSymbol: 'PAXGUSDT', category: 'TOP', basePrice: 2650.00, decimals: 2 },
 
   // ─── 3. LAYER-2 & MODULAR SCALING (7) ───
   arbitrum: { id: 'arbitrum', name: 'Arbitrum', symbol: 'ARB', binanceSymbol: 'ARBUSDT', category: 'L2', basePrice: 0.5400, decimals: 4 },
@@ -60,7 +56,6 @@ export const COINS: Record<string, CoinInfo> = {
   injective: { id: 'injective', name: 'Injective Protocol', symbol: 'INJ', binanceSymbol: 'INJUSDT', category: 'AI', basePrice: 21.40, decimals: 2 },
   worldcoin: { id: 'worldcoin', name: 'Worldcoin', symbol: 'WLD', binanceSymbol: 'WLDUSDT', category: 'AI', basePrice: 1.95, decimals: 2 },
   'the-graph': { id: 'the-graph', name: 'The Graph', symbol: 'GRT', binanceSymbol: 'GRTUSDT', category: 'AI', basePrice: 0.1650, decimals: 4 },
-  akash: { id: 'akash', name: 'Akash Network', symbol: 'AKT', binanceSymbol: 'AKTUSDT', category: 'AI', basePrice: 0.5520, decimals: 4 },
   'io-net': { id: 'io-net', name: 'io.net Compute', symbol: 'IO', binanceSymbol: 'IOUSDT', category: 'AI', basePrice: 2.20, decimals: 2 },
   virtual: { id: 'virtual', name: 'Virtual Protocol', symbol: 'VIRTUAL', binanceSymbol: 'VIRTUALUSDT', category: 'AI', basePrice: 1.45, decimals: 2 },
   aixbt: { id: 'aixbt', name: 'AIXBT Agent', symbol: 'AIXBT', binanceSymbol: 'AIXBTUSDT', category: 'AI', basePrice: 0.3800, decimals: 4 },
@@ -73,24 +68,20 @@ export const COINS: Record<string, CoinInfo> = {
   ethena: { id: 'ethena', name: 'Ethena USDe', symbol: 'ENA', binanceSymbol: 'ENAUSDT', category: 'DEFI', basePrice: 0.5800, decimals: 4 },
   ondo: { id: 'ondo', name: 'Ondo Finance RWA', symbol: 'ONDO', binanceSymbol: 'ONDOUSDT', category: 'DEFI', basePrice: 0.7200, decimals: 4 },
   pendle: { id: 'pendle', name: 'Pendle Yield', symbol: 'PENDLE', binanceSymbol: 'PENDLEUSDT', category: 'DEFI', basePrice: 4.10, decimals: 2 },
-  maker: { id: 'maker', name: 'Maker', symbol: 'MKR', binanceSymbol: 'MKRUSDT', category: 'DEFI', basePrice: 1650.00, decimals: 2 },
   raydium: { id: 'raydium', name: 'Raydium', symbol: 'RAY', binanceSymbol: 'RAYUSDT', category: 'DEFI', basePrice: 4.80, decimals: 2 },
-  fantom: { id: 'fantom', name: 'Sonic (Fantom)', symbol: 'FTM', binanceSymbol: 'FTMUSDT', category: 'DEFI', basePrice: 0.6800, decimals: 4 },
   pyth: { id: 'pyth', name: 'Pyth Network', symbol: 'PYTH', binanceSymbol: 'PYTHUSDT', category: 'DEFI', basePrice: 0.3950, decimals: 4 },
   dydx: { id: 'dydx', name: 'dYdX Protocol', symbol: 'DYDX', binanceSymbol: 'DYDXUSDT', category: 'DEFI', basePrice: 1.15, decimals: 2 },
   lido: { id: 'lido', name: 'Lido DAO', symbol: 'LDO', binanceSymbol: 'LDOUSDT', category: 'DEFI', basePrice: 1.25, decimals: 2 },
 
-  // ─── 6. MEMES & HIGH VOLATILITY (11) ───
+  // ─── 6. MEMES & HIGH VOLATILITY (9) ───
   dogecoin: { id: 'dogecoin', name: 'Dogecoin', symbol: 'DOGE', binanceSymbol: 'DOGEUSDT', category: 'MEME', basePrice: 0.1420, decimals: 4 },
   'shiba-inu': { id: 'shiba-inu', name: 'Shiba Inu', symbol: 'SHIB', binanceSymbol: 'SHIBUSDT', category: 'MEME', basePrice: 0.00001735, decimals: 8 },
   pepe: { id: 'pepe', name: 'Pepe', symbol: 'PEPE', binanceSymbol: 'PEPEUSDT', category: 'MEME', basePrice: 0.00000985, decimals: 8 },
   dogwifhat: { id: 'dogwifhat', name: 'dogwifhat', symbol: 'WIF', binanceSymbol: 'WIFUSDT', category: 'MEME', basePrice: 2.45, decimals: 2 },
   bonk: { id: 'bonk', name: 'Bonk', symbol: 'BONK', binanceSymbol: 'BONKUSDT', category: 'MEME', basePrice: 0.00002150, decimals: 8 },
   floki: { id: 'floki', name: 'Floki', symbol: 'FLOKI', binanceSymbol: 'FLOKIUSDT', category: 'MEME', basePrice: 0.0001450, decimals: 6 },
-  popcat: { id: 'popcat', name: 'Popcat', symbol: 'POPCAT', binanceSymbol: 'POPCATUSDT', category: 'MEME', basePrice: 1.35, decimals: 2 },
   'pudgy-penguins': { id: 'pudgy-penguins', name: 'Pudgy Penguins', symbol: 'PENGU', binanceSymbol: 'PENGUUSDT', category: 'MEME', basePrice: 0.0380, decimals: 4 },
   bome: { id: 'bome', name: 'BOOK OF MEME', symbol: 'BOME', binanceSymbol: 'BOMEUSDT', category: 'MEME', basePrice: 0.0085, decimals: 6 },
-  mew: { id: 'mew', name: 'cat in a dogs world', symbol: 'MEW', binanceSymbol: 'MEWUSDT', category: 'MEME', basePrice: 0.0082, decimals: 6 },
   gala: { id: 'gala', name: 'Gala Games', symbol: 'GALA', binanceSymbol: 'GALAUSDT', category: 'MEME', basePrice: 0.0215, decimals: 4 },
 };
 
@@ -239,41 +230,176 @@ export function getCoinFundamentals(coin: CoinInfo): CoinFundamentalData {
  */
 const FIAT_STABLECOIN_SYMBOLS = new Set([
   'usdc', 'fdusd', 'tusd', 'eur', 'usdp', 'aeur', 'busd', 'dai', 'wbtc', 'usde',
-  'ustc', 'euri', 'aud', 'gbp', 'brl', 'try', 'rub', 'cop', 'mxn', 'ars', 'clp', 'cad', 'chf', 'jpy'
+  'ustc', 'euri', 'aud', 'gbp', 'brl', 'try', 'rub', 'cop', 'mxn', 'ars', 'clp', 'cad', 'chf', 'jpy',
+  'usd1', 'rlusd', 'usdd', 'pyusd', 'crvusd', 'usds', 'frax', 'lusd', 'susd', 'gusd', 'eurt'
 ]);
+
+/**
+ * Blacklist estricta de tokens deslistados históricamente, futuros sin spot, activos fantasma,
+ * acciones tokenizadas (bStocks), comodities y derivados sintéticos.
+ */
+export const NON_SPOT_OR_HALTED_SYMBOLS = new Set([
+  'akt', 'akash', 'kas', 'kaspa', 'popcat', 'mew', 'ton', 'toncoin', 'ftm', 'fantom', 'mkr', 'maker',
+  'bcc', 'ven', 'pax', 'bchabc', 'bchsv', 'usdsold', 'nano', 'usdsb', 'erd', 'npxs', 'storm', 'hc',
+  'mco', 'strat', 'xzc', 'gxs', 'lend', 'bkrw', 'bzrx', 'susd', 'ramp', 'eps', 'nu', 'keep', 'rgt',
+  'any', 'wnxm', 'mir', 'anc', 'yfidown', 'yfii', 'tribet', 'btg', 'beam', 'nebl', 'auto', 'vgx',
+  'snm', 'qlc', 'bnt', 'drep', 'pnt', 'mob', 'mdx', 'dgb', 'reiv', 'unfi', 'kp3r',
+  // Purged bStocks / Tokenized Equities
+  'sndkb', 'crclb', 'mstrb', 'nvdb', 'tslab', 'applb', 'amznb', 'msftb', 'coinb', 'pltrb', 'hoodb', 'cohrb', 'skhyb',
+  // Purged commodities / ordinals
+  'paxg', 'sats', '1000sats'
+]);
+
+// Canonical major symbol mapping accessible throughout module
+export const CANONICAL_ALIASES: Record<string, string> = {
+  bnb: 'binancecoin',
+  btc: 'bitcoin',
+  eth: 'ethereum',
+  sol: 'solana',
+  ada: 'cardano',
+  xrp: 'ripple',
+  avax: 'avalanche',
+  dot: 'polkadot',
+  link: 'chainlink',
+  doge: 'dogecoin',
+  shib: 'shiba-inu',
+  matic: 'polygon',
+  pol: 'polygon',
+  arb: 'arbitrum',
+  op: 'optimism',
+  ftm: 'fantom',
+  inj: 'injective',
+  uni: 'uniswap',
+  sui: 'sui',
+  ton: 'toncoin',
+  rndr: 'render',
+  render: 'render',
+  fet: 'fetch-ai',
+  tao: 'bittensor',
+  wld: 'worldcoin',
+  grt: 'the-graph',
+  io: 'io-net',
+  icp: 'internet-computer',
+  wif: 'dogwifhat',
+  pengu: 'pudgy-penguins',
+  trx: 'tron',
+  atom: 'cosmos',
+  hbar: 'hedera',
+  algo: 'algorand',
+  vet: 'vechain',
+  fil: 'filecoin',
+  stx: 'stacks',
+  ordi: 'ordinals',
+  zro: 'layerzero',
+  strk: 'starknet',
+  manta: 'manta',
+  move: 'movement',
+  saga: 'saga',
+  jup: 'jupiter',
+  ena: 'ethena',
+  ondo: 'ondo',
+  ray: 'raydium',
+  ldo: 'lido',
+  dydx: 'dydx',
+  pendle: 'pendle',
+  pyth: 'pyth',
+  bonk: 'bonk',
+  floki: 'floki',
+  bome: 'bome',
+  gala: 'gala',
+  near: 'near',
+  aave: 'aave',
+  sei: 'sei',
+  tia: 'celestia',
+  celestia: 'celestia',
+  apt: 'aptos',
+  aptos: 'aptos',
+};
 
 export const isValidSpotCrypto = (idOrSymbol: string, vol24h: number = 0, isCurated: boolean = false): boolean => {
   if (!idOrSymbol) return false;
   const clean = idOrSymbol.toLowerCase().trim();
   const base = clean.replace(/usdt$/, '');
 
-  // 1. Curated major coins are always valid
-  if (isCurated && (COINS[clean] || COINS[base])) return true;
+  // 0. Curated coins or known major aliases are ALWAYS valid spot crypto
+  if (COINS[clean] || COINS[base] || CANONICAL_ALIASES[clean] || CANONICAL_ALIASES[base]) {
+    return true;
+  }
 
-  // 2. Reject fiat & stablecoins
+  // 1. Explicitly reject all known non-spot, delisted, halted, or purged tokens
+  if (NON_SPOT_OR_HALTED_SYMBOLS.has(clean) || NON_SPOT_OR_HALTED_SYMBOLS.has(base)) return false;
+
+  // 2. Reject fiat & stablecoins (Set + any ticker ending with USD, e.g. USD1, RLUSD, USDe)
   if (FIAT_STABLECOIN_SYMBOLS.has(clean) || FIAT_STABLECOIN_SYMBOLS.has(base)) return false;
+  if (/^(usd|eur|gbp|try|brl|rub|cad|aud)/i.test(base) || /(usd|eur)$/i.test(base)) {
+    return false;
+  }
 
   // 3. Reject leveraged tokens (UP, DOWN, BEAR, BULL)
   if (/(up|down|bear|bull)$/i.test(base)) return false;
 
-  // 4. Reject commodities, equity tokens, warrants, oil, metal synthetics
-  if (/^(xau|xag|xaut|copper|oil|csop|skhyb|warrant|gold|silver|natgas|spcx|sqqq|tqqq|cohr|hype|anthropic)/i.test(base)) return false;
+  // 4. Reject tokenized equities (bStocks: SNDKB, CRCLB, MSTRB, etc. ending with 'b' except BNB & SHIB)
+  if (/^[a-z0-9]+b$/i.test(base) && !['bnb', 'shib'].includes(base)) return false;
 
-  // 5. Reject futures multipliers and single/double digit pure numbers (e.g. 1000PEPE, 1000SHIB, 4, etc.)
-  // Allow legitimate coins like 1inch
+  // 5. Reject commodities, equity tokens, warrants, oil, metal synthetics
+  if (/^(xau|xag|xaut|copper|oil|csop|skhyb|warrant|gold|silver|natgas|spcx|sqqq|tqqq|cohr|hype|anthropic|paxg|sats)/i.test(base)) return false;
+
+  // 6. Reject futures multipliers and single/double digit pure numbers
   if (/^(1000|1000000|0g)\w+/i.test(base) || /^\d{1,2}$/.test(base)) return false;
 
-  // 6. Reject symbols with non-alphanumeric chars or abnormal length
-  if (!/^[a-z0-9]+$/i.test(base) || base.length > 12 || base.length < 2) return false;
+  // 7. Reject abnormal symbol length or non-alphanumeric chars (allow hyphens for coin IDs up to 25 chars)
+  if (!/^[a-z0-9-]+$/i.test(base) || base.length > 25 || base.length < 2) return false;
 
-  // 7. Liquidity threshold for dynamically discovered pairs: at least $1.5M 24h volume
-  if (vol24h > 0 && vol24h < 1_500_000 && !isCurated) return false;
+  // 8. Curated major coins are valid with non-negative volume
+  if (isCurated && (COINS[clean] || COINS[base])) {
+    return vol24h === undefined || vol24h === null || vol24h >= 0;
+  }
+
+  // 9. Strict Liquidity threshold: Non-curated dynamically discovered pairs MUST have real volume (>= $2,500,000)
+  if (vol24h < 2_500_000) return false;
 
   return true;
 };
 
 export const isNonSpotToken = (idOrSymbol: string): boolean => {
-  return !isValidSpotCrypto(idOrSymbol, 5_000_000, false);
+  if (!idOrSymbol) return true;
+  const clean = idOrSymbol.toLowerCase().trim();
+  const base = clean.replace(/usdt$/, '');
+  if (COINS[clean] || COINS[base] || CANONICAL_ALIASES[clean] || CANONICAL_ALIASES[base]) return false;
+  if (NON_SPOT_OR_HALTED_SYMBOLS.has(clean) || NON_SPOT_OR_HALTED_SYMBOLS.has(base)) return true;
+  if (FIAT_STABLECOIN_SYMBOLS.has(clean) || FIAT_STABLECOIN_SYMBOLS.has(base)) return true;
+  return !isValidSpotCrypto(idOrSymbol, 5_000_000, true);
+};
+
+/**
+ * Valida si un id o símbolo corresponde a un par spot activo y tradeable en Binance Spot.
+ */
+export const isTradeableBinanceSpot = (idOrSymbol: string): boolean => {
+  if (!idOrSymbol) return false;
+  const clean = idOrSymbol.toLowerCase().trim();
+  const base = clean.replace(/usdt$/, '');
+
+  // 1. Curated coins or known canonical aliases
+  if (COINS[clean] || COINS[base] || CANONICAL_ALIASES[clean] || CANONICAL_ALIASES[base]) {
+    return true;
+  }
+
+  // 2. Any dynamically resolved or catalogued coin in COINS
+  const found = Object.values(COINS).find(
+    (c) =>
+      c.id.toLowerCase() === clean ||
+      c.symbol.toLowerCase() === clean ||
+      c.binanceSymbol.toLowerCase() === clean ||
+      c.binanceSymbol.toLowerCase() === `${clean}usdt`
+  );
+  if (found) return true;
+
+  // 3. Dynamic Binance Spot pairs: if not a non-spot token and meets valid spot criteria
+  if (!isNonSpotToken(clean) && isValidSpotCrypto(clean, 0, true)) {
+    return true;
+  }
+
+  return false;
 };
 
 /**
@@ -295,17 +421,14 @@ export const TOP_SPOT_SIGNAL_COIN_IDS = new Set([
   'render',
   'dogecoin',
   'pepe',
-  'toncoin',
   'arbitrum',
   'optimism',
   'polygon',
   'aptos',
-  'fantom',
   'injective',
   'sei',
   'tia',
   'bittensor',
-  'kaspa',
   'jupiter',
   'worldcoin',
   'floki',
@@ -318,44 +441,14 @@ export const getDynamicCoinInfo = (idOrSymbol: string): CoinInfo => {
   const clean = idOrSymbol.toLowerCase().trim();
   const upper = idOrSymbol.toUpperCase().trim();
 
-  // Filter out known invalid non-spot tokens
-  if (isNonSpotToken(clean)) {
-    return COINS.solana;
-  }
-
-  // Canonical major symbol mapping
-  const CANONICAL_ALIASES: Record<string, string> = {
-    bnb: 'binancecoin',
-    btc: 'bitcoin',
-    eth: 'ethereum',
-    sol: 'solana',
-    ada: 'cardano',
-    xrp: 'ripple',
-    avax: 'avalanche',
-    dot: 'polkadot',
-    link: 'chainlink',
-    doge: 'dogecoin',
-    shib: 'shiba-inu',
-    matic: 'polygon',
-    pol: 'polygon',
-    arb: 'arbitrum',
-    op: 'optimism',
-    ftm: 'fantom',
-    inj: 'injective',
-    uni: 'uniswap',
-    sui: 'sui',
-    ton: 'toncoin',
-    rndr: 'render',
-    render: 'render',
-    fet: 'fetch-ai',
-  };
-  const canonicalId = CANONICAL_ALIASES[clean] || CANONICAL_ALIASES[clean.replace(/usdt$/, '')];
-  if (canonicalId && COINS[canonicalId]) return COINS[canonicalId];
-
   // 1. Direct key match in COINS
   if (COINS[clean]) return COINS[clean];
 
-  // 2. Check by symbol in COINS
+  // 2. Canonical major symbol mapping (e.g. bnb -> binancecoin, btc -> bitcoin)
+  const canonicalId = CANONICAL_ALIASES[clean] || CANONICAL_ALIASES[clean.replace(/usdt$/, '')];
+  if (canonicalId && COINS[canonicalId]) return COINS[canonicalId];
+
+  // 3. Match by symbol, binanceSymbol, or name in COINS
   const bySymbol = Object.values(COINS).find(
     (c) =>
       c.symbol.toUpperCase() === upper ||
@@ -365,7 +458,12 @@ export const getDynamicCoinInfo = (idOrSymbol: string): CoinInfo => {
   );
   if (bySymbol) return bySymbol;
 
-  // 3. Construct on-the-fly CoinInfo for any valid Binance pair
+  // 4. Filter out known invalid non-spot tokens ONLY after checking all curated & alias lists
+  if (isNonSpotToken(clean)) {
+    return COINS.solana;
+  }
+
+  // 5. Construct on-the-fly CoinInfo for any valid Binance pair
   const baseSymbol = upper.replace(/USDT$/, '');
   const binanceSymbol = baseSymbol + 'USDT';
   const newCoin: CoinInfo = {
@@ -639,7 +737,6 @@ export async function fetchAllCoins24hStats(): Promise<Record<string, { price: n
       ARB: 'arbitrum',
       OP: 'optimism',
       SUI: 'sui',
-      TON: 'toncoin',
       FET: 'fetch-ai',
       UNI: 'uniswap',
       AAVE: 'aave',
@@ -647,16 +744,15 @@ export async function fetchAllCoins24hStats(): Promise<Record<string, { price: n
       SEI: 'sei',
       TIA: 'tia',
       TAO: 'bittensor',
-      KAS: 'kaspa',
       JUP: 'jupiter',
       WLD: 'worldcoin',
       FLOKI: 'floki',
     };
 
-    const AI_SYMBOLS = new Set(['FET', 'RENDER', 'RNDR', 'NEAR', 'AGIX', 'OCEAN', 'WLD', 'TAO', 'AKT', 'GRT', 'AR', 'IO', 'ATH', 'AI', 'JASMY']);
+    const AI_SYMBOLS = new Set(['FET', 'RENDER', 'RNDR', 'NEAR', 'AGIX', 'OCEAN', 'WLD', 'TAO', 'GRT', 'AR', 'IO', 'ATH', 'AI', 'JASMY']);
     const L2_SYMBOLS = new Set(['ARB', 'OP', 'MATIC', 'POL', 'STRK', 'MNT', 'METIS', 'ZK', 'MANTA', 'IMX']);
-    const DEFI_SYMBOLS = new Set(['UNI', 'AAVE', 'MKR', 'CRV', 'SNX', 'COMP', 'LDO', 'PENDLE', 'JUP', 'RAY', 'RUNE', 'INJ', 'ENA']);
-    const MEME_SYMBOLS = new Set(['DOGE', 'SHIB', 'PEPE', 'FLOKI', 'BONK', 'WIF', 'BOME', 'MEME', 'TURBO', 'NEIRO', 'POPCAT', '1MBABYDOGE']);
+    const DEFI_SYMBOLS = new Set(['UNI', 'AAVE', 'CRV', 'SNX', 'COMP', 'LDO', 'PENDLE', 'JUP', 'RAY', 'RUNE', 'INJ', 'ENA']);
+    const MEME_SYMBOLS = new Set(['DOGE', 'SHIB', 'PEPE', 'FLOKI', 'BONK', 'WIF', 'BOME', 'MEME', 'TURBO', 'NEIRO', '1MBABYDOGE']);
 
     const result: Record<string, { price: number; change24h: number; high24h: number; low24h: number; vol24h: number; change7d: number; rsi: number; momentum: number }> = {};
     const seenSymbols = new Set<string>();
@@ -666,15 +762,26 @@ export async function fetchAllCoins24hStats(): Promise<Record<string, { price: n
       if (seenSymbols.has(item.symbol)) return;
 
       const baseSymbol = item.symbol.replace(/USDT$/, '');
+      const price = parseFloat(item.lastPrice) || 0;
       const vol24h = parseFloat(item.quoteVolume) || 0;
+
+      // Strictly REJECT if price is 0 or volume is 0 (delisted / dead pairs)
+      if (price <= 0 || vol24h <= 0) return;
+
       const isCurated = curatedByBinanceSym.has(item.symbol) || Boolean(CANONICAL_BASE_TO_ID[baseSymbol]);
 
-      // Systematic Rule-Based Sanitizer: rejects fiat, leveraged, commodity synthetics, warrants
+      // Systematic Rule-Based Sanitizer: rejects fiat, leveraged, commodity synthetics, warrants, ghost coins
       if (!isValidSpotCrypto(baseSymbol, vol24h, isCurated)) return;
+
+      // Reject pegged fiat-stablecoins by price bounds ($0.985 - $1.015 with minimal daily movement)
+      if (price >= 0.985 && price <= 1.015 && Math.abs(parseFloat(item.priceChangePercent) || 0) < 0.8) {
+        if (!['ada', 'sui', 'matic', 'pol', 'xrp', 'fet', 'algo'].includes(baseSymbol.toLowerCase())) {
+          return;
+        }
+      }
 
       seenSymbols.add(item.symbol);
 
-      const price = parseFloat(item.lastPrice) || 1.0;
       const change24h = parseFloat(item.priceChangePercent) || 0;
       const high24h = parseFloat(item.highPrice) || price * 1.03;
       const low24h = parseFloat(item.lowPrice) || price * 0.97;
@@ -725,6 +832,13 @@ export async function fetchAllCoins24hStats(): Promise<Record<string, { price: n
 
     spotData.forEach(processItem);
 
+    // Ensure memory COINS is clean of ghost tokens
+    Object.keys(COINS).forEach((key) => {
+      if (NON_SPOT_OR_HALTED_SYMBOLS.has(key.toLowerCase()) || NON_SPOT_OR_HALTED_SYMBOLS.has(COINS[key].symbol.toLowerCase())) {
+        delete COINS[key];
+      }
+    });
+
     try {
       localStorage.setItem('crypto_analyzer_last_ticker_stats', JSON.stringify(result));
     } catch {}
@@ -736,7 +850,13 @@ export async function fetchAllCoins24hStats(): Promise<Record<string, { price: n
       const cached = localStorage.getItem('crypto_analyzer_last_ticker_stats');
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed && Object.keys(parsed).length > 0) return parsed;
+        const sanitized: Record<string, any> = {};
+        Object.entries(parsed).forEach(([id, data]: [string, any]) => {
+          if (isValidSpotCrypto(id, data.vol24h, Boolean(COINS[id])) && data.price > 0 && data.vol24h > 100_000) {
+            sanitized[id] = data;
+          }
+        });
+        if (Object.keys(sanitized).length > 0) return sanitized;
       }
     } catch {}
 

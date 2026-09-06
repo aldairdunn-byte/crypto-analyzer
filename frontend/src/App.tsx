@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { MarketDataProvider, useMarketData } from './contexts/MarketDataContext';
 import { PortfolioProvider, usePortfolio } from './contexts/PortfolioContext';
@@ -128,9 +128,14 @@ const MainContent: React.FC = () => {
     handleOpenCoinWithStrategy(coinId);
   };
 
+  // Clear grid preview when activeCoin changes to prevent cross-coin contamination (BUG-09)
+  useEffect(() => {
+    setGridPreviewLevels([]);
+  }, [activeCoin, setGridPreviewLevels]);
+
   // Filter grid levels for current active coin
   const displayGridLevels =
-    gridPreviewLevels.length > 0
+    gridPreviewLevels.length > 0 && (gridPreviewLevels[0]?.coinId === undefined || gridPreviewLevels[0]?.coinId === activeCoin)
       ? gridPreviewLevels
       : activeGridOrders.filter((o) => (o.coinId || activeCoin) === activeCoin);
 
@@ -302,7 +307,7 @@ const MainContent: React.FC = () => {
                   asks={orderBook.asks}
                   bids={orderBook.bids}
                   currentPrice={currentPrice}
-                  change24h={0.0}
+                  change24h={activeChange24h}
                 />
               </div>
 
@@ -454,8 +459,8 @@ const MainContent: React.FC = () => {
             }`}
           >
             <div className="flex items-start gap-2.5 min-w-0">
-              {toast.type === 'BUY' && <TrendingDown className="w-4 h-4 text-[#0ECB81] shrink-0 mt-0.5" />}
-              {toast.type === 'SELL' && <TrendingUp className="w-4 h-4 text-[#F6465D] shrink-0 mt-0.5" />}
+              {toast.type === 'BUY' && <TrendingUp className="w-4 h-4 text-[#0ECB81] shrink-0 mt-0.5" />}
+              {toast.type === 'SELL' && <TrendingDown className="w-4 h-4 text-[#F6465D] shrink-0 mt-0.5" />}
               {toast.type === 'PROFIT' && <CheckCircle2 className="w-4 h-4 text-[#F59E0B] shrink-0 mt-0.5" />}
               {toast.type === 'INFO' && <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />}
               <div className="min-w-0">

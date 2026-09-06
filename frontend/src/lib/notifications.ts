@@ -1,4 +1,4 @@
-import { COINS } from './marketData';
+import { getDynamicCoinInfo } from './marketData';
 
 export interface PlainSpanishNotification {
   id: string;
@@ -43,7 +43,7 @@ export function createProfitNotification(
   exitPrice: number,
   penRate: number = 3.75
 ): PlainSpanishNotification {
-  const coin = COINS[coinId] || COINS.solana;
+  const coin = getDynamicCoinInfo(coinId);
   const profitPen = profitUsd * penRate;
   const now = Date.now();
 
@@ -78,7 +78,7 @@ export function createBuyOrderNotification(
   level: number,
   totalLevels: number
 ): PlainSpanishNotification {
-  const coin = COINS[coinId] || COINS.solana;
+  const coin = getDynamicCoinInfo(coinId);
   const now = Date.now();
 
   return {
@@ -111,7 +111,7 @@ export function createBotCreatedNotification(
   capitalUsd: number,
   numGrids: number
 ): PlainSpanishNotification {
-  const coin = COINS[coinId] || COINS.solana;
+  const coin = getDynamicCoinInfo(coinId);
   const now = Date.now();
 
   return {
@@ -143,7 +143,7 @@ export function createDangerNotification(
   dropPct: number,
   currentPrice: number
 ): PlainSpanishNotification {
-  const coin = COINS[coinId] || COINS.solana;
+  const coin = getDynamicCoinInfo(coinId);
   const now = Date.now();
 
   return {

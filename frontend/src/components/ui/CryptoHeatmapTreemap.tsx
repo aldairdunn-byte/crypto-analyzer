@@ -3,15 +3,7 @@ import { CryptoIcon } from '../CryptoIcon';
 import { formatDynamicPrice } from '../../lib/marketData';
 import { type GridSuitabilityMetrics, type SignalVerdict } from '../../lib/quantitativeEngine';
 import { type StrategyRecommendation } from '../../lib/strategyAdvisor';
-import {
-  Fire,
-  TrendUp,
-  Robot,
-  SlidersHorizontal,
-  Target,
-  Lightning,
-  Sparkle,
-} from '@phosphor-icons/react';
+import { Lightning } from '@phosphor-icons/react';
 
 export type HeatmapMetricMode = 'CHANGE' | 'MOMENTUM' | 'GRID_SCORE' | 'RSI' | 'VOLUME';
 
@@ -35,6 +27,7 @@ interface CryptoHeatmapTreemapProps {
   items: HeatmapItemData[];
   currencyMode?: 'USD' | 'PEN';
   penRate?: number;
+  activeIntent?: 'GRID' | 'HOLD' | 'DANGER' | 'ALL';
   activeFilterLabel?: string;
   onSelectStrategy: (strategy: StrategyRecommendation) => void;
 }
@@ -251,34 +244,40 @@ export const CryptoHeatmapTreemap: React.FC<CryptoHeatmapTreemapProps> = ({
   items,
   currencyMode = 'USD',
   penRate = 3.75,
+  activeIntent = 'GRID',
   onSelectStrategy,
 }) => {
-  const [metricMode, setMetricMode] = useState<HeatmapMetricMode>('CHANGE');
   const [sizeMode, setSizeMode] = useState<'VOLUME' | 'EQUAL'>('VOLUME');
 
-  // Sorted items according to metric mode and size mode
-  const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
-      // Keep BTC, ETH, SOL on top for orientation
-      const priorityA = a.symbol === 'BTC' ? 300 : a.symbol === 'ETH' ? 200 : a.symbol === 'SOL' ? 100 : 0;
-      const priorityB = b.symbol === 'BTC' ? 300 : b.symbol === 'ETH' ? 200 : b.symbol === 'SOL' ? 100 : 0;
-      if (priorityA !== priorityB) return priorityB - priorityA;
+  // Automatic metric mode derived directly from the user's active intent (ZERO REDUNDANCY)
+  const metricMode: HeatmapMetricMode = useMemo(() => {
+    if (activeIntent === 'GRID') return 'GRID_SCORE';
+    if (activeIntent === 'HOLD') return 'MOMENTUM';
+    if (activeIntent === 'DANGER') return 'RSI';
+    return 'CHANGE';
+  }, [activeIntent]);
 
-      if (metricMode === 'GRID_SCORE') {
-        return (b.gridSuitability?.score || 0) - (a.gridSuitability?.score || 0);
-      }
-      if (metricMode === 'MOMENTUM') {
-        return b.momentumScore - a.momentumScore;
-      }
-      if (metricMode === 'RSI') {
-        return a.rsi - b.rsi;
-      }
-      if (metricMode === 'VOLUME') {
-        return (b.vol24h || 0) - (a.vol24h || 0);
-      }
-      return b.change24h - a.change24h;
-    });
-  }, [items, metricMode]);
+  // Multi-tier dynamic volume scaling for Proportional mode
+  const megaVolumeIds = useMemo(() => {
+    return new Set(
+      [...items]
+        .sort((a, b) => (b.vol24h || 0) - (a.vol24h || 0))
+        .slice(0, 4)
+        .map((i) => i.id)
+    );
+  }, [items]);
+
+  const highVolumeIds = useMemo(() => {
+    return new Set(
+      [...items]
+        .sort((a, b) => (b.vol24h || 0) - (a.vol24h || 0))
+        .slice(4, 12)
+        .map((i) => i.id)
+    );
+  }, [items]);
+
+  // Respect the motor's ranking order directly! 100% dynamic without artificial BTC/ETH/SOL override.
+  const sortedItems = items;
 
   const metricsCounts = useMemo(() => {
     return {
@@ -291,124 +290,66 @@ export const CryptoHeatmapTreemap: React.FC<CryptoHeatmapTreemapProps> = ({
 
   return (
     <div className="w-full space-y-3.5">
-      {/* ─── 1. TOP METRIC SELECTOR BAR (STRICTLY 0 EMOJIS, PURE SVG) ─── */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 p-3 bg-[#0D1117] rounded-2xl border border-white/10 shadow-xl">
-        {/* Metric Mode Toggle Buttons */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-slate-400 text-xs font-bold mr-1 flex items-center gap-1">
-            <SlidersHorizontal className="w-3.5 h-3.5 text-[#F59E0B]" />
-            <span>Métrica Visual:</span>
+      {/* ─── UNIFIED TREEMAP STATUS & SIZING (NO REDUNDANT METRIC BUTTONS) ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-3.5 py-2.5 bg-[#0D1117] rounded-2xl border border-white/10 text-xs shadow-md">
+        <div className="flex items-center space-x-2 font-mono text-[11px] flex-wrap">
+          <span className="text-white font-bold">{items.length} Activos Binance Spot</span>
+          <span className="text-slate-600">·</span>
+          <span className="text-amber-400 font-bold">
+            {activeIntent === 'GRID'
+              ? 'Mosaico: Score Grid Cuantitativo (Tier S Primero)'
+              : activeIntent === 'HOLD'
+              ? 'Mosaico: Rebote y Soporte (Momentum / RSI)'
+              : activeIntent === 'DANGER'
+              ? 'Mosaico: Alerta Anti-FOMO (RSI Extremo)'
+              : 'Mosaico: Variación 24H'}
           </span>
-
-          <button
-            onClick={() => setMetricMode('CHANGE')}
-            className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border ${
-              metricMode === 'CHANGE'
-                ? 'bg-emerald-500/20 text-[#0ECB81] border-emerald-500/40 shadow-sm scale-[1.02]'
-                : 'bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 border-white/5'
-            }`}
-          >
-            <TrendUp weight="duotone" className="w-3.5 h-3.5" />
-            <span>Variación 24H</span>
-          </button>
-
-          <button
-            onClick={() => setMetricMode('GRID_SCORE')}
-            className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border ${
-              metricMode === 'GRID_SCORE'
-                ? 'bg-amber-500/20 text-[#F59E0B] border-amber-500/40 shadow-sm scale-[1.02]'
-                : 'bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 border-white/5'
-            }`}
-          >
-            <Robot weight="duotone" className="w-3.5 h-3.5" />
-            <span>Score Grid (Tier S)</span>
-          </button>
-
-          <button
-            onClick={() => setMetricMode('MOMENTUM')}
-            className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border ${
-              metricMode === 'MOMENTUM'
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm scale-[1.02]'
-                : 'bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 border-white/5'
-            }`}
-          >
-            <Sparkle weight="duotone" className="w-3.5 h-3.5" />
-            <span>Momentum Score</span>
-          </button>
-
-          <button
-            onClick={() => setMetricMode('RSI')}
-            className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border ${
-              metricMode === 'RSI'
-                ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-sm scale-[1.02]'
-                : 'bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 border-white/5'
-            }`}
-          >
-            <Target weight="duotone" className="w-3.5 h-3.5" />
-            <span>RSI (14)</span>
-          </button>
-
-          <button
-            onClick={() => setMetricMode('VOLUME')}
-            className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border ${
-              metricMode === 'VOLUME'
-                ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-sm scale-[1.02]'
-                : 'bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 border-white/5'
-            }`}
-          >
-            <Fire weight="duotone" className="w-3.5 h-3.5" />
-            <span>Volumen 24H</span>
-          </button>
+          <span className="text-slate-600">·</span>
+          <span className="text-[#0ECB81] font-bold">{metricsCounts.tierS} Tier S</span>
         </div>
 
-        {/* Status Bar & Sizing Switcher */}
-        <div className="flex items-center gap-3 text-[11px] font-mono">
-          <div className="flex items-center space-x-2 bg-black/40 px-2.5 py-1 rounded-xl border border-white/5">
-            <span className="text-slate-400 font-bold">{items.length} Activos</span>
-            <span className="text-slate-600">·</span>
-            <span className="text-amber-400 font-bold">{metricsCounts.tierS} Tier S</span>
-            <span className="text-slate-600">·</span>
-            <span className="text-[#0ECB81] font-bold">{metricsCounts.spotBuy} Compras</span>
-          </div>
-
-          <div className="flex items-center bg-black/40 rounded-xl p-0.5 border border-white/5">
-            <button
-              onClick={() => setSizeMode('VOLUME')}
-              title="Escalar tamaño por volumen institucional"
-              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
-                sizeMode === 'VOLUME' ? 'bg-white/20 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Proporcional
-            </button>
-            <button
-              onClick={() => setSizeMode('EQUAL')}
-              title="Mosaico uniforme"
-              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
-                sizeMode === 'EQUAL' ? 'bg-white/20 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Uniforme
-            </button>
-          </div>
+        <div className="flex items-center bg-black/40 rounded-xl p-1 border border-white/10 text-[11px] font-mono shrink-0">
+          <button
+            onClick={() => setSizeMode('VOLUME')}
+            title="Escalar tamaño según liquidez y volumen institucional real"
+            className={`px-3 py-1 rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
+              sizeMode === 'VOLUME' ? 'bg-[#F59E0B] text-black font-black shadow-md' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>Proporcional (Volumen)</span>
+          </button>
+          <button
+            onClick={() => setSizeMode('EQUAL')}
+            title="Mosaico uniforme: todos los activos del mismo tamaño"
+            className={`px-3 py-1 rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
+              sizeMode === 'EQUAL' ? 'bg-white/20 text-white font-black shadow-md' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>Uniforme</span>
+          </button>
         </div>
       </div>
 
       {/* ─── 2. TREEMAP TILES GRID ─── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2.5 transition-all">
         {sortedItems.map((item) => {
           const style = getItemColor(item, metricMode);
-          const isMajor = sizeMode === 'VOLUME' && (item.symbol === 'BTC' || item.symbol === 'ETH' || item.symbol === 'SOL');
+          const isMega = sizeMode === 'VOLUME' && megaVolumeIds.has(item.id);
+          const isHigh = sizeMode === 'VOLUME' && highVolumeIds.has(item.id);
           const isTierS = item.gridSuitability?.tier === 'TIER_S' || (item.gridSuitability?.score || 0) >= 80;
 
           return (
             <div
               key={item.id}
               onClick={() => onSelectStrategy(item.strategy)}
-              className={`group relative p-3 rounded-2xl border transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden shadow-lg select-none hover:scale-[1.03] hover:z-20 ${
-                isMajor
-                  ? 'col-span-2 sm:col-span-2 row-span-2 min-h-[145px]'
-                  : 'col-span-1 min-h-[105px]'
+              className={`group relative rounded-2xl border transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden shadow-lg select-none hover:scale-[1.03] hover:z-20 ${
+                sizeMode === 'VOLUME'
+                  ? isMega
+                    ? 'col-span-2 sm:col-span-2 md:col-span-3 lg:col-span-3 row-span-2 min-h-[170px] p-3.5'
+                    : isHigh
+                    ? 'col-span-2 sm:col-span-2 md:col-span-2 min-h-[130px] p-3'
+                    : 'col-span-1 min-h-[105px] p-2.5'
+                  : 'col-span-1 min-h-[108px] p-2.5'
               } ${style.bg} ${style.border} ${style.glow}`}
             >
               {/* Highlight Tag for Tier S Grid Bots */}
@@ -422,12 +363,12 @@ export const CryptoHeatmapTreemap: React.FC<CryptoHeatmapTreemapProps> = ({
               {/* Top Row: Icon + Symbol + Category */}
               <div className="flex items-start justify-between">
                 <div className="flex items-center space-x-1.5">
-                  <CryptoIcon symbol={item.symbol} size={isMajor ? 28 : 20} className="rounded-full shadow-sm" />
+                  <CryptoIcon symbol={item.symbol} size={isMega ? 30 : isHigh ? 24 : 18} className="rounded-full shadow-sm shrink-0" />
                   <div>
-                    <div className={`font-black tracking-tight ${isMajor ? 'text-base' : 'text-xs'} text-white`}>
+                    <div className={`font-black tracking-tight ${isMega ? 'text-lg' : isHigh ? 'text-sm' : 'text-xs'} text-white`}>
                       {item.symbol}
                     </div>
-                    <div className="text-[9px] text-slate-300 font-sans truncate max-w-[70px] leading-none">
+                    <div className="text-[9px] text-slate-300 font-sans truncate max-w-[80px] leading-none">
                       {item.name}
                     </div>
                   </div>
@@ -439,16 +380,21 @@ export const CryptoHeatmapTreemap: React.FC<CryptoHeatmapTreemapProps> = ({
                 )}
               </div>
 
-              {/* Middle Row: Active Metric Badge */}
-              <div className="my-1">
-                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-lg text-[9.5px] font-mono font-black ${style.badgeBg}`}>
+              {/* Middle Row: Active Metric Badge + Volume if Mega */}
+              <div className="my-1 flex items-center gap-1.5 flex-wrap">
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-lg font-mono font-black ${isMega ? 'text-[11px]' : 'text-[9.5px]'} ${style.badgeBg}`}>
                   {style.valueDisplay}
                 </span>
+                {isMega && item.vol24h && (
+                  <span className="text-[9px] font-mono text-slate-300 bg-black/40 px-1.5 py-0.5 rounded">
+                    ${(item.vol24h / 1_000_000).toFixed(0)}M Vol
+                  </span>
+                )}
               </div>
 
               {/* Bottom Row: Price & 1-Click Action */}
               <div className="pt-1 border-t border-white/[0.08] flex items-center justify-between">
-                <div className={`font-black font-mono tabular-nums text-white truncate ${isMajor ? 'text-sm' : 'text-[11px]'}`}>
+                <div className={`font-black font-mono tabular-nums text-white truncate ${isMega ? 'text-base' : isHigh ? 'text-xs' : 'text-[11px]'}`}>
                   {formatDynamicPrice(item.price, item.decimals || (item.price >= 1 ? 2 : 4), currencyMode, penRate)}
                 </div>
                 <span className="text-[9px] font-black text-amber-300 bg-black/50 px-1.5 py-0.5 rounded-md group-hover:bg-[#F59E0B] group-hover:text-black transition-all flex items-center gap-0.5">

@@ -9,7 +9,7 @@
  * 4. AVOID_CAPITULATION: Caída libre sin soporte (RSI < 25, volumen anormal).
  */
 
-import { type CoinInfo, COINS } from './marketData';
+import { type CoinInfo, COINS, getDynamicCoinInfo } from './marketData';
 
 export type StrategyRegime = 'GRID_BOT' | 'SPOT_HOLD' | 'DCA_DIP' | 'AVOID_CAPITULATION';
 
@@ -68,7 +68,7 @@ export function evaluateStrategyForCoin(
   coinId: string,
   marketData?: CoinMarketInput
 ): StrategyRecommendation {
-  const coin = COINS[coinId] || COINS.solana;
+  const coin = getDynamicCoinInfo(coinId);
   const price = marketData?.price && marketData.price > 0 ? marketData.price : coin.basePrice;
   const change24h = marketData?.change24h ?? 0;
   const high24h = marketData?.high24h ?? price * 1.04;

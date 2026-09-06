@@ -149,11 +149,30 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setCurrencyMode(next);
   };
 
-  // Local/Manual Spot Holdings with persistence
+  // Local/Manual Spot Holdings with persistence and trade recovery
   const [localHoldings, setLocalHoldings] = useState<Record<string, { units: number; avgEntryPrice: number }>>(() => {
     try {
       const saved = localStorage.getItem('crypto_analyzer_demo_holdings');
-      return saved ? JSON.parse(saved) : {};
+      const base: Record<string, { units: number; avgEntryPrice: number }> = saved ? JSON.parse(saved) : {};
+
+      // Reconcile open manual spot trades from localStorage if missing from localHoldings
+      const savedTrades = localStorage.getItem('crypto_analyzer_trades');
+      if (savedTrades) {
+        try {
+          const parsedTrades = JSON.parse(savedTrades);
+          if (Array.isArray(parsedTrades)) {
+            parsedTrades.forEach((t) => {
+              if (t && t.status === 'OPEN' && t.side === 'BUY' && !t.bot_id && t.units > 0) {
+                const coin = getDynamicCoinInfo(t.coin_id);
+                if (!base[coin.id] || base[coin.id].units <= 0) {
+                  base[coin.id] = { units: t.units, avgEntryPrice: t.entry_price };
+                }
+              }
+            });
+          }
+        } catch {}
+      }
+      return base;
     } catch {
       return {};
     }
@@ -233,7 +252,21 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       };
     });
 
-    // 2. Merge actual non-USDT holdings from Supabase (if in live mode)
+    // 2. Explicitly include all active holdings from localHoldings (e.g. DASH, ZEC, dynamic spot pairs)
+    Object.entries(localHoldings).forEach(([cId, local]) => {
+      if (local && local.units > 0.000001) {
+        const coin = getDynamicCoinInfo(cId);
+        const coinId = coin.id;
+        map[coinId] = {
+          coinId,
+          units: local.units,
+          avgEntryPrice: local.avgEntryPrice,
+          totalInvestedUsd: local.units * local.avgEntryPrice,
+        };
+      }
+    });
+
+    // 3. Merge actual non-USDT holdings from Supabase (if in live mode)
     if (isLiveMode) {
       supabasePortfolio.forEach((row) => {
         const symbolUpper = row.symbol.toUpperCase();
@@ -259,7 +292,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const totalSpotValue = useMemo(() => {
     return Object.values(holdings).reduce((acc, h) => {
       if (h.units <= 0.000001) return acc;
-      const currentP = livePrices[h.coinId] || COINS[h.coinId]?.basePrice || h.avgEntryPrice;
+      const coin = getDynamicCoinInfo(h.coinId);
+      const currentP = livePrices[h.coinId] || coin.basePrice || h.avgEntryPrice;
       return acc + (h.units * currentP);
     }, 0);
   }, [holdings, livePrices]);

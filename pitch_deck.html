@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Crypto Analyzer Pro — Pitch Deck para Inversores</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    @page {
+      size: 297mm 210mm; /* A4 Landscape */
+      margin: 0;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #06080C;
+      color: #E2E8F0;
+      line-height: 1.4;
+      font-size: 13px;
+    }
+
+    .slide {
+      width: 297mm;
+      height: 210mm;
+      page-break-after: always;
+      position: relative;
+      overflow: hidden;
+      background: radial-gradient(circle at 80% 20%, rgba(245, 158, 11, 0.05) 0%, transparent 40%),
+                  radial-gradient(circle at 10% 80%, rgba(14, 203, 129, 0.05) 0%, transparent 40%),
+                  #07090E;
+      padding: 20mm 22mm 18mm 22mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .slide:last-child {
+      page-break-after: avoid;
+    }
+
+    /* Top Navigation Header on Every Slide */
+    .slide-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 3.5mm;
+      margin-bottom: 5mm;
+    }
+
+    .brand-tag {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 13px;
+      letter-spacing: 0.5px;
+      color: #FFFFFF;
+    }
+
+    .brand-tag .logo-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0ECB81 0%, #3888FF 100%);
+      box-shadow: 0 0 10px rgba(14, 203, 129, 0.6);
+    }
+
+    .slide-number-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #F59E0B;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      padding: 3px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    /* Footer on Every Slide */
+    .slide-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 3.5mm;
+      font-size: 10px;
+      color: #64748B;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .footer-left {
+      display: flex;
+      gap: 16px;
+    }
+
+    .footer-highlight {
+      color: #94A3B8;
+      font-weight: 600;
+    }
+
+    /* Main Content Area */
+    .slide-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    /* Typography */
+    h1, h2, h3 {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      color: #FFFFFF;
+      letter-spacing: -0.5px;
+    }
+
+    .title-hero {
+      font-size: 34px;
+      line-height: 1.15;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #FFFFFF 30%, #94A3B8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .title-section {
+      font-size: 24px;
+      line-height: 1.2;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .title-section span.accent {
+      color: #0ECB81;
+    }
+
+    .title-section span.accent-gold {
+      color: #F59E0B;
+    }
+
+    .title-section span.accent-blue {
+      color: #3888FF;
+    }
+
+    .subtitle {
+      font-size: 13.5px;
+      color: #94A3B8;
+      margin-bottom: 16px;
+      max-width: 850px;
+      line-height: 1.45;
+    }
+
+    /* Layout Grids */
+    .grid-2col {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .grid-2col-equal {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .grid-3col {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 14px;
+    }
+
+    .grid-4col {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    /* Bento Cards */
+    .card {
+      background: rgba(14, 17, 24, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 14px 16px;
+      position: relative;
+    }
+
+    .card-highlight {
+      background: linear-gradient(145deg, rgba(14, 203, 129, 0.06) 0%, rgba(14, 17, 24, 0.8) 100%);
+      border: 1px solid rgba(14, 203, 129, 0.3);
+    }
+
+    .card-gold {
+      background: linear-gradient(145deg, rgba(245, 158, 11, 0.06) 0%, rgba(14, 17, 24, 0.8) 100%);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .card-blue {
+      background: linear-gradient(145deg, rgba(56, 136, 255, 0.06) 0%, rgba(14, 17, 24, 0.8) 100%);
+      border: 1px solid rgba(56, 136, 255, 0.3);
+    }
+
+    .card-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: #FFFFFF;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-text {
+      font-size: 11.5px;
+      color: #94A3B8;
+      line-height: 1.45;
+    }
+
+    /* Badges & Metrics */
+    .metric-value {
+      font-family: 'Outfit', sans-serif;
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .metric-label {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #64748B;
+      font-weight: 600;
+    }
+
+    .badge-green {
+      background: rgba(14, 203, 129, 0.15);
+      color: #0ECB81;
+      border: 1px solid rgba(14, 203, 129, 0.3);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .badge-gold {
+      background: rgba(245, 158, 11, 0.15);
+      color: #F59E0B;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .badge-blue {
+      background: rgba(56, 136, 255, 0.15);
+      color: #3888FF;
+      border: 1px solid rgba(56, 136, 255, 0.3);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .img-box {
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      position: relative;
+    }
+
+    .img-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Custom Tables */
+    table.fin-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+      background: rgba(14, 17, 24, 0.6);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    table.fin-table th {
+      background: rgba(255, 255, 255, 0.04);
+      padding: 9px 12px;
+      text-align: left;
+      font-family: 'Outfit', sans-serif;
+      font-size: 11px;
+      color: #94A3B8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    table.fin-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: #CBD5E1;
+      font-family: 'Inter', sans-serif;
+    }
+
+    table.fin-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    table.fin-table td.bold-text {
+      font-weight: 700;
+      color: #FFFFFF;
+    }
+
+    table.fin-table td.mono-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+    }
+
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      background: #F59E0B;
+      color: #000000;
+      border-radius: 50%;
+      font-weight: 900;
+      font-size: 11px;
+      margin-right: 6px;
+    }
+
+    ul.clean-list {
+      list-style: none;
+    }
+
+    ul.clean-list li {
+      position: relative;
+      padding-left: 18px;
+      margin-bottom: 6px;
+      font-size: 11.5px;
+      color: #94A3B8;
+      line-height: 1.4;
+    }
+
+    ul.clean-list li::before {
+      content: "•";
+      position: absolute;
+      left: 4px;
+      color: #0ECB81;
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    ul.clean-list.gold li::before {
+      color: #F59E0B;
+    }
+
+    ul.clean-list.blue li::before {
+      color: #3888FF;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <!-- SLIDE 1: PORTADA EJECUTIVA                                  -->
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="brand-tag">
+        <div class="logo-dot"></div>
+        <span>CRYPTO ANALYZER PRO</span>
+      </div>
+      <div class="slide-number-tag">PITCH DECK 2026 · CONFIDENCIAL</div>
+    </div>
+
+    <div class="slide-body">
+      <div class="grid-2col">
+        <div>
+          <div style="margin-bottom: 12px;">
+            <span class="badge-gold">RONDA SEED CAPITAL</span>
+            <span class="badge-green" style="margin-left: 6px;">PLATAFORMA CUANTITATIVA 24/7</span>
+          </div>
+          <h1 class="title-hero">
+            Democratizando el Arbitraje Cuantitativo y los Rendimientos Cripto 24/7
+          </h1>
+          <p class="subtitle" style="font-size: 15px; max-width: 580px; margin-bottom: 24px;">
+            La primera terminal cuántica sin custodia diseñada para convertir la volatilidad del mercado en ingresos pasivos predecibles mediante <b>Spot Grid Bots</b>, <b>Radar de Oportunidades</b> y <b>Alertas en Telegram</b>.
+          </p>
+
+          <div style="display: flex; gap: 18px; margin-top: 10px;">
+            <div class="card card-highlight" style="padding: 10px 16px;">
+              <div class="metric-value" style="color: #0ECB81;">18% – 34%</div>
+              <div class="metric-label">APY Anual Estimado</div>
+            </div>
+            <div class="card card-gold" style="padding: 10px 16px;">
+              <div class="metric-value" style="color: #F59E0B;">100% Non-Custodial</div>
+              <div class="metric-label">Fondos Siempre en Binance</div>
+            </div>
+            <div class="card card-blue" style="padding: 10px 16px;">
+              <div class="metric-value" style="color: #3888FF;">USD / S/ PEN</div>
+              <div class="metric-label">Enfoque Dual Currency</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="img-box" style="height: 135mm;">
+          <img src="pitch_assets/pitch_hero_3d.jpg" alt="Crypto Analyzer Terminal 3D Hero">
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <div class="footer-left">
+        <span><b>Presentado por:</b> Equipo Ejecutivo Crypto Analyzer Pro</span>
+        <span><b>Contacto:</b> investors@cryptoanalyzer.pro</span>
+      </div>
+      <div>
+        <span class="footer-highlight">Slide 01 / 10</span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <!-- SLIDE 2: EL PROBLEMA DEL MERCADO                            -->
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="brand-tag">
+        <div class="logo-dot"></div>
+        <span>CRYPTO ANALYZER PRO</span>
+      </div>
+      <div class="slide-number-tag">02 · OPORTUNIDAD & PROBLEMA</div>
+    </div>
+
+    <div class="slide-body">
+      <h2 class="title-section">
+        El Gran Problema: <span class="accent-gold">95% de los Inversores Cripto Pierden Capital</span>
+      </h2>
+      <p class="subtitle">
+        La extrema volatilidad de los criptoactivos debería ser una máquina de generar flujo de caja; sin embargo, los traders minoristas fracasan sistemáticamente debido a 3 barreras estructurales.
+      </p>
+
+      <div class="grid-3col" style="margin-top: 6px;">
+        <div class="card" style="border-top: 3px solid #F6465D;">
+          <div class="card-title">
+            <span style="color: #F6465D; font-size: 18px;">🔴</span>
+            <span>1. Trading Emocional (FOMO & Pánico)</span>
+          </div>
+          <p class="card-text" style="margin-bottom: 10px;">
+            El inversor promedio compra en la euforia cuando los precios están en techos y entra en pánico vendiendo en pérdidas cuando el mercado cae.
+          </p>
+          <div style="background: rgba(246, 70, 93, 0.1); border-radius: 6px; padding: 8px 10px; font-size: 11px; color: #FCA5A5;">
+            <b>Consecuencia:</b> Pérdidas recurrentes del 30% al 60% del portafolio en correcciones menores.
+          </div>
+        </div>
+
+        <div class="card" style="border-top: 3px solid #F59E0B;">
+          <div class="card-title">
+            <span style="color: #F59E0B; font-size: 18px;">🟡</span>
+            <span>2. Mercado 24/7 sin Descanso</span>
+          </div>
+          <p class="card-text" style="margin-bottom: 10px;">
+            A diferencia de Wall Street, las criptomonedas nunca cierran. Las mejores oportunidades de compra y rebote ocurren de madrugada o en horarios laborales.
+          </p>
+          <div style="background: rgba(245, 158, 11, 0.1); border-radius: 6px; padding: 8px 10px; font-size: 11px; color: #FCD34D;">
+            <b>Consecuencia:</b> Fatiga mental, estrés continuo y oportunidades de ganancia desperdiciadas.
+          </div>
+        </div>
+
+        <div class="card" style="border-top: 3px solid #3888FF;">
+          <div class="card-title">
+            <span style="color: #3888FF; font-size: 18px;">🔵</span>
+            <span>3. Software Complejo y Custodial</span>
+          </div>
+          <p class="card-text" style="margin-bottom: 10px;">
+            Los bots institucionales requieren programar en Python, configurar servidores VPS costosos o entregar la custodia de los fondos a plataformas opacas.
+          </p>
+          <div style="background: rgba(56, 136, 255, 0.1); border-radius: 6px; padding: 8px 10px; font-size: 11px; color: #93C5FD;">
+            <b>Consecuencia:</b> Fricción masiva de entrada y alto riesgo de estafas o pérdida de claves.
+          </div>
+        </div>
+      </div>
+
+      <!-- Resumen del Mercado -->
+      <div class="card card-highlight" style="margin-top: 14px; display: flex; align-items: center; justify-content: space-between; padding: 12px 20px;">
+        <div>
+          <span style="font-size: 13px; font-weight: 700; color: #FFFFFF;">El Mercado Exige:</span>
+          <span style="font-size: 12px; color: #94A3B8; margin-left: 8px;">Una herramienta 100% automatizada, sin custodia, fácil de operar en 1 clic y con notificaciones móviles al instante.</span>
+        </div>
+        <span class="badge-green" style="font-size: 11px; padding: 5px 12px;">OPORTUNIDAD DE $6.4B EN LATAM</span>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <div class="footer-left">
+        <span>Crypto Analyzer Pro · Pitch Deck</span>
+        <span>Validación de Mercado & Análisis de Dolor</span>
+      </div>
+      <div>
+        <span class="footer-highlight">Slide 02 / 10</span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <!-- SLIDE 3: LA SOLUCIÓN — CRYPTO ANALYZER PRO                  -->
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="brand-tag">
+        <div class="logo-dot"></div>
+        <span>CRYPTO ANALYZER PRO</span>
+      </div>
+      <div class="slide-number-tag">03 · LA SOLUCIÓN</div>
+    </div>
+
+    <div class="slide-body">
+      <h2 class="title-section">
+        Nuestra Solución: <span class="accent">La Terminal Cuántica en 1-Clic</span>
+      </h2>
+      <p class="subtitle">
+        Reemplazamos el trading manual por algoritmos matemáticos cuantitativos que trabajan 24/7 para el usuario sin que tenga que mirar gráficos.
+      </p>
+
+      <div class="grid-3col">
+        <div class="card card-highlight">
+          <div style="font-size: 24px; margin-bottom: 8px;">🤖</div>
+          <div class="card-title">Grid Bots Automatizados</div>
+          <p class="card-text" style="margin-bottom: 12px;">
+            El bot coloca automáticamente órdenes de compra escalonadas en soporte y vende con +2.50% de ganancia neta en cada rebote.
+          </p>
+          <ul class="clean-list">
+            <li><b>100% Win-Rate</b> por ciclo cerrado</li>
+            <li>Reciclaje perpetuo de capital</li>
+            <li>Sin necesidad de acertar la dirección</li>
+          </ul>
+        </div>
+
+        <div class="card card-gold">
+          <div style="font-size: 24px; margin-bottom: 8px;">📡</div>
+          <div class="card-title">Radar de Oportunidades</div>
+          <p class="card-text" style="margin-bottom: 12px;">
+            Escaneo en tiempo real de más de 30 activos spot líderes. Detecta sobreventas extremas (RSI &lt; 33) y rebotes institucionales.
+          </p>
+          <ul class="clean-list gold">
+            <li>Niveles calculados: Entrada, TP1, TP2, TP3</li>
+            <li>Stop Loss de riesgo controlado (-3.00%)</li>
+            <li>Alertas directas al canal de Telegram</li>
+          </ul>
+        </div>
+
+        <div class="card card-blue">
+          <div style="font-size: 24px; margin-bottom: 8px;">🛡️</div>
+          <div class="card-title">100% Non-Custodial & Seguro</div>
+          <p class="card-text" style="margin-bottom: 12px;">
+            El usuario mantiene el control absoluto de sus fondos en su propia cuenta de Binance / Bybit. La plataforma solo envía órdenes de ejecución.
+          </p>
+          <ul class="clean-list blue">
+            <li>Cero riesgo de quiebra de la plataforma</li>
+            <li>Soporte Dual Currency: USDT y Soles (PEN)</li>
+            <li>Sincronización PC y Móvil en tiempo real</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="grid-4col" style="margin-top: 14px;">
+        <div class="card" style="padding: 10px 14px; text-align: center;">
+          <div class="metric-value" style="font-size: 22px; color: #0ECB81;">+2.50%</div>
+          <div class="metric-label">Retorno Neto por Malla</div>
+        </div>
+        <div class="card" style="padding: 10px 14px; text-align: center;">
+          <div class="metric-value" style="font-size: 22px; color: #F59E0B;">24/7</div>
+          <div class="metric-label">Operación Continua</div>
+        </div>
+        <div class="card" style="padding: 10px 14px; text-align: center;">
+          <div class="metric-value" style="font-size: 22px; color: #3888FF;">&lt; 50 ms</div>
+          <div class="metric-label">Latencia de Ejecución</div>
+        </div>
+        <div class="card" style="padding: 10px 14px; text-align: center;">
+          <div class="metric-value" style="font-size: 22px; color: #E2E8F0;">1 Clic</div>
+          <div class="metric-label">Configuración Instantánea</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <div class="footer-left">
+        <span>Crypto Analyzer Pro · Pitch Deck</span>
+        <span>Propuesta de Valor & Arquitectura de Producto</span>
+      </div>
+      <div>
+        <span class="footer-highlight">Slide 03 / 10</span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <!-- SLIDE 4: EL MOTOR DE TRADING (SPOT GRID 24/7)               -->
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="brand-tag">
+        <div class="logo-dot"></div>
+        <span>CRYPTO ANALYZER PRO</span>
+      </div>
+      <div class="slide-number-tag">04 · MECÁNICA DEL BOT GRID</div>
+    </div>
+
+    <div class="slide-body">
+      <div class="grid-2col">
+        <div>
+          <h2 class="title-section">
+            El Motor Cuantitativo: <span class="accent-gold">Explicado Simple</span>
+          </h2>
+          <p class="subtitle" style="font-size: 13px; margin-bottom: 14px;">
+            El Grid Trading no intenta adivinar si el mercado va a subir o bajar. Divide el capital en niveles de compra y venta geométricos para generar ganancias en cada fluctuación normal del precio.
+          </p>
+
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="card" style="padding: 9px 12px;">
+              <div style="font-weight: 700; color: #FFFFFF; font-size: 12.5px; margin-bottom: 2px;">
+                <span class="step-badge">1</span> Mapeo de Soporte y Techo
+              </div>
+              <div style="font-size: 11px; color: #94A3B8;">
+                El algoritmo calcula el rango seguro mediante indicadores de volatilidad ATR y Choppiness Index (CHOP).
+              </div>
+            </div>
+
+            <div class="card" style="padding: 9px 12px; border-left: 3px solid #0ECB81;">
+              <div style="font-weight: 700; color: #0ECB81; font-size: 12.5px; margin-bottom: 2px;">
+                <span class="step-badge" style="background: #0ECB81; color: #000;">2</span> Compras Automáticas en Soporte
+              </div>
+              <div style="font-size: 11px; color: #94A3B8;">
+                A medida que el precio cae, el bot compra fracciones con descuento progresivo (-2.85% vs último pico).
+              </div>
+            </div>
+
+            <div class="card" style="padding: 9px 12px; border-left: 3px solid #F59E0B;">
+              <div style="font-weight: 700; color: #F59E0B; font-size: 12.5px; margin-bottom: 2px;">
+                <span class="step-badge">3</span> Toma de Ganancias (+2.50% Neto)
+              </div>
+              <div style="font-size: 11px; color: #94A3B8;">
+                Al menor rebote, vende la orden correspondiente acreditando el capital más la ganancia al saldo disponible.
+              </div>
+            </div>
+
+            <div class="card" style="padding: 9px 12px;">
+              <div style="font-weight: 700; color: #3888FF; font-size: 12.5px; margin-bottom: 2px;">
+                <span class="step-badge" style="background: #3888FF; color: #FFF;">4</span> Reciclaje Continuo de Mallas
+              </div>
+              <div style="font-size: 11px; color: #94A3B8;">
+                El bot repone la orden de compra y repite el proceso infinitas veces 24/7 sin intervención humana.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="img-box" style="height: 135mm;">
+          <img src="pitch_assets/pitch_grid_bot_concept.jpg" alt="Malla de Trading 3D">
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <div class="footer-left">
+        <span>Crypto Analyzer Pro · Pitch Deck</span>
+        <span>Algoritmo de Arbitraje Cuantitativo & Gestión de Riesgo</span>
+      </div>
+      <div>
+        <span class="footer-highlight">Slide 04 / 10</span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <!-- SLIDE 5: ECOSISTEMA TELEGRAM & NOTIFICACIONES EN VIVO       -->
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="brand-tag">
+        <div class="logo-dot"></div>
+        <span>CRYPTO ANALYZER PRO</span>
+      </div>
+      <div class="slide-number-tag">05 · ECOSISTEMA TELEGRAM & MOVIL</div>
+    </div>
+
+    <div class="slide-body">
+      <div class="grid-2col">
+        <div>
+          <h2 class="title-section">
+            Alertas Inteligentes en Telegram: <span class="accent-blue">Tus Inversiones en tu Bolsillo</span>
+          </h2>
+          <p class="subtitle" style="font-size: 13px; margin-bottom: 12px;">
+            Conexión directa con la app de mensajería más usada del mundo. Cada usuario u operador recibe notificaciones transparentes en tiempo real.
+          </p>
+
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="card card-blue" style="padding: 10px 14px;">
+              <div class="card-title" style="font-size: 13.5px; color: #3888FF;">
+                <span>📢 Alertas Atribuidas por Operador</span>
+              </div>
+              <p class="card-text">
+                En canales o grupos compartidos de amigos e inversores, cada alerta muestra exactamente quién la generó (ej. <code>👤 Operador: Juan</code>).
+              </p>
+            </div>
+
+            <div class="card card-highlight" style="padding: 10px 14px;">
+              <div class="card-title" style="font-size: 13.5px; color: #0ECB81;">
+                <span>💰 Confirmación Instantánea de Ganancias</span>
+              </div>
+              <p class="card-text">
+                Notificación inmediata con el desglose en USDT y Soles peruanos: <code>+$12.50 USDT (~S/ 46.88 PEN)</code> con el contador acumulado del bot.
+              </p>
+            </div>
+
+            <div class="card card-gold" style="padding: 10px 14px;">
+              <div class="card-title" style="font-size: 13.5px; color: #F59E0B;">
+                <span>🎯 Planes de Entrada con Metas Claras</span>
+              </div>
+              <p class="card-text">
+                Las alertas de oportunidad indican: Precio de Entrada Sugerido, Meta 1 (Rápida +2.2%), Meta 2 (Media +4.5%), Meta 3 (+8.0%) y Stop Loss de protección.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="img-box" style="height: 135mm;">
+          <img src="pitch_assets/pitch_multidevice_cloud.jpg" alt="Sincronización Multidispositivo y Telegram">
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <div class="footer-left">
+        <span>Crypto Analyzer Pro · Pitch Deck</span>
+        <span>Integración de Mensajería & Notificaciones Push</span>
+      </div>
+      <div>
+        <span class="footer-highlight">Slide 05 / 10</span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <!-- SLIDE 6: ARQUITECTURA TECNOLÓGICA & NUBE                    -->
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="brand-tag">
+        <div class="logo-dot"></div>
+        <span>CRYPTO ANALYZER PRO</span>
+      </div>
+      <div class="slide-number-tag">06 · TECNOLOGÍA & INFRAESTRUCTURA</div>
+    </div>
+
+    <div class="slide-body">
+      <h2 class="title-section">
+        Arquitectura Cloud-Native: <span class="accent">Alta Frecuencia, Cero Latencia</span>
+      </h2>
+      <p class="subtitle">
+        Diseñado con un stack moderno y escalable capaz de soportar millones de actualizaciones concurrentes con costos de servidor ultra-eficientes.
+      </p>
+
+      <div class="grid-4col" style="margin-top: 4px;">
+        <div class="card">
+          <div style="font-size: 20px; color: #0ECB81; margin-bottom: 6px;">⚡</div>
+          <div class="card-title" style="font-size: 14px;">Binance WebSocket</div>
+          <p class="card-text">
+            Flujo de cotizaciones de velas y libro de órdenes a 60 FPS directo desde los nodos de Binance sin intermediarios.
+          </p>
+          <div class="badge-green" style="margin-top: 8px; display: inline-block;">LATENCIA &lt; 50ms</div>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 20px; color: #3888FF; margin-bottom: 6px;">☁️</div>
+          <div class="card-title" style="font-size: 14px;">Supabase Cloud RLS</div>
+          <p class="card-text">
+            Base de datos PostgreSQL con Row Level Security (RLS) para aislamiento criptográfico estricto de cada usuario.
+          </p>
+          <div class="badge-blue" style="margin-top: 8px; display: inline-block;">SYNC PC & MÓVIL</div>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 20px; color: #F59E0B; margin-bottom: 6px;">🔒</div>
+          <div class="card-title" style="font-size: 14px;">Cloud Mutex Anti-Spam</div>
+          <p class="card-text">
+            Cerrojo distribuido en la nube que previene señales duplicadas cuando múltiples usuarios tienen la app abierta.
+          </p>
+          <div class="badge-gold" style="margin-top: 8px; display: inline-block;">CERO DUPLICADOS</div>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 20px; color: #E2E8F0; margin-bottom: 6px;">📈</div>
+          <div class="card-title" style="font-size: 14px;">TradingView Engine</div>
+          <p class="card-text">
+            Renderizado de velas financieras en canvas WebGL acelerado por hardware para máxima suavidad visual.
+          </p>
+          <div style="background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px; font-size: 10px; font-family: monospace; margin-top: 8px; display: inline-block;">WEBGL ACCELERATED</div>
+        </div>
+      </div>
+
+      <div class="card card-highlight" style="margin-top: 14px; padding: 12px 18px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <span style="font-weight: 700; color: #FFFFFF; font-size: 13px;">Seguridad Non-Custodial de Grado Militar:</span>
+            <span style="color: #94A3B8; font-size: 12px; margin-left: 8px;">Las llaves de API nunca tienen permisos de retiro de fondos. Toda la data se cifra en tránsito y reposo (AES-256).</span>
+          </div>
+          <span class="badge-green" style="font-size: 11px; padding: 4px 10px;">100% CERO RIESGO CUSTODIAL</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <div class="footer-left">
+        <span>Crypto Analyzer Pro · Pitch Deck</span>
+        <span>Diagrama de Bloques & Seguridad Informática</span>
+      </div>
+      <div>
+        <span class="footer-highlight">Slide 06 / 10</span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <!-- SLIDE 7: MERCADO OBJETIVO & ENFOQUE LATAM DUAL CURRENCY     -->
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="brand-tag">
+        <div class="logo-dot"></div>
+        <span>CRYPTO ANALYZER PRO</span>
+      </div>
+      <div class="slide-number-tag">07 · MERCADO & DUAL CURRENCY</div>
+    </div>
+
+    <div class="slide-body">
+      <h2 class="title-section">
+        Oportunidad de Mercado: <span class="accent-gold">Liderazgo en LatAm & Expansión Global</span>
+      </h2>
+      <p class="subtitle">
+        Latinoamérica es una de las regiones con mayor adopción de criptomonedas del mundo como refugio contra la inflación y herramienta de inversión.
+      </p>
+
+      <div class="grid-2col-equal" style="margin-top: 4px;">
+        <!-- TAM SAM SOM -->
+        <div class="card">
+          <div class="card-title" style="color: #F59E0B; font-size: 14.5px; margin-bottom: 10px;">
+            <span>Tamaño del Mercado (TAM / SAM / SOM)</span>
+          </div>
+          
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px; border-left: 3px solid #3888FF;">
+              <div style="display: flex; justify-content: space-between;">
+                <b style="color: #FFFFFF;">TAM: $48.2 Billones USD</b>
+                <span class="badge-blue">Mundial</span>
+              </div>
+              <span style="font-size: 10.5px; color: #94A3B8;">Mercado global de software, algotrading y servicios fintech de criptoactivos.</span>
+            </div>
+
+            <div style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px; border-left: 3px solid #F59E0B;">
+              <div style="display: flex; justify-content: space-between;">
+                <b style="color: #FFFFFF;">SAM: $6.4 Billones USD</b>
+                <span class="badge-gold">LatAm & Hispanos</span>
+              </div>
+              <span style="font-size: 10.5px; color: #94A3B8;">Volumen transaccionado por inversores retail en Perú, Colombia, México, Argentina y Brasil.</span>
+            </div>
+
+            <div style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px; border-left: 3px solid #0ECB81;">
+              <div style="display: flex; justify-content: space-between;">
+                <b style="color: #FFFFFF;">SOM: $85 Millones USD</b>
+                <span class="badge-green">Meta Año 3</span>
+              </div>
+              <span style="font-size: 10.5px; color: #94A3B8;">Captura inicial de 280,000 usuarios activos mediante growth orgánico y partners B2B.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ventaja Dual Currency -->
+        <div class="card card-highlight">
+          <div class="card-title" style="color: #0ECB81; font-size: 14.5px; margin-bottom: 8px;">
+            <span>La Ventaja Dual Currency (USD / S/ PEN)</span>
+          </div>
+          <p class="card-text" style="margin-bottom: 12px;">
+            A diferencia de plataformas extranjeras que solo muestran números en Dólares difíciles de conceptualizar, Crypto Analyzer Pro muestra la equivalencia exacta en moneda local en cada pantalla.
+          </p>
+
+          <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+            <div style="flex: 1; background: rgba(0,0,0,0.4); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="font-size: 10px; color: #64748B;">GANANCIA EN DÓLARES</div>
+              <div style="font-size: 16px; font-weight: 800; color: #0ECB81;">+$250.00 USDT</div>
+            </div>
+            <div style="flex: 1; background: rgba(0,0,0,0.4); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="font-size: 10px; color: #64748B;">EQUIVALENTE EN SOLES</div>
+              <div style="font-size: 16px; font-weight: 800; color: #F59E0B;">~S/ 937.50 PEN</div>
+            </div>
+          </div>
+
+          <p class="card-text" style="font-size: 11px;">
+            👉 <b>Impacto:</b> Aumenta la tasa de conversión en un <b>42%</b> al conectar directamente el rendimiento financiero con el costo de vida real del usuario.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <div class="footer-left">
+        <span>Crypto Analyzer Pro · Pitch Deck</span>
+        <span>Análisis de Mercado & Ventaja Competitiva Regional</span>
+      </div>
+      <div>
+        <span class="footer-highlight">Slide 07 / 10</span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <!-- SLIDE 8: MODELO DE NEGOCIO & MONETIZACIÓN                   -->
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="brand-tag">
+        <div class="logo-dot"></div>
+        <span>CRYPTO ANALYZER PRO</span>
+      </div>
+      <div class="slide-number-tag">08 · MODELO DE NEGOCIO</div>
+    </div>
+
+    <div class="slide-body">
+      <h2 class="title-section">
+        Modelo de Negocio: <span class="accent">4 Fuentes de Ingresos de Alto Margen</span>
+      </h2>
+      <p class="subtitle">
+        Monetización híbrida SaaS + Revenue Share que alinea nuestros incentivos con las ganancias reales de los clientes.
+      </p>
+
+      <div class="grid-4col">
+        <!-- 1. SaaS Subscriptions -->
+        <div class="card card-highlight">
+          <span class="badge-green">RECURRENTE</span>
+          <div class="card-title" style="margin-top: 6px; font-size: 14px;">1. Suscripciones SaaS</div>
+          <p class="card-text" style="margin-bottom: 8px;">
+            Planes mensuales y anuales para traders activos con límites ampliados de bots.
+          </p>
+          <ul class="clean-list" style="font-size: 11px;">
+            <li><b>Free:</b> 1 Bot Demo</li>
+            <li><b>Pro ($29/mes):</b> 5 Bots Grid</li>
+            <li><b>Elite ($79/mes):</b> Bots Ilimitados + Telegram VIP</li>
+          </ul>
+        </div>
+
+        <!-- 2. Revenue Share / Profit Split -->
+        <div class="card card-gold">
+          <span class="badge-gold">PERFORMANCE</span>
+          <div class="card-title" style="margin-top: 6px; font-size: 14px;">2. Profit Share (10%)</div>
+          <p class="card-text" style="margin-bottom: 8px;">
+            Comisión del 10% sobre las ganancias netas que generan los bots automatizados.
+          </p>
+          <ul class="clean-list gold" style="font-size: 11px;">
+            <li>Modelo <i>Win-Win</i></li>
+            <li>El usuario solo paga cuando gana dinero real</li>
+            <li>Cero costo fijo para novatos</li>
+          </ul>
+        </div>
+
+        <!-- 3. Marketplace de Estrategias -->
+        <div class="card card-blue">
+          <span class="badge-blue">ECOSISTEMA</span>
+          <div class="card-title" style="margin-top: 6px; font-size: 14px;">3. Copy-Bot Market</div>
+          <p class="card-text" style="margin-bottom: 8px;">
+            Traders profesionales publican sus configuraciones de Grid y reciben comisiones.
+          </p>
+          <ul class="clean-list blue" style="font-size: 11px;">
+            <li><b>20% Take-Rate</b> sobre ventas de estrategias</li>
+            <li>Efecto de red viral</li>
+          </ul>
+        </div>
+
+        <!-- 4. Licenciamiento B2B -->
+        <div class="card">
+          <span style="background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px; font-size: 10px; font-family: monospace;">INSTITUCIONAL</span>
+          <div class="card-title" style="margin-top: 6px; font-size: 14px;">4. White-Label B2B</div>
+          <p class="card-text" style="margin-bottom: 8px;">
+            Licencias de la terminal para academias de trading, brokers y gestores de patrimonio.
+          </p>
+          <ul class="clean-list" style="font-size: 11px;">
+            <li>Contratos desde $1,500/mes</li>
+            <li>API dedicada para fondos</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Unit Economics -->
+      <div class="card" style="margin-top: 14px; padding: 10px 16px; background: rgba(0,0,0,0.5);">
+        <div class="grid-4col" style="text-align: center;">
+          <div>
+            <div style="font-size: 10px; color: #64748B;">LTV (LIFE TIME VALUE)</div>
+            <div style="font-size: 18px; font-weight: 800; color: #0ECB81;">$348 USD</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; color: #64748B;">CAC (COSTO ADQUISICIÓN)</div>
+            <div style="font-size: 18px; font-weight: 800; color: #F59E0B;">$42 USD</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; color: #64748B;">LTV / CAC RATIO</div>
+            <div style="font-size: 18px; font-weight: 800; color: #3888FF;">8.2x (Excelente)</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; color: #64748B;">GROSS MARGIN</div>
+            <div style="font-size: 18px; font-weight: 800; color: #FFFFFF;">84%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <div class="footer-left">
+        <span>Crypto Analyzer Pro · Pitch Deck</span>
+        <span>Unit Economics & Estructura de Ingresos</span>
+      </div>
+      <div>
+        <span class="footer-highlight">Slide 08 / 10</span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <!-- SLIDE 9: PROYECCIONES FINANCIERAS (2026 - 2028)             -->
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="brand-tag">
+        <div class="logo-dot"></div>
+        <span>CRYPTO ANALYZER PRO</span>
+      </div>
+      <div class="slide-number-tag">09 · PROYECCIONES FINANCIERAS</div>
+    </div>
+
+    <div class="slide-body">
+      <h2 class="title-section">
+        Proyecciones Financieras: <span class="accent-gold">Escalamiento a 3 Años</span>
+      </h2>
+      <p class="subtitle">
+        Modelo financiero conservador respaldado por el crecimiento acelerado del volumen de trading cuantitativo en la región.
+      </p>
+
+      <table class="fin-table">
+        <thead>
+          <tr>
+            <th>Métrica Operativa / Financiera</th>
+            <th style="text-align: right;">Año 1 (2026)</th>
+            <th style="text-align: right;">Año 2 (2027)</th>
+            <th style="text-align: right;">Año 3 (2028)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="bold-text">Usuarios Registrados Totales</td>
+            <td style="text-align: right;" class="mono-num">35,000</td>
+            <td style="text-align: right;" class="mono-num">180,000</td>
+            <td style="text-align: right;" class="mono-num">650,000</td>
+          </tr>
+          <tr>
+            <td class="bold-text">Usuarios Activos Mensuales (MAU)</td>
+            <td style="text-align: right;" class="mono-num">15,000</td>
+            <td style="text-align: right;" class="mono-num">75,000</td>
+            <td style="text-align: right;" class="mono-num">280,000</td>
+          </tr>
+          <tr>
+            <td class="bold-text">Usuarios de Pago (SaaS + Profit Share)</td>
+            <td style="text-align: right;" class="mono-num">2,100 (14%)</td>
+            <td style="text-align: right;" class="mono-num">11,250 (15%)</td>
+            <td style="text-align: right;" class="mono-num">44,800 (16%)</td>
+          </tr>
+          <tr>
+            <td class="bold-text">Volumen Total Operado por Bots</td>
+            <td style="text-align: right;" class="mono-num" style="color: #3888FF;">$18,500,000 USD</td>
+            <td style="text-align: right;" class="mono-num" style="color: #3888FF;">$125,000,000 USD</td>
+            <td style="text-align: right;" class="mono-num" style="color: #3888FF;">$650,000,000 USD</td>
+          </tr>
+          <tr style="background: rgba(14, 203, 129, 0.08);">
+            <td class="bold-text" style="color: #0ECB81; font-size: 12.5px;">Ingresos Anuales Recurrentes (ARR)</td>
+            <td style="text-align: right; color: #0ECB81; font-size: 13px;" class="mono-num"><b>$540,000 USD</b></td>
+            <td style="text-align: right; color: #0ECB81; font-size: 13px;" class="mono-num"><b>$2,950,000 USD</b></td>
+            <td style="text-align: right; color: #0ECB81; font-size: 13px;" class="mono-num"><b>$11,800,000 USD</b></td>
+          </tr>
+          <tr>
+            <td class="bold-text">EBITDA Estimado</td>
+            <td style="text-align: right; color: #F59E0B;" class="mono-num">$160,000 (30%)</td>
+            <td style="text-align: right; color: #F59E0B;" class="mono-num">$1,250,000 (42%)</td>
+            <td style="text-align: right; color: #F59E0B;" class="mono-num">$6,100,000 (52%)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="grid-3col" style="margin-top: 12px;">
+        <div class="card card-highlight" style="padding: 9px 12px;">
+          <div style="font-size: 11px; color: #94A3B8;"><b>Rentabilidad:</b> Flujo de caja positivo proyectado a partir del mes 9.</div>
+        </div>
+        <div class="card card-gold" style="padding: 9px 12px;">
+          <div style="font-size: 11px; color: #94A3B8;"><b>Retención Mensual:</b> 91% de retención en usuarios que activan al menos 1 bot.</div>
+        </div>
+        <div class="card card-blue" style="padding: 9px 12px;">
+          <div style="font-size: 11px; color: #94A3B8;"><b>Costo Servidor:</b> Menor a $0.12 USD por usuario activo al mes.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <div class="footer-left">
+        <span>Crypto Analyzer Pro · Pitch Deck</span>
+        <span>Modelo Financiero & Escalabilidad P&L</span>
+      </div>
+      <div>
+        <span class="footer-highlight">Slide 09 / 10</span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <!-- SLIDE 10: LA RONDA DE INVERSIÓN (THE ASK)                   -->
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="brand-tag">
+        <div class="logo-dot"></div>
+        <span>CRYPTO ANALYZER PRO</span>
+      </div>
+      <div class="slide-number-tag">10 · LA RONDA SEED & CONTACTO</div>
+    </div>
+
+    <div class="slide-body">
+      <div class="grid-2col">
+        <div>
+          <h2 class="title-section">
+            La Oportunidad: <span class="accent-gold">Ronda Seed $450,000 USD</span>
+          </h2>
+          <p class="subtitle" style="font-size: 13px; margin-bottom: 14px;">
+            Buscamos socios estratégicos con experiencia en fintech, Web3 y escalabilidad regional para liderar el trading automatizado en América Latina.
+          </p>
+
+          <!-- Uso de Fondos -->
+          <div style="margin-bottom: 14px;">
+            <div style="font-family: 'Outfit', sans-serif; font-weight: 700; color: #FFFFFF; font-size: 13px; margin-bottom: 8px;">
+              Distribución del Capital (Uso de Fondos):
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px;">
+                  <span><b>40% Producto e IA:</b> Conectores Bybit/OKX, ML Predictivo</span>
+                  <span class="mono-num">$180,000</span>
+                </div>
+                <div style="height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+                  <div style="width: 40%; height: 100%; background: #0ECB81;"></div>
+                </div>
+              </div>
+
+              <div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px;">
+                  <span><b>35% Growth & Adquisición:</b> Performance, Comunidad, Afiliados</span>
+                  <span class="mono-num">$157,500</span>
+                </div>
+                <div style="height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+                  <div style="width: 35%; height: 100%; background: #F59E0B;"></div>
+                </div>
+              </div>
+
+              <div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px;">
+                  <span><b>15% Legal, Compliance & Licencias Fintech</b></span>
+                  <span class="mono-num">$67,500</span>
+                </div>
+                <div style="height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+                  <div style="width: 15%; height: 100%; background: #3888FF;"></div>
+                </div>
+              </div>
+
+              <div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px;">
+                  <span><b>10% Operaciones, Soporte 24/7 y Reserva</b></span>
+                  <span class="mono-num">$45,000</span>
+                </div>
+                <div style="height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+                  <div style="width: 10%; height: 100%; background: #94A3B8;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tarjeta de Contacto y Call to Action -->
+        <div class="card card-gold" style="display: flex; flex-direction: column; justify-content: space-between; padding: 20px; height: 135mm;">
+          <div>
+            <span class="badge-gold">ÚNETE COMO INVERSOR FUNDADOR</span>
+            <h3 style="font-size: 22px; color: #FFFFFF; margin-top: 10px; line-height: 1.2;">
+              Construyamos el Futuro del Arbitraje Cripto Automatizado
+            </h3>
+            <p style="font-size: 12px; color: #CBD5E1; margin-top: 8px; line-height: 1.45;">
+              La versión de producción ya está 100% operativa, generando métricas reales en vivo y lista para escalar.
+            </p>
+          </div>
+
+          <div style="background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 14px;">
+            <div style="font-size: 11px; color: #64748B; margin-bottom: 4px;">DATOS DE CONTACTO DIRECTO:</div>
+            <div style="font-size: 14px; font-weight: 800; color: #FFFFFF; margin-bottom: 2px;">Aldair Dunn · CEO & Lead Architect</div>
+            <div style="font-size: 12px; color: #0ECB81; font-family: monospace; margin-bottom: 4px;">investors@cryptoanalyzer.pro</div>
+            <div style="font-size: 11px; color: #94A3B8;">Plataforma en Producción: <b style="color: #3888FF;">frontend-two-lyart-49.vercel.app</b></div>
+          </div>
+
+          <div style="display: flex; gap: 10px;">
+            <div class="badge-green" style="flex: 1; text-align: center; padding: 6px 0; font-size: 11px;">
+              DEMO EN VIVO DISPONIBLE
+            </div>
+            <div class="badge-blue" style="flex: 1; text-align: center; padding: 6px 0; font-size: 11px;">
+              DATA ROOM DISPONIBLE
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <div class="footer-left">
+        <span>Crypto Analyzer Pro · Pitch Deck 2026</span>
+        <span>Ronda Seed · Documento Confidencial</span>
+      </div>
+      <div>
+        <span class="footer-highlight">Slide 10 / 10 · Fin del Documento</span>
+      </div>
+    </div>
+  </section>
+
+</body>
+</html>

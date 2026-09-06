@@ -843,6 +843,10 @@ export function scanMarketDecisionHeroes(
   const liquidPool = evaluations.filter((e) => e.volume24h >= 1_500_000 && isValidSpotCrypto(e.coin.symbol, e.volume24h, true));
   const activePool = liquidPool.length >= 8 ? liquidPool : evaluations.filter((e) => isValidSpotCrypto(e.coin.symbol, e.volume24h, true));
 
+  // Require solid institutional liquidity (>= $10M 24h volume) for Master Grid recommendations so real bots execute with tight spreads
+  const deepLiquidityPool = activePool.filter((e) => e.volume24h >= 10_000_000);
+  const heroGridPool = deepLiquidityPool.length >= 5 ? deepLiquidityPool : activePool;
+
   // 1. Top Gainer Real de Binance (Mayor subida 24h, desempate por volumen)
   const topGainer = activePool.reduce((prev, current) => {
     if (current.change24h !== prev.change24h) {
@@ -851,8 +855,8 @@ export function scanMarketDecisionHeroes(
     return current.volume24h > prev.volume24h ? current : prev;
   });
 
-  // 2. #1 Mejor Grid Bot (Mayor Score, desempate por volumen y centralidad de canal)
-  const bestGridBot = activePool.reduce((prev, current) => {
+  // 2. #1 Mejor Grid Bot (Mayor Score en pool líquido, desempate por volumen y centralidad de canal)
+  const bestGridBot = heroGridPool.reduce((prev, current) => {
     const scoreDiff = current.gridSuitability.score - prev.gridSuitability.score;
     if (scoreDiff !== 0) return scoreDiff > 0 ? current : prev;
 

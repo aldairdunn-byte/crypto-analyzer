@@ -83,6 +83,15 @@ export const TradingViewChart = ({
   const [showSpotLines, setShowSpotLines] = useState<boolean>(true);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [hoveredCandle, setHoveredCandle] = useState<{
+    time: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume?: number;
+    changePct: number;
+  } | null>(null);
 
   // Active coin metadata & fundamentals
   const activeCoinMeta: CoinInfo = useMemo(() => {
@@ -176,6 +185,11 @@ export const TradingViewChart = ({
       borderVisible: false,
       wickUpColor: '#0ECB81',
       wickDownColor: '#F6465D',
+      priceFormat: {
+        type: 'price',
+        precision: activeCoinMeta.decimals,
+        minMove: Math.pow(10, -activeCoinMeta.decimals),
+      },
     });
     candleSeriesRef.current = candleSeries;
 
@@ -197,6 +211,30 @@ export const TradingViewChart = ({
 
     chart.priceScale('volume').applyOptions({
       scaleMargins: { top: 0.82, bottom: 0 },
+    });
+
+    // Real-time OHLCV Crosshair movement subscriber
+    chart.subscribeCrosshairMove((param) => {
+      if (!param || !param.time || !param.point || param.point.x < 0 || param.point.y < 0) {
+        setHoveredCandle(null);
+        return;
+      }
+      const cData = param.seriesData.get(candleSeries) as any;
+      if (!cData || cData.close === undefined) {
+        setHoveredCandle(null);
+        return;
+      }
+      const vData = param.seriesData.get(volumeSeries) as any;
+      const chg = cData.open > 0 ? ((cData.close - cData.open) / cData.open) * 100 : 0;
+      setHoveredCandle({
+        time: Number(param.time),
+        open: cData.open,
+        high: cData.high,
+        low: cData.low,
+        close: cData.close,
+        volume: vData?.value,
+        changePct: chg,
+      });
     });
 
     const resizeObserver = new ResizeObserver((entries) => {
@@ -225,23 +263,45 @@ export const TradingViewChart = ({
     };
   }, []);
 
-  const lastActiveContextRef = useRef<{
+  const lastAppliedContextRef = useRef<{
     coin: string;
     interval: string;
+    firstTime: number;
+    lastTime: number;
+    count: number;
   }>({
     coin: '',
     interval: '',
+    firstTime: 0,
+    lastTime: 0,
+    count: 0,
   });
 
   useEffect(() => {
     if (!candleSeriesRef.current || !candles || candles.length === 0) return;
 
-    const isCoinOrIntervalChange =
-      lastActiveContextRef.current.coin !== coinSymbol ||
-      lastActiveContextRef.current.interval !== activeInterval;
+    // Apply exact price decimals for the current coin
+    candleSeriesRef.current.applyOptions({
+      priceFormat: {
+        type: 'price',
+        precision: activeCoinMeta.decimals,
+        minMove: Math.pow(10, -activeCoinMeta.decimals),
+      },
+    });
 
-    if (isCoinOrIntervalChange) {
-      // Full dataset replacement on coin or timeframe switch
+    const firstTime = candles[0]?.time || 0;
+    const lastTime = candles[candles.length - 1]?.time || 0;
+    const prev = lastAppliedContextRef.current;
+
+    // Detect if this is a fresh dataset (timeframe switch, coin change, or history reload)
+    const isNewDataset =
+      prev.coin !== coinSymbol ||
+      prev.interval !== activeInterval ||
+      prev.firstTime !== firstTime ||
+      Math.abs(candles.length - prev.count) > 2;
+
+    if (isNewDataset) {
+      // Full dataset replacement & clean zoom fit
       candleSeriesRef.current.setData(candles as any);
 
       const emaData = calculateEMA20(candles);
@@ -263,12 +323,15 @@ export const TradingViewChart = ({
         chartRef.current?.timeScale().fitContent();
       });
 
-      lastActiveContextRef.current = {
+      lastAppliedContextRef.current = {
         coin: coinSymbol,
         interval: activeInterval,
+        firstTime,
+        lastTime,
+        count: candles.length,
       };
     } else {
-      // Seamless real-time tick/candle update without changing zoom or panning
+      // Continuous real-time tick update without resetting pan/zoom
       const lastCandle = candles[candles.length - 1];
       if (lastCandle) {
         try {
@@ -287,13 +350,23 @@ export const TradingViewChart = ({
               color: lastCandle.close >= lastCandle.open ? 'rgba(14, 203, 129, 0.25)' : 'rgba(246, 70, 93, 0.25)',
             });
           }
+
+          lastAppliedContextRef.current.lastTime = lastCandle.time;
+          lastAppliedContextRef.current.count = candles.length;
         } catch {
-          // If a timestamp gap occurs, safely resync data without crashing
+          // If a sequence gap occurs, safely resync full data
           candleSeriesRef.current.setData(candles as any);
+          lastAppliedContextRef.current = {
+            coin: coinSymbol,
+            interval: activeInterval,
+            firstTime,
+            lastTime,
+            count: candles.length,
+          };
         }
       }
     }
-  }, [candles, coinSymbol, activeInterval, showEma]);
+  }, [candles, coinSymbol, activeInterval, showEma, activeCoinMeta.decimals]);
 
   // Handle user toggling showEma independently
   useEffect(() => {
@@ -327,7 +400,7 @@ export const TradingViewChart = ({
           (k) => k.toLowerCase() === lvlId || COINS[k].symbol.toLowerCase() === lvlId
         );
         if (coinKey && COINS[coinKey].symbol.toLowerCase() === targetSym) return true;
-        return lvlId.includes(targetSym);
+        return false;
       });
 
       activeCoinLevels.forEach((lvl, idx) => {
@@ -361,7 +434,7 @@ export const TradingViewChart = ({
           (k) => k.toLowerCase() === tradeId || COINS[k].symbol.toLowerCase() === tradeId
         );
         if (coinKey && COINS[coinKey].symbol.toLowerCase() === targetSym) return true;
-        return tradeId.includes(targetSym);
+        return false;
       });
 
       activeSpotTrades.forEach((tr) => {
@@ -452,49 +525,72 @@ export const TradingViewChart = ({
           </button>
         </div>
 
-        {/* Center: Live 24H High-Density Strip */}
-        <div className="flex items-center space-x-3 sm:space-x-4 text-[11px] shrink-0 font-mono">
-          {/* Live Price */}
-          <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-1.5">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wider hidden md:inline font-sans">Precio:</span>
-            <div className="flex items-center gap-1.5">
-              <span className={`font-black text-xs sm:text-sm ${isPositive ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
-                ${formatDynamicPrice(effectivePrice, activeCoinMeta.decimals, currencyMode, penRate)}
-              </span>
-              <span className={`text-[10.5px] font-bold px-1.5 py-0.2 rounded ${
-                isPositive ? 'bg-emerald-500/10 text-[#0ECB81]' : 'bg-rose-500/10 text-[#F6465D]'
-              }`}>
-                {isPositive ? '+' : ''}{change24h.toFixed(2)}%
-              </span>
-            </div>
-          </div>
-
-          {/* 24h High & Low */}
-          <div className="hidden sm:flex items-center gap-3 pl-3 border-l border-white/10">
-            <div>
-              <span className="text-[10px] text-slate-500 block leading-none font-sans">24h Máx</span>
-              <span className="text-slate-200 font-bold text-[11px] leading-tight">
-                ${formatDynamicPrice(effectiveHigh, activeCoinMeta.decimals)}
-              </span>
-            </div>
-            <div>
-              <span className="text-[10px] text-slate-500 block leading-none font-sans">24h Mín</span>
-              <span className="text-slate-200 font-bold text-[11px] leading-tight">
-                ${formatDynamicPrice(effectiveLow, activeCoinMeta.decimals)}
-              </span>
-            </div>
-          </div>
-
-          {/* 24h Volume */}
-          <div className="hidden md:block pl-3 border-l border-white/10">
-            <span className="text-[10px] text-slate-500 block leading-none font-sans">24h Vol (USDT)</span>
-            <span className="text-slate-200 font-bold text-[11px] leading-tight">
-              ${vol24h ? (vol24h >= 1_000_000 ? `${(vol24h / 1_000_000).toFixed(2)}M` : `${(vol24h / 1_000).toFixed(1)}K`) : '42.50M'}
+        {/* Center: Live 24H High-Density Strip OR Interactive OHLCV Hover Tooltip */}
+        {hoveredCandle ? (
+          <div className="flex items-center space-x-2 sm:space-x-3 text-[11px] shrink-0 font-mono animate-in fade-in duration-75">
+            <span className="text-amber-400 font-sans text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+              Vela
             </span>
+            <div className="flex items-center gap-2 text-slate-300">
+              <span><span className="text-slate-500">O:</span> <strong className="text-white">{formatDynamicPrice(hoveredCandle.open, activeCoinMeta.decimals, currencyMode, penRate)}</strong></span>
+              <span><span className="text-slate-500">H:</span> <strong className="text-white">{formatDynamicPrice(hoveredCandle.high, activeCoinMeta.decimals, currencyMode, penRate)}</strong></span>
+              <span><span className="text-slate-500">L:</span> <strong className="text-white">{formatDynamicPrice(hoveredCandle.low, activeCoinMeta.decimals, currencyMode, penRate)}</strong></span>
+              <span><span className="text-slate-500">C:</span> <strong className={hoveredCandle.close >= hoveredCandle.open ? 'text-[#0ECB81]' : 'text-[#F6465D]'}>{formatDynamicPrice(hoveredCandle.close, activeCoinMeta.decimals, currencyMode, penRate)}</strong></span>
+              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                hoveredCandle.changePct >= 0 ? 'bg-emerald-500/10 text-[#0ECB81]' : 'bg-rose-500/10 text-[#F6465D]'
+              }`}>
+                {hoveredCandle.changePct >= 0 ? '+' : ''}{hoveredCandle.changePct.toFixed(2)}%
+              </span>
+              {hoveredCandle.volume !== undefined && (
+                <span className="hidden lg:inline text-slate-400 pl-2 border-l border-white/10">
+                  <span className="text-slate-500">Vol:</span> {hoveredCandle.volume >= 1_000_000 ? `${(hoveredCandle.volume / 1_000_000).toFixed(2)}M` : hoveredCandle.volume >= 1000 ? `${(hoveredCandle.volume / 1000).toFixed(1)}K` : hoveredCandle.volume.toFixed(0)}
+                </span>
+              )}
+            </div>
           </div>
+        ) : (
+          <div className="flex items-center space-x-3 sm:space-x-4 text-[11px] shrink-0 font-mono">
+            {/* Live Price */}
+            <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-1.5">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider hidden md:inline font-sans">Precio:</span>
+              <div className="flex items-center gap-1.5">
+                <span className={`font-black text-xs sm:text-sm ${isPositive ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                  {formatDynamicPrice(effectivePrice, activeCoinMeta.decimals, currencyMode, penRate)}
+                </span>
+                <span className={`text-[10.5px] font-bold px-1.5 py-0.2 rounded ${
+                  isPositive ? 'bg-emerald-500/10 text-[#0ECB81]' : 'bg-rose-500/10 text-[#F6465D]'
+                }`}>
+                  {isPositive ? '+' : ''}{change24h.toFixed(2)}%
+                </span>
+              </div>
+            </div>
 
-          {/* Real-time RSI Badge */}
-          {rsi !== undefined && (
+            {/* 24h High & Low */}
+            <div className="hidden sm:flex items-center gap-3 pl-3 border-l border-white/10">
+              <div>
+                <span className="text-[10px] text-slate-500 block leading-none font-sans">24h Máx</span>
+                <span className="text-slate-200 font-bold text-[11px] leading-tight">
+                  {formatDynamicPrice(effectiveHigh, activeCoinMeta.decimals, currencyMode, penRate)}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block leading-none font-sans">24h Mín</span>
+                <span className="text-slate-200 font-bold text-[11px] leading-tight">
+                  {formatDynamicPrice(effectiveLow, activeCoinMeta.decimals, currencyMode, penRate)}
+                </span>
+              </div>
+            </div>
+
+            {/* 24h Volume */}
+            <div className="hidden md:block pl-3 border-l border-white/10">
+              <span className="text-[10px] text-slate-500 block leading-none font-sans">24h Vol (USDT)</span>
+              <span className="text-slate-200 font-bold text-[11px] leading-tight">
+                {vol24h ? (vol24h >= 1_000_000 ? `$${(vol24h / 1_000_000).toFixed(2)}M` : `$${(vol24h / 1_000).toFixed(1)}K`) : '$42.50M'}
+              </span>
+            </div>
+
+            {/* Real-time RSI Badge */}
+            {rsi !== undefined && (
             <div className="hidden lg:flex items-center gap-1.5 pl-3 border-l border-white/10">
               <span className="text-[10px] text-slate-500 font-sans">RSI(14):</span>
               <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
@@ -519,6 +615,7 @@ export const TradingViewChart = ({
             </div>
           )}
         </div>
+      )}
 
         {/* Right: Direct Binance Market Link */}
         <div className="flex items-center space-x-2 shrink-0">
