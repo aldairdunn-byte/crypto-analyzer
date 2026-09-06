@@ -9,9 +9,15 @@
  * - Synchronous Grid Liquidation and Cash Recovery Invariants
  */
 
-import { type TradeRow } from './supabase';
-import { type CryptoHolding } from '../components/AssetsView';
-import { COINS } from './marketData';
+import { type TradeRow } from './supabase.ts';
+import { COINS } from './marketData.ts';
+
+export interface CryptoHolding {
+  coinId: string;
+  units: number;
+  avgEntryPrice: number;
+  totalInvestedUsd: number;
+}
 
 export interface PortfolioPerformanceMetrics {
   pnl24hUsd: number;

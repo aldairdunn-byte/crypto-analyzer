@@ -32,12 +32,8 @@ import {
   Play,
 } from 'lucide-react';
 
-export interface CryptoHolding {
-  coinId: string;
-  units: number;
-  avgEntryPrice: number;
-  totalInvestedUsd: number;
-}
+import { type CryptoHolding } from '../lib/portfolioMath';
+export type { CryptoHolding };
 
 interface AssetsViewProps {
   usdtCash: number;

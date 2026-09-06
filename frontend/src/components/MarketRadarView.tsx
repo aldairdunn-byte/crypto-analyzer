@@ -17,6 +17,7 @@ import {
   Robot,
   Target,
   Lightning,
+  Fire,
 } from '@phosphor-icons/react';
 import {
   BarChart2,
@@ -25,6 +26,7 @@ import {
   X,
   Clock,
 } from 'lucide-react';
+import { CryptoHeatmapView } from './CryptoHeatmapView';
 
 interface MarketRadarViewProps {
   signals?: SignalRow[];
@@ -36,7 +38,7 @@ interface MarketRadarViewProps {
 }
 
 type IntentTab = 'GRID' | 'HOLD' | 'DANGER' | 'ALL';
-type SectorFilter = 'ALL' | 'TOP' | 'L2' | 'AI' | 'DEFI' | 'MEME';
+type RadarViewMode = 'CARDS' | 'HEATMAP';
 
 export const MarketRadarView = ({
   livePrices = {},
@@ -46,7 +48,7 @@ export const MarketRadarView = ({
   onOpenTradeInTerminal,
 }: MarketRadarViewProps) => {
   const [intentTab, setIntentTab] = useState<IntentTab>('GRID');
-  const [sectorFilter, setSectorFilter] = useState<SectorFilter>('ALL');
+  const [radarViewMode, setRadarViewMode] = useState<RadarViewMode>('CARDS');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCoinForDetail, setSelectedCoinForDetail] = useState<any | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -102,18 +104,13 @@ export const MarketRadarView = ({
     });
   }, [coinsList, allCoinsStats, livePrices, penRate]);
 
-  // Strategic counts by intention and category
+  // Strategic counts by intention
   const counts = useMemo(() => {
     return {
       grid: evaluatedCoins.filter((e) => e.strategy.regime === 'GRID_BOT' || (e.gridSuitability?.score || 0) >= 70).length,
       hold: evaluatedCoins.filter((e) => e.strategy.regime === 'SPOT_HOLD').length,
       danger: evaluatedCoins.filter((e) => e.strategy.regime === 'DCA_DIP' || e.rsi >= 68 || e.gridSuitability?.antiFomoAlert?.isTriggered).length,
       all: evaluatedCoins.length,
-      top: evaluatedCoins.filter((e) => e.coin.category === 'TOP').length,
-      l2: evaluatedCoins.filter((e) => e.coin.category === 'L2').length,
-      ai: evaluatedCoins.filter((e) => e.coin.category === 'AI').length,
-      defi: evaluatedCoins.filter((e) => e.coin.category === 'DEFI').length,
-      meme: evaluatedCoins.filter((e) => e.coin.category === 'MEME').length,
     };
   }, [evaluatedCoins]);
 
@@ -134,7 +131,7 @@ export const MarketRadarView = ({
     return bestGridBot;
   }, [intentTab, bestGridBot, bestBuy, leaderWait]);
 
-  // Filter and Sort by Intent and Sector
+  // Filter and Sort by Intent and Search Query
   const filteredAndSorted = useMemo(() => {
     return evaluatedCoins
       .filter((e) => {
@@ -143,10 +140,7 @@ export const MarketRadarView = ({
         if (intentTab === 'HOLD' && e.strategy.regime !== 'SPOT_HOLD') return false;
         if (intentTab === 'DANGER' && !(e.strategy.regime === 'DCA_DIP' || e.rsi >= 68 || e.gridSuitability?.antiFomoAlert?.isTriggered)) return false;
 
-        // 2. Sector filter
-        if (sectorFilter !== 'ALL' && e.coin.category !== sectorFilter) return false;
-
-        // 3. Search Query
+        // 2. Search Query
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
           return (
@@ -179,7 +173,7 @@ export const MarketRadarView = ({
         if (scoreB !== scoreA) return scoreB - scoreA;
         return b.volume24h - a.volume24h;
       });
-  }, [evaluatedCoins, intentTab, sectorFilter, searchQuery]);
+  }, [evaluatedCoins, intentTab, searchQuery]);
 
   return (
     <div className="flex-1 bg-[#08090C] p-3.5 sm:p-5 lg:p-6 overflow-y-auto select-none space-y-4 sm:space-y-5 content-bottom-pad">
@@ -274,141 +268,193 @@ export const MarketRadarView = ({
           })}
         </div>
 
-        {/* Step 2: Sector Subfilter */}
-        <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar w-full md:w-auto pt-1 md:pt-0 border-t md:border-t-0 border-white/5">
-          <span className="text-[10px] uppercase font-bold text-slate-500 mr-1.5 hidden lg:inline">Sector:</span>
-          {[
-            { id: 'ALL', label: 'Todos' },
-            { id: 'TOP', label: 'Capa 1' },
-            { id: 'L2', label: 'L2 Scaling' },
-            { id: 'AI', label: 'Sector IA' },
-            { id: 'DEFI', label: 'DeFi' },
-            { id: 'MEME', label: 'Memes' },
-          ].map((sec) => {
-            const isActive = sectorFilter === sec.id;
-            return (
-              <button
-                key={sec.id}
-                onClick={() => setSectorFilter(sec.id as SectorFilter)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  isActive
-                    ? 'bg-white/15 text-white border border-white/20'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                {sec.label}
-              </button>
-            );
-          })}
+        {/* Step 2: View Switcher (Cards vs Heatmap) */}
+        <div className="flex items-center space-x-1 bg-[#08090C] p-1 rounded-xl border border-white/10 shrink-0">
+          <button
+            onClick={() => setRadarViewMode('CARDS')}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              radarViewMode === 'CARDS'
+                ? 'bg-amber-500/20 text-[#F59E0B] border border-amber-500/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <SquaresFour weight="bold" className="w-3.5 h-3.5" />
+            <span>Tarjetas</span>
+          </button>
+          <button
+            onClick={() => setRadarViewMode('HEATMAP')}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              radarViewMode === 'HEATMAP'
+                ? 'bg-amber-500/20 text-[#F59E0B] border border-amber-500/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Fire weight="bold" className="w-3.5 h-3.5" />
+            <span>Mapa de Calor</span>
+          </button>
         </div>
       </div>
 
-      {/* ─── 2.5. MASTER OPPORTUNITY HERO (1 SOLA DECISIÓN DIRECTA) ─── */}
-      {activeHero && (
-        <div className={`relative overflow-hidden rounded-2xl border p-4 sm:p-5 shadow-2xl transition-all ${
-          intentTab === 'HOLD'
-            ? 'border-emerald-500/40 bg-gradient-to-br from-[#0A1B17] via-[#0E171F] to-[#0D1117]'
-            : intentTab === 'DANGER'
-              ? 'border-rose-500/40 bg-gradient-to-br from-[#200F15] via-[#1A1218] to-[#0D1117]'
-              : 'border-amber-500/40 bg-gradient-to-br from-[#1A150A] via-[#121620] to-[#0D1117]'
-        }`}>
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            {/* Left: Identity & Reason */}
-            <div className="space-y-2.5 max-w-2xl">
-              <div className="flex items-center gap-2">
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10.5px] font-mono font-black border ${
-                  intentTab === 'HOLD'
-                    ? 'bg-emerald-500/15 border-emerald-500/30 text-[#0ECB81]'
-                    : intentTab === 'DANGER'
-                      ? 'bg-rose-500/15 border-rose-500/30 text-rose-400'
-                      : 'bg-amber-500/15 border-amber-500/30 text-[#F59E0B]'
-                }`}>
-                  {intentTab === 'HOLD' ? <Target weight="duotone" className="w-3.5 h-3.5" /> : intentTab === 'DANGER' ? <Clock className="w-3.5 h-3.5" /> : <Lightning weight="duotone" className="w-3.5 h-3.5" />}
-                  <span>{intentTab === 'HOLD' ? 'OPORTUNIDAD MAESTRA · COMPRA EN SOPORTE' : intentTab === 'DANGER' ? 'ALERTA MÁXIMA · SOBRECOMPRA ANTI-FOMO' : 'OPORTUNIDAD MAESTRA #1 · GRID BOT TIER S'}</span>
-                </span>
-                <span className="text-[10px] font-mono text-slate-400 font-bold">
-                  {intentTab === 'HOLD' ? `R:R 1:${activeHero.levels.riskRewardRatio.toFixed(1)}` : intentTab === 'DANGER' ? `RSI ${activeHero.rsi.toFixed(1)}` : `Score ${activeHero.gridSuitability?.score || 94}/100`}
-                </span>
-              </div>
-
-              <div className="flex items-center space-x-3.5">
-                <CryptoIcon symbol={activeHero.coin.symbol} size={36} className="rounded-full shadow-md" />
-                <div>
-                  <div className="flex items-baseline space-x-2">
-                    <span className="text-xl sm:text-2xl font-black text-white tracking-tight">{activeHero.coin.name}</span>
-                    <span className="text-sm font-mono font-extrabold text-[#F59E0B]">({activeHero.coin.symbol})</span>
-                    <span className={`text-xs font-mono font-black ${activeHero.change24h >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
-                      {activeHero.change24h >= 0 ? '+' : ''}{activeHero.change24h.toFixed(2)}% (24h)
+      {/* ─── 2.5 & 3. MAIN CONTENT: CARDS vs HEATMAP ─── */}
+      {radarViewMode === 'HEATMAP' ? (
+        <CryptoHeatmapView
+          livePrices={livePrices}
+          allCoinsStats={allCoinsStats}
+          currencyMode={currencyMode}
+          penRate={penRate}
+          filteredCoinIds={intentTab === 'ALL' ? undefined : filteredAndSorted.map((e) => e.coin.id)}
+          searchQuery={searchQuery}
+          activeIntentLabel={
+            intentTab === 'GRID'
+              ? 'Top Grid Bots'
+              : intentTab === 'HOLD'
+                ? 'Compras en Soporte'
+                : intentTab === 'DANGER'
+                  ? 'Alerta Anti-FOMO'
+                  : undefined
+          }
+          onSelectCoin={(coinId) => {
+            const match = evaluatedCoins.find((e) => e.coin.id === coinId);
+            if (match) {
+              onOpenTradeInTerminal(match.strategy);
+            } else {
+              onOpenTradeInTerminal(coinId);
+            }
+          }}
+        />
+      ) : (
+        <>
+          {/* ─── 2.5. MASTER OPPORTUNITY HERO (1 SOLA DECISIÓN DIRECTA) ─── */}
+          {activeHero && (
+            <div className={`relative overflow-hidden rounded-2xl border p-4 sm:p-5 shadow-2xl transition-all ${
+              intentTab === 'HOLD'
+                ? 'border-emerald-500/40 bg-gradient-to-br from-[#0A1B17] via-[#0E171F] to-[#0D1117]'
+                : intentTab === 'DANGER'
+                  ? 'border-rose-500/40 bg-gradient-to-br from-[#200F15] via-[#1A1218] to-[#0D1117]'
+                  : 'border-amber-500/40 bg-gradient-to-br from-[#1A150A] via-[#121620] to-[#0D1117]'
+            }`}>
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                {/* Left: Identity & Reason */}
+                <div className="space-y-2.5 max-w-2xl">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10.5px] font-mono font-black border ${
+                      intentTab === 'HOLD'
+                        ? 'bg-emerald-500/15 border-emerald-500/30 text-[#0ECB81]'
+                        : intentTab === 'DANGER'
+                          ? 'bg-rose-500/15 border-rose-500/30 text-rose-400'
+                          : 'bg-amber-500/15 border-amber-500/30 text-[#F59E0B]'
+                    }`}>
+                      {intentTab === 'HOLD' ? <Target weight="duotone" className="w-3.5 h-3.5" /> : intentTab === 'DANGER' ? <Clock className="w-3.5 h-3.5" /> : <Lightning weight="duotone" className="w-3.5 h-3.5" />}
+                      <span>{intentTab === 'HOLD' ? 'OPORTUNIDAD MAESTRA · COMPRA EN SOPORTE' : intentTab === 'DANGER' ? 'ALERTA MÁXIMA · SOBRECOMPRA ANTI-FOMO' : 'OPORTUNIDAD MAESTRA #1 · GRID BOT TIER S'}</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400 font-bold">
+                      {intentTab === 'HOLD' ? `R:R 1:${activeHero.levels.riskRewardRatio.toFixed(1)}` : intentTab === 'DANGER' ? `RSI ${activeHero.rsi.toFixed(1)}` : `Score ${activeHero.gridSuitability?.score || 94}/100`}
                     </span>
                   </div>
-                  <div className="text-sm font-mono font-black text-white">
-                    {formatDynamicPrice(activeHero.price, activeHero.coin.decimals, currencyMode, penRate)}
-                    <span className="text-xs text-slate-400 font-normal ml-2">~S/ {(activeHero.price * penRate).toFixed(2)} PEN</span>
+
+                  <div className="flex items-center space-x-3.5">
+                    <CryptoIcon symbol={activeHero.coin.symbol} size={36} className="rounded-full shadow-md" />
+                    <div>
+                      <div className="flex items-baseline space-x-2">
+                        <span className="text-xl sm:text-2xl font-black text-white tracking-tight">{activeHero.coin.name}</span>
+                        <span className="text-sm font-mono font-extrabold text-[#F59E0B]">({activeHero.coin.symbol})</span>
+                        <span className={`text-xs font-mono font-black ${activeHero.change24h >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                          {activeHero.change24h >= 0 ? '+' : ''}{activeHero.change24h.toFixed(2)}% (24h)
+                        </span>
+                      </div>
+                      <div className="text-sm font-mono font-black text-white">
+                        {formatDynamicPrice(activeHero.price, activeHero.coin.decimals, currencyMode, penRate)}
+                        <span className="text-xs text-slate-400 font-normal ml-2">~S/ {(activeHero.price * penRate).toFixed(2)} PEN</span>
+                      </div>
+                    </div>
                   </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans pt-1">
+                    {intentTab === 'DANGER'
+                      ? (activeHero.change24h > 10 ? `Rally parabólico de +${activeHero.change24h.toFixed(1)}%. Mercado sobrecalentado. No compres arriba.` : activeHero.verdict.plainExplanation)
+                      : activeHero.verdict.plainExplanation}
+                  </p>
+                </div>
+
+                {/* Right: Technical Parameter Box & Direct 1-Click CTA */}
+                <div className="bg-black/50 p-4 rounded-2xl border border-white/10 flex flex-col justify-between gap-3 min-w-[280px] lg:max-w-xs w-full">
+                  {intentTab === 'HOLD' ? (
+                    <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                      <div className="bg-white/5 p-2 rounded-xl">
+                        <span className="text-[9px] text-slate-400 block font-sans">Stop Loss</span>
+                        <span className="font-bold text-[#F6465D]">{formatDynamicPrice(activeHero.levels.stopLoss.price, activeHero.coin.decimals, currencyMode, penRate)}</span>
+                      </div>
+                      <div className="bg-white/5 p-2 rounded-xl">
+                        <span className="text-[9px] text-slate-400 block font-sans">Take Profit 1</span>
+                        <span className="font-bold text-[#0ECB81]">{formatDynamicPrice(activeHero.levels.takeProfit1.price, activeHero.coin.decimals, currencyMode, penRate)}</span>
+                      </div>
+                    </div>
+                  ) : intentTab === 'DANGER' ? (
+                    <div className="bg-white/5 p-2.5 rounded-xl text-xs font-mono">
+                      <span className="text-[9px] text-slate-400 block font-sans">Entrada Límite Paciente</span>
+                      <span className="font-bold text-amber-300">{formatDynamicPrice(activeHero.levels.entryLimit, activeHero.coin.decimals, currencyMode, penRate)}</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 text-xs font-mono">
+                      <div className="flex justify-between text-slate-400 text-[10px] font-sans">
+                        <span>Rango Sugerido ({activeHero.strategy.suggestedGridRange?.grids || 8} Mallas):</span>
+                        <span className="text-amber-400 font-bold">+{activeHero.strategy.suggestedGridRange?.profitPerGridPct || '2.5'}% / ciclo</span>
+                      </div>
+                      <div className="flex justify-between font-black text-white bg-white/5 p-2 rounded-xl">
+                        <span>{formatDynamicPrice(activeHero.strategy.suggestedGridRange?.low || activeHero.price * 0.95, activeHero.coin.decimals, currencyMode, penRate)}</span>
+                        <span className="text-slate-500">↔</span>
+                        <span>{formatDynamicPrice(activeHero.strategy.suggestedGridRange?.high || activeHero.price * 1.05, activeHero.coin.decimals, currencyMode, penRate)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => onOpenTradeInTerminal(activeHero.strategy)}
+                    className={`w-full py-2.5 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg active:scale-95 ${
+                      intentTab === 'HOLD'
+                        ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:brightness-110 text-black shadow-emerald-500/25'
+                        : intentTab === 'DANGER'
+                          ? 'bg-gradient-to-r from-rose-500/20 to-amber-500/20 hover:from-rose-500/30 border border-rose-500/40 text-rose-200'
+                          : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 text-black shadow-amber-500/25'
+                    }`}
+                  >
+                    {intentTab === 'HOLD' ? <Target weight="duotone" className="w-4 h-4" /> : intentTab === 'DANGER' ? <Clock className="w-4 h-4" /> : <Robot weight="duotone" className="w-4 h-4" />}
+                    <span>{intentTab === 'HOLD' ? 'Operar Spot Protegido' : intentTab === 'DANGER' ? 'Configurar Límite en Terminal' : 'Lanzar Grid Bot 1-Clic'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
-
-              <p className="text-xs text-slate-300 leading-relaxed font-sans pt-1">
-                {intentTab === 'DANGER'
-                  ? (activeHero.change24h > 10 ? `Rally parabólico de +${activeHero.change24h.toFixed(1)}%. Mercado sobrecalentado. No compres arriba.` : activeHero.verdict.plainExplanation)
-                  : activeHero.verdict.plainExplanation}
-              </p>
             </div>
+          )}
 
-            {/* Right: Technical Parameter Box & Direct 1-Click CTA */}
-            <div className="bg-black/50 p-4 rounded-2xl border border-white/10 flex flex-col justify-between gap-3 min-w-[280px] lg:max-w-xs w-full">
-              {intentTab === 'HOLD' ? (
-                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                  <div className="bg-white/5 p-2 rounded-xl">
-                    <span className="text-[9px] text-slate-400 block font-sans">Stop Loss</span>
-                    <span className="font-bold text-[#F6465D]">{formatDynamicPrice(activeHero.levels.stopLoss.price, activeHero.coin.decimals, currencyMode, penRate)}</span>
-                  </div>
-                  <div className="bg-white/5 p-2 rounded-xl">
-                    <span className="text-[9px] text-slate-400 block font-sans">Take Profit 1</span>
-                    <span className="font-bold text-[#0ECB81]">{formatDynamicPrice(activeHero.levels.takeProfit1.price, activeHero.coin.decimals, currencyMode, penRate)}</span>
-                  </div>
+          {/* ─── 3. MAIN CONTENT: OPPORTUNITY CARDS GRID ─── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+            {filteredAndSorted.length === 0 ? (
+              <div className="col-span-full flex flex-col items-center justify-center p-12 bg-[#0D1117] border border-white/10 rounded-2xl text-center space-y-4 shadow-xl">
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-[#F59E0B]">
+                  <Search className="w-8 h-8" />
                 </div>
-              ) : intentTab === 'DANGER' ? (
-                <div className="bg-white/5 p-2.5 rounded-xl text-xs font-mono">
-                  <span className="text-[9px] text-slate-400 block font-sans">Entrada Límite Paciente</span>
-                  <span className="font-bold text-amber-300">{formatDynamicPrice(activeHero.levels.entryLimit, activeHero.coin.decimals, currencyMode, penRate)}</span>
+                <div className="space-y-1 max-w-md">
+                  <h3 className="text-base font-black text-white">No se encontraron criptomonedas</h3>
+                  <p className="text-xs text-slate-400">
+                    {searchQuery
+                      ? `No hay activos que coincidan con "${searchQuery}" en este filtro.`
+                      : 'No hay activos con esta condición estratégica en este momento.'}
+                  </p>
                 </div>
-              ) : (
-                <div className="space-y-1.5 text-xs font-mono">
-                  <div className="flex justify-between text-slate-400 text-[10px] font-sans">
-                    <span>Rango Sugerido ({activeHero.strategy.suggestedGridRange?.grids || 8} Mallas):</span>
-                    <span className="text-amber-400 font-bold">+{activeHero.strategy.suggestedGridRange?.profitPerGridPct || '2.5'}% / ciclo</span>
-                  </div>
-                  <div className="flex justify-between font-black text-white bg-white/5 p-2 rounded-xl">
-                    <span>{formatDynamicPrice(activeHero.strategy.suggestedGridRange?.low || activeHero.price * 0.95, activeHero.coin.decimals, currencyMode, penRate)}</span>
-                    <span className="text-slate-500">↔</span>
-                    <span>{formatDynamicPrice(activeHero.strategy.suggestedGridRange?.high || activeHero.price * 1.05, activeHero.coin.decimals, currencyMode, penRate)}</span>
-                  </div>
-                </div>
-              )}
-
-              <button
-                onClick={() => onOpenTradeInTerminal(activeHero.strategy)}
-                className={`w-full py-2.5 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg active:scale-95 ${
-                  intentTab === 'HOLD'
-                    ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:brightness-110 text-black shadow-emerald-500/25'
-                    : intentTab === 'DANGER'
-                      ? 'bg-gradient-to-r from-rose-500/20 to-amber-500/20 hover:from-rose-500/30 border border-rose-500/40 text-rose-200'
-                      : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 text-black shadow-amber-500/25'
-                }`}
-              >
-                {intentTab === 'HOLD' ? <Target weight="duotone" className="w-4 h-4" /> : intentTab === 'DANGER' ? <Clock className="w-4 h-4" /> : <Robot weight="duotone" className="w-4 h-4" />}
-                <span>{intentTab === 'HOLD' ? 'Operar Spot Protegido' : intentTab === 'DANGER' ? 'Configurar Límite en Terminal' : 'Lanzar Grid Bot 1-Clic'}</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── 3. MAIN CONTENT: OPPORTUNITY CARDS GRID ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
-        {filteredAndSorted.map((item) => {
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setIntentTab('ALL');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs transition-all cursor-pointer shadow-lg active:scale-95 flex items-center gap-2"
+                >
+                  <ArrowClockwise weight="bold" className="w-4 h-4" />
+                  <span>Restablecer Filtros y Búsqueda</span>
+                </button>
+              </div>
+            ) : (
+              filteredAndSorted.map((item) => {
           const isPos = item.change24h >= 0;
           const strategy = item.strategy;
 
@@ -571,8 +617,11 @@ export const MarketRadarView = ({
               </div>
             </div>
           );
-        })}
+        })
+        )}
       </div>
+      </>
+      )}
 
       {/* ─── 4. DETAIL INSPECTION POPUP MODAL ("¿POR QUÉ ESTÁ AQUÍ?") ─── */}
       {selectedCoinForDetail && (

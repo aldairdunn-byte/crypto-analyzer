@@ -1,0 +1,69 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-HEATMAP-002",
+  "epic_id": "EPC-HEATMAP",
+  "goal": "Implement interactive crypto heatmap view and unify radar navigation eliminating duplicate filter collisions",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/components/CryptoHeatmapView.tsx",
+      "frontend/src/components/MarketRadarView.tsx"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": [
+      "frontend/src/App.tsx",
+      "frontend/src/components/HeaderTickerBar.tsx",
+      "frontend/src/components/BottomNavMobile.tsx"
+    ]
+  },
+
+  "depends_on": ["TSK-TREEMAP-001"],
+
+  "contracts": {
+    "types_file": "frontend/src/components/CryptoHeatmapView.tsx",
+    "function_signatures": [
+      "export interface CryptoHeatmapViewProps { livePrices: Record<string, number>; allCoinsStats: Record<string, CoinStats24h>; currencyMode: CurrencyMode; penRate: number; onSelectCoin: (coinId: string) => void; }",
+      "export const CryptoHeatmapView: React.FC<CryptoHeatmapViewProps>"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Implement CryptoHeatmapView with ResizeObserver, human categorization, and interactive tiles",
+    "Refactor MarketRadarView to remove conflicting sector subfilter and introduce view toggle [Tarjetas | Mapa de Calor]",
+    "Add fallback empty state in MarketRadarView for unmatched search queries",
+    "Connect navigation in App.tsx, HeaderTickerBar.tsx, and BottomNavMobile.tsx",
+    "Run verification suite: tests, linter, typecheck, build"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/*.test.js",
+    "lint": "npx oxlint",
+    "typecheck": "npx tsc --noEmit"
+  },
+
+  "acceptance_criteria": [
+    "expect(noOverlappingFilterBug).toBe(true)",
+    "expect(emptyStateRendersWhenQueryHasNoMatch).toBe(true)",
+    "expect(clickingTileNavigatesToTerminal).toBe(true)"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "Zero empty screen glitches when exploring market opportunities"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/components/CryptoHeatmapView.tsx frontend/src/components/MarketRadarView.tsx frontend/src/App.tsx frontend/src/components/HeaderTickerBar.tsx frontend/src/components/BottomNavMobile.tsx"
+  }
+}

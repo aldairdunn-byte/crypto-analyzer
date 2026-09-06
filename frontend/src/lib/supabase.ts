@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://jntbjrokfbdrbppujeql.supabase.co';
+const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL || 'https://jntbjrokfbdrbppujeql.supabase.co';
 const supabaseKey =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  import.meta.env?.VITE_SUPABASE_ANON_KEY ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpudGJqcm9rZmJkcmJwcHVqZXFsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1MDM3NjksImV4cCI6MjEwMzA3OTc2OX0.D4WfJ8lhCT8tx2UahKPU7h2NobwlCxDDuYvJ6cX60lU';
 
 export const supabase = createClient(supabaseUrl, supabaseKey);

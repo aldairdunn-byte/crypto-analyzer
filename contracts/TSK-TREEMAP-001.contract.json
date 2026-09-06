@@ -1,0 +1,70 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-TREEMAP-001",
+  "epic_id": "EPC-HEATMAP",
+  "goal": "Implement mathematical squarified treemap layout engine with hierarchical grouping and aspect ratio minimization",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/treemapLayout.ts",
+      "frontend/src/__tests__/treemap_layout.test.js"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": [],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/treemapLayout.ts",
+    "function_signatures": [
+      "export interface TreemapNode<T> { id: string; value: number; data: T; }",
+      "export interface TreemapRect<T> { id: string; x: number; y: number; width: number; height: number; data: T; }",
+      "export interface TreemapGroup<T> { id: string; label: string; nodes: TreemapNode<T>[]; totalValue: number; }",
+      "export interface TreemapGroupRect<T> { id: string; label: string; x: number; y: number; width: number; height: number; totalValue: number; items: TreemapRect<T>[]; }",
+      "export function computeSquarifiedTreemap<T>(nodes: TreemapNode<T>[], width: number, height: number): TreemapRect<T>[]",
+      "export function computeHierarchicalTreemap<T>(groups: TreemapGroup<T>[], width: number, height: number, groupHeaderHeight?: number): TreemapGroupRect<T>[]"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit test suite in frontend/src/__tests__/treemap_layout.test.js verifying area conservation, non-overlap, and positive coordinates",
+    "Confirm tests fail with node --test",
+    "Implement computeSquarifiedTreemap and computeHierarchicalTreemap in frontend/src/lib/treemapLayout.ts",
+    "Confirm tests pass with node --test",
+    "Verify with npx tsc --noEmit and oxlint"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/treemap_layout.test.js",
+    "lint": "npx oxlint",
+    "typecheck": "npx tsc --noEmit"
+  },
+
+  "acceptance_criteria": [
+    "expect(totalArea).toBeCloseTo(containerWidth * containerHeight, 1)",
+    "expect(allRectsWithinBounds).toBe(true)",
+    "expect(allDimensionsPositive).toBe(true)",
+    "expect(hierarchicalGroupsMatchTotalValue).toBe(true)"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "git diff --name-only shows only target_files"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/treemapLayout.ts frontend/src/__tests__/treemap_layout.test.js"
+  }
+}
