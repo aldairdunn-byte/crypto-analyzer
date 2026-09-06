@@ -37,6 +37,7 @@ import {
   sendTelegramSpotTrade,
 } from '../lib/telegram';
 import { soundFx } from '../lib/soundFx';
+import { calculateGridLiquidationRefund } from '../lib/portfolioMath';
 
 export interface ToastItem {
   id: string;
@@ -186,6 +187,12 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     botsRef.current = bots;
   }, [bots]);
 
+  // Synchronous ref for trades to prevent async closure desynchronization
+  const tradesRef = useRef<TradeRow[]>(trades);
+  useEffect(() => {
+    tradesRef.current = trades;
+  }, [trades]);
+
   // Active Grid Orders with persistence
   const [activeGridOrders, setActiveGridOrders] = useState<GridLevelItem[]>(() => {
     try {
@@ -195,6 +202,12 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return [];
     }
   });
+
+  // Synchronous ref for active grid orders
+  const activeGridOrdersRef = useRef<GridLevelItem[]>(activeGridOrders);
+  useEffect(() => {
+    activeGridOrdersRef.current = activeGridOrders;
+  }, [activeGridOrders]);
 
   useEffect(() => {
     try {
@@ -617,51 +630,44 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const executionPrice = Math.max(slPrice * 0.998, bLivePrice);
 
         // Stop Loss triggered!
-        // 1. Cancel and remove active grid orders for this bot
-        const botOrders = activeGridOrders.filter((o) => o.botId === bot.id);
-        const unspentCash = botOrders
-          .filter((o) => o.side === 'BUY' && o.status === 'PENDING')
-          .reduce((sum, o) => sum + (o.allocationUsd || 0), 0);
+        // 1. Calculate synchronous liquidation and cash refund using current sync refs
+        const refundResult = calculateGridLiquidationRefund(
+          activeGridOrdersRef.current,
+          tradesRef.current,
+          bot.id,
+          executionPrice,
+          0.001,
+          bot.capital_allocated_usd
+        );
 
+        // 2. Remove active grid orders for this bot
         setActiveGridOrders((prev) => prev.filter((o) => o.botId !== bot.id));
 
-        // 2. Liquidate open buy positions at market execution price
-        let liquidatedNetUsdt = 0;
+        // 3. Close open trades synchronously
+        const closedTradesMap = new Map(refundResult.closedTrades.map((t) => [t.tradeId, t]));
         setTrades((prevTrades) => {
           return prevTrades.map((t) => {
-            if (t.status === 'OPEN' && t.bot_id === bot.id) {
-              const tradeUnits = t.units || 0;
-              const grossProceeds = tradeUnits * executionPrice;
-              const fee = grossProceeds * 0.001; // 0.10% taker fee on market stop liquidation
-              const netProceeds = grossProceeds - fee;
-              liquidatedNetUsdt += netProceeds;
-              const costBasis = t.amount_usd || (tradeUnits * t.entry_price);
-              const grossPnl = grossProceeds - costBasis;
-              const realPnl = netProceeds - costBasis;
-
+            const update = closedTradesMap.get(t.id);
+            if (update) {
               return {
                 ...t,
                 status: 'CLOSED' as const,
-                exit_price: executionPrice,
-                fee_usd: Number(fee.toFixed(4)),
-                fee_rate: 0.001,
-                gross_pnl_usd: Number(grossPnl.toFixed(2)),
-                pnl_usd: Number(realPnl.toFixed(2)),
+                exit_price: update.exitPrice,
+                fee_usd: update.feeUsd,
+                fee_rate: update.feeRate,
+                gross_pnl_usd: update.grossPnlUsd,
+                pnl_usd: update.pnlUsd,
+                pnl_pct: update.pnlPct,
               };
             }
             return t;
           });
         });
 
-        // 3. Return remaining capital (unspent allocation + liquidated positions)
-        const totalRefund = Number(
-          (unspentCash + (liquidatedNetUsdt > 0 ? liquidatedNetUsdt : 0)).toFixed(2)
-        );
-        const safeRefund = totalRefund > 0 ? totalRefund : Number(((bot.capital_allocated_usd || 0) * 0.90).toFixed(2));
+        // 4. Return exact calculated capital (unspent + liquidated positions)
+        setUsdtCash((prev) => Number((prev + refundResult.totalRefund).toFixed(2)));
 
-        setUsdtCash((prev) => prev + safeRefund);
-
-        // 4. Mark bot as STOPPED
+        // 5. Mark bot as STOPPED
         setBots((prev) =>
           prev.map((b) => (b.id === bot.id ? { ...b, status: 'STOPPED' as const } : b))
         );
@@ -671,7 +677,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         addToast({
           type: 'WARNING',
           title: `🚨 Stop Loss Ejecutado: ${bot.name}`,
-          message: `Precio cayó a $${executionPrice.toFixed(2)} (Stop Loss: $${slPrice.toFixed(2)}). Bot liquidado a mercado para proteger capital. $${safeRefund.toFixed(2)} USDT devueltos a disponible.`,
+          message: `Precio cayó a $${executionPrice.toFixed(2)} (Stop Loss: $${slPrice.toFixed(2)}). Capital rescatado: $${refundResult.totalRefund.toFixed(2)} USDT devueltos a disponible (Liquidado: $${refundResult.liquidatedNetUsdt.toFixed(2)} USDT, No gastado: $${refundResult.unspentCash.toFixed(2)} USDT).`,
         });
 
         pushNotification({
@@ -685,8 +691,8 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           badgeBg: 'bg-rose-500/10',
           badgeBorder: 'border-rose-500/30',
           headline: `Stop Loss Ejecutado: ${bot.name}`,
-          plainExplanation: `El precio rompió el soporte configurado en $${slPrice.toFixed(2)}. Mallas canceladas y capital protegido en $${safeRefund.toFixed(2)} USDT.`,
-          highlightText: `$${safeRefund.toFixed(2)} USDT`,
+          plainExplanation: `El precio rompió el soporte configurado en $${slPrice.toFixed(2)}. Mallas canceladas y capital protegido en $${refundResult.totalRefund.toFixed(2)} USDT.`,
+          highlightText: `$${refundResult.totalRefund.toFixed(2)} USDT`,
           actionText: 'Ver Portafolio',
           actionCoinId: targetCoin.id,
           timestamp: Date.now(),
@@ -1082,14 +1088,49 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!targetBot) return;
 
     if (newStatus === 'STOPPED' && targetBot.status !== 'STOPPED') {
-      // Reembolsar capital a saldo disponible al detener el bot
-      setUsdtCash((prev) => prev + (targetBot.capital_allocated_usd || 0));
-      // Cancelar y purgar todas las órdenes del grid asociadas a este bot
+      const curMarketPrice = livePrices[targetBot.coin_id] || (targetBot.coin_id === activeCoin ? currentPrice : 0) || allCoinsStats[targetBot.coin_id]?.price || getDynamicCoinInfo(targetBot.coin_id).basePrice;
+      const refundResult = calculateGridLiquidationRefund(
+        activeGridOrdersRef.current,
+        tradesRef.current,
+        botId,
+        curMarketPrice,
+        0.001,
+        targetBot.capital_allocated_usd
+      );
+
+      // Cancel and purge all active grid orders associated with this bot
       setActiveGridOrders((prev) => prev.filter((o) => o.botId !== botId));
+
+      // Close open trades for this bot synchronously
+      const closedTradesMap = new Map(refundResult.closedTrades.map((t) => [t.tradeId, t]));
+      if (closedTradesMap.size > 0) {
+        setTrades((prevTrades) =>
+          prevTrades.map((t) => {
+            const update = closedTradesMap.get(t.id);
+            if (update) {
+              return {
+                ...t,
+                status: 'CLOSED' as const,
+                exit_price: update.exitPrice,
+                fee_usd: update.feeUsd,
+                fee_rate: update.feeRate,
+                gross_pnl_usd: update.grossPnlUsd,
+                pnl_usd: update.pnlUsd,
+                pnl_pct: update.pnlPct,
+              };
+            }
+            return t;
+          })
+        );
+      }
+
+      // Credit exact refunded capital (unspent + liquidated positions)
+      setUsdtCash((prev) => Number((prev + refundResult.totalRefund).toFixed(2)));
+
       addToast({
         type: 'INFO',
         title: `Bot Detenido: ${targetBot.name}`,
-        message: `Mallas canceladas y $${targetBot.capital_allocated_usd.toFixed(2)} USDT devueltos a disponible.`,
+        message: `Mallas canceladas y posiciones liquidadas a mercado ($${curMarketPrice.toFixed(2)}). $${refundResult.totalRefund.toFixed(2)} USDT devueltos a disponible.`,
       });
     } else if (newStatus === 'ACTIVE' && targetBot.status === 'STOPPED') {
       // Validar si hay saldo suficiente al reactivar
@@ -1156,15 +1197,47 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const handleDeleteBot = async (botId: string) => {
     const targetBot = bots.find((b) => b.id === botId);
     if (targetBot && (targetBot.status === 'ACTIVE' || targetBot.status === 'PAUSED')) {
-      setUsdtCash((prev) => prev + (targetBot.capital_allocated_usd || 0));
+      const curMarketPrice = livePrices[targetBot.coin_id] || (targetBot.coin_id === activeCoin ? currentPrice : 0) || allCoinsStats[targetBot.coin_id]?.price || getDynamicCoinInfo(targetBot.coin_id).basePrice;
+      const refundResult = calculateGridLiquidationRefund(
+        activeGridOrdersRef.current,
+        tradesRef.current,
+        botId,
+        curMarketPrice,
+        0.001,
+        targetBot.capital_allocated_usd
+      );
+
+      const closedTradesMap = new Map(refundResult.closedTrades.map((t) => [t.tradeId, t]));
+      if (closedTradesMap.size > 0) {
+        setTrades((prevTrades) =>
+          prevTrades.map((t) => {
+            const update = closedTradesMap.get(t.id);
+            if (update) {
+              return {
+                ...t,
+                status: 'CLOSED' as const,
+                exit_price: update.exitPrice,
+                fee_usd: update.feeUsd,
+                fee_rate: update.feeRate,
+                gross_pnl_usd: update.grossPnlUsd,
+                pnl_usd: update.pnlUsd,
+                pnl_pct: update.pnlPct,
+              };
+            }
+            return t;
+          })
+        );
+      }
+
+      setUsdtCash((prev) => Number((prev + refundResult.totalRefund).toFixed(2)));
       addToast({
         type: 'INFO',
         title: `Bot Eliminado: ${targetBot.name}`,
-        message: `Mallas canceladas y $${targetBot.capital_allocated_usd.toFixed(2)} USDT devueltos a disponible.`,
+        message: `Mallas canceladas y posiciones liquidadas. $${refundResult.totalRefund.toFixed(2)} USDT devueltos a disponible.`,
       });
     }
 
-      setBots((prev) => prev.filter((b) => b.id !== botId));
+    setBots((prev) => prev.filter((b) => b.id !== botId));
     setActiveGridOrders((prev) => prev.filter((o) => o.botId !== botId));
 
     if (user) {
@@ -1183,8 +1256,49 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return;
     }
 
-    const totalRefund = activeBots.reduce((sum, b) => sum + (b.capital_allocated_usd || 0), 0);
-    setUsdtCash((prev) => prev + totalRefund);
+    let grandTotalRefund = 0;
+    const allClosedTradesMap = new Map<string, any>();
+
+    for (const b of activeBots) {
+      const curP = livePrices[b.coin_id] || (b.coin_id === activeCoin ? currentPrice : 0) || allCoinsStats[b.coin_id]?.price || getDynamicCoinInfo(b.coin_id).basePrice;
+      const refResult = calculateGridLiquidationRefund(
+        activeGridOrdersRef.current,
+        tradesRef.current,
+        b.id,
+        curP,
+        0.001,
+        b.capital_allocated_usd
+      );
+      grandTotalRefund += refResult.totalRefund;
+      for (const ct of refResult.closedTrades) {
+        allClosedTradesMap.set(ct.tradeId, ct);
+      }
+    }
+
+    grandTotalRefund = Number(grandTotalRefund.toFixed(2));
+    setUsdtCash((prev) => Number((prev + grandTotalRefund).toFixed(2)));
+
+    if (allClosedTradesMap.size > 0) {
+      setTrades((prevTrades) =>
+        prevTrades.map((t) => {
+          const update = allClosedTradesMap.get(t.id);
+          if (update) {
+            return {
+              ...t,
+              status: 'CLOSED' as const,
+              exit_price: update.exitPrice,
+              fee_usd: update.feeUsd,
+              fee_rate: update.feeRate,
+              gross_pnl_usd: update.grossPnlUsd,
+              pnl_usd: update.pnlUsd,
+              pnl_pct: update.pnlPct,
+            };
+          }
+          return t;
+        })
+      );
+    }
+
     const activeBotIds = new Set(activeBots.map((b) => b.id));
     setActiveGridOrders((prev) => prev.filter((o) => !o.botId || !activeBotIds.has(o.botId)));
     setBots((prev) =>
@@ -1198,9 +1312,9 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     addToast({
       type: 'WARNING',
       title: 'Parada de Emergencia',
-      message: `Se han detenido ${activeBots.length} bots. $${totalRefund.toFixed(2)} USDT reembolsados a disponible.`,
+      message: `Se han detenido ${activeBots.length} bots. $${grandTotalRefund.toFixed(2)} USDT devueltos a disponible tras liquidación a mercado.`,
     });
-  }, [bots, user, setUsdtCash, addToast]);
+  }, [bots, user, setUsdtCash, addToast, livePrices, activeCoin, currentPrice, allCoinsStats]);
 
   // Real Spot Execution Engine (Buy / Sell, Market & Limit)
   const executeSpotTrade = useCallback(async (trade: {

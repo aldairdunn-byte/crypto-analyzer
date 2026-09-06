@@ -1,0 +1,65 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-BOT-002",
+  "epic_id": "EPC-ENGINE",
+  "goal": "Integrate synchronous grid liquidation refund calculation to prevent capital loss on Stop Loss and bot termination",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/contexts/BotEngineContext.tsx",
+      "frontend/src/__tests__/bot_engine_integration.test.js"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": [
+    "TSK-MATH-001"
+  ],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/portfolioMath.ts",
+    "function_signatures": [
+      "export function calculateGridLiquidationRefund(botOrders: MinimalGridOrder[], allTrades: MinimalTrade[], botId: string, executionPrice: number, feeRate?: number, allocatedCapital?: number): GridLiquidationResult"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write integration test harness in frontend/src/__tests__/bot_engine_integration.test.js",
+    "Confirm tests fail with node --test",
+    "Integrate calculateGridLiquidationRefund in BotEngineContext.tsx Stop Loss engine and status handlers",
+    "Confirm tests pass with node --test",
+    "Verify with npx tsc --noEmit and build"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/bot_engine_integration.test.js",
+    "lint": "npx oxlint",
+    "typecheck": "npx tsc --noEmit"
+  },
+
+  "acceptance_criteria": [
+    "expect(result.unspentCash + result.liquidatedNetUsdt).toBe(result.totalRefund)",
+    "expect(result.liquidatedNetUsdt).toBeGreaterThan(0)",
+    "expect(result.closedTrades.every(t => t.status === 'CLOSED')).toBe(true)"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "Zero phantom capital loss during grid stop loss liquidation"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/contexts/BotEngineContext.tsx frontend/src/__tests__/bot_engine_integration.test.js"
+  }
+}

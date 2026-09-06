@@ -6,6 +6,7 @@
  * - 24H Daily PnL (Closed trades in last 24h + 24h Spot Market delta)
  * - 7D Weekly PnL (Closed trades in last 7 days + 7d Spot Market delta)
  * - All-Time PnL (All closed trades + spot unrealized profit from cost basis)
+ * - Synchronous Grid Liquidation and Cash Recovery Invariants
  */
 
 import { type TradeRow } from './supabase';
@@ -48,7 +49,6 @@ export function calculateRealisticPortfolioPerformance(
   let grossRealizedProfitUsd = 0;
 
   trades.forEach((t) => {
-    // Determine fee: if t.fee_usd is defined, use it. Otherwise fallback for legacy trades:
     const fee = typeof t.fee_usd === 'number'
       ? t.fee_usd
       : ((t.amount_usd || 0) * (t.side === 'SELL' ? 0.002 : 0.001));
@@ -95,7 +95,6 @@ export function calculateRealisticPortfolioPerformance(
     const stats = allCoinsStats[h.coinId];
     const change24hPct = stats?.change24h ?? 0;
     if (change24hPct !== 0) {
-      // delta = currentVal - (currentVal / (1 + change24hPct / 100))
       const factor = change24hPct / 100;
       const val24hAgo = currentVal / (1 + factor);
       spotDelta24h += (currentVal - val24hAgo);
@@ -138,5 +137,126 @@ export function calculateRealisticPortfolioPerformance(
     spotDelta24h: Number(spotDelta24h.toFixed(2)),
     spotDelta7d: Number(spotDelta7d.toFixed(2)),
     totalSpotUnrealizedPnl: Number(totalSpotUnrealizedPnl.toFixed(2)),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Synchronous Ledger & Grid Bot Liquidation Engine
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ClosedTradeUpdate {
+  tradeId: string;
+  exitPrice: number;
+  feeUsd: number;
+  feeRate: number;
+  grossPnlUsd: number;
+  pnlUsd: number;
+  pnlPct: number;
+}
+
+export interface GridLiquidationResult {
+  unspentCash: number;
+  liquidatedGrossUsdt: number;
+  totalFeeUsdt: number;
+  liquidatedNetUsdt: number;
+  totalRefund: number;
+  closedTrades: ClosedTradeUpdate[];
+}
+
+export interface MinimalGridOrder {
+  botId?: string;
+  side?: 'BUY' | 'SELL';
+  status?: 'PENDING' | 'FILLED';
+  allocationUsd?: number;
+}
+
+export interface MinimalTrade {
+  id: string;
+  bot_id?: string;
+  status?: 'OPEN' | 'CLOSED' | 'CANCELLED' | 'PENDING';
+  units?: number;
+  entry_price?: number;
+  amount_usd?: number;
+  fee_usd?: number;
+}
+
+/**
+ * Calculates synchronous liquidation refund for a Grid Bot.
+ * 
+ * Invariant: totalRefund = unspentCash + liquidatedNetUsdt
+ * When allocatedCapital is provided: unspentCash = allocatedCapital - costBasisOfOpenTrades
+ * 
+ * @param botOrders Active grid orders for the current session
+ * @param allTrades Current trades ledger (from sync ref or state)
+ * @param botId ID of the bot being liquidated/stopped
+ * @param executionPrice Realistic market execution price
+ * @param feeRate Exchange taker fee (defaults to 0.001 = 0.10%)
+ * @param allocatedCapital Total initial capital assigned to the bot (e.g. from bot.capital_allocated_usd)
+ */
+export function calculateGridLiquidationRefund(
+  botOrders: MinimalGridOrder[],
+  allTrades: MinimalTrade[],
+  botId: string,
+  executionPrice: number,
+  feeRate: number = 0.001,
+  allocatedCapital?: number
+): GridLiquidationResult {
+  let liquidatedGrossUsdt = 0;
+  let totalFeeUsdt = 0;
+  let liquidatedNetUsdt = 0;
+  let openTradesCostBasis = 0;
+  const closedTrades: ClosedTradeUpdate[] = [];
+
+  for (const t of allTrades) {
+    if (t.bot_id === botId && t.status === 'OPEN') {
+      const units = Number(t.units) || 0;
+      const costBasis = Number(t.amount_usd) || (units * (Number(t.entry_price) || executionPrice));
+      openTradesCostBasis += costBasis;
+
+      if (units > 0 && executionPrice > 0) {
+        const gross = units * executionPrice;
+        const fee = gross * feeRate;
+        const net = gross - fee;
+        const grossPnl = gross - costBasis;
+        const netPnl = net - costBasis;
+        const pnlPct = costBasis > 0 ? (netPnl / costBasis) * 100 : 0;
+
+        liquidatedGrossUsdt += gross;
+        totalFeeUsdt += fee;
+        liquidatedNetUsdt += net;
+
+        closedTrades.push({
+          tradeId: t.id,
+          exitPrice: Number(executionPrice.toFixed(8)),
+          feeUsd: Number(fee.toFixed(4)),
+          feeRate,
+          grossPnlUsd: Number(grossPnl.toFixed(2)),
+          pnlUsd: Number(netPnl.toFixed(2)),
+          pnlPct: Number(pnlPct.toFixed(2)),
+        });
+      }
+    }
+  }
+
+  let unspentCash = 0;
+  if (allocatedCapital !== undefined && allocatedCapital > 0) {
+    unspentCash = Math.max(0, allocatedCapital - openTradesCostBasis);
+  } else {
+    unspentCash = botOrders
+      .filter((o) => o.botId === botId && o.side === 'BUY' && o.status === 'PENDING')
+      .reduce((sum, o) => sum + (Number(o.allocationUsd) || 0), 0);
+  }
+
+  const roundedUnspent = Number(unspentCash.toFixed(2));
+  const roundedLiquidatedNet = Number(liquidatedNetUsdt.toFixed(2));
+  const totalRefund = Number((roundedUnspent + roundedLiquidatedNet).toFixed(2));
+
+  return {
+    unspentCash: roundedUnspent,
+    liquidatedGrossUsdt: Number(liquidatedGrossUsdt.toFixed(2)),
+    totalFeeUsdt: Number(totalFeeUsdt.toFixed(4)),
+    liquidatedNetUsdt: roundedLiquidatedNet,
+    totalRefund,
+    closedTrades,
   };
 }

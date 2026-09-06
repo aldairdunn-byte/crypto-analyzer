@@ -1,0 +1,63 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-MATH-001",
+  "epic_id": "EPC-ENGINE",
+  "goal": "Implement synchronous grid liquidation ledger calculation for capital preservation",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/portfolioMath.ts",
+      "frontend/src/__tests__/portfolio_math.test.js"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": [],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/portfolioMath.ts",
+    "function_signatures": [
+      "export function calculateGridLiquidationRefund(botOrders: MinimalGridOrder[], allTrades: MinimalTrade[], botId: string, executionPrice: number, feeRate?: number, allocatedCapital?: number): GridLiquidationResult"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit test suite in frontend/src/__tests__/portfolio_math.test.js",
+    "Confirm tests fail with node --test",
+    "Implement calculateGridLiquidationRefund in frontend/src/lib/portfolioMath.ts",
+    "Confirm tests pass with node --test",
+    "Verify with npx tsc --noEmit and linter"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/portfolio_math.test.js",
+    "lint": "npx oxlint",
+    "typecheck": "npx tsc --noEmit"
+  },
+
+  "acceptance_criteria": [
+    "expect(result.totalRefund).toBe(Number((result.unspentCash + result.liquidatedNetUsdt).toFixed(2)))",
+    "expect(result.liquidatedNetUsdt).toBeGreaterThan(0)",
+    "expect(result.closedTrades.length).toBe(expectedCount)"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "Zero financial leakage on liquidation calculation"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/portfolioMath.ts frontend/src/__tests__/portfolio_math.test.js"
+  }
+}
