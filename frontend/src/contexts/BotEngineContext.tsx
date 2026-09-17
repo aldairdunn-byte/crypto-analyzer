@@ -1806,6 +1806,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         await Promise.all([
           supabase.from('bot_trades').delete().eq('user_id', user.id),
           supabase.from('bots').delete().eq('user_id', user.id),
+          supabase.from('user_portfolios').delete().eq('user_id', user.id),
           supabase.from('user_profiles').update({ demo_usdt_balance: 1000.0 }).eq('id', user.id),
         ]);
       } catch (err) {

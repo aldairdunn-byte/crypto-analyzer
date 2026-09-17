@@ -205,6 +205,7 @@ export const AssetsView = ({
   // Total Portfolio Net Worth
   const totalPortfolioValueUsd = usdtCash + totalBotsCapitalUsd + totalSpotValueUsd;
   const totalPortfolioValuePen = totalPortfolioValueUsd * penRate;
+  const maxDemoCashUsd = Math.max(0, Number((1000 - totalBotsCapitalUsd - totalSpotValueUsd).toFixed(2)));
 
   // Realized profit total from closed trades
   const totalClosedTradesProfit = trades
@@ -331,6 +332,10 @@ export const AssetsView = ({
     e.preventDefault();
     if (inputCash < 0) {
       alert('El saldo en USDT no puede ser negativo.');
+      return;
+    }
+    if (inputCash > maxDemoCashUsd) {
+      alert(`Saldo máximo disponible: $${maxDemoCashUsd.toFixed(2)} USDT. Ya tienes $${totalBotsCapitalUsd.toFixed(2)} en bots y $${totalSpotValueUsd.toFixed(2)} en spot.`);
       return;
     }
     onSetUsdtCash(inputCash);
