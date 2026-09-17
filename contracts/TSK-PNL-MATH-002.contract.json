@@ -1,0 +1,66 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-PNL-002",
+  "epic_id": "EPC-PORTFOLIO",
+  "goal": "Align 24H and All-Time PnL calculations by removing synthetic 24h market drift on new positions and eliminating residual dust in portfolio state",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/portfolioMath.ts",
+      "frontend/src/contexts/PortfolioContext.tsx"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": ["TSK-RESET-001"],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/portfolioMath.ts",
+    "interfaces": "export interface PortfolioPerformanceMetrics { pnl24hUsd: number; pnl24hPct: number; pnl7dUsd: number; pnl7dPct: number; allTimePnlUsd: number; allTimePnlPct: number; realizedProfit24h: number; realizedProfit7d: number; realizedProfitAllTime: number; totalFeesPaidUsd: number; grossRealizedProfitUsd: number; spotDelta24h: number; spotDelta7d: number; totalSpotUnrealizedPnl: number; }",
+    "function_signatures": [
+      "calculateRealisticPortfolioPerformance(trades?: TradeRow[], holdings?: Record<string, CryptoHolding>, livePrices?: Record<string, number>, allCoinsStats?: Record<string, any>, virtualUsdt?: number): PortfolioPerformanceMetrics"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit test in frontend/src/__tests__/portfolio_pnl_consistency.test.js",
+    "Run node --test to verify failure",
+    "Update portfolioMath.ts to bound 24h delta to real position entry price and UTC calendar boundary",
+    "Update PortfolioContext.tsx to clear localHoldings state on demo reset",
+    "Run node --test to verify pass",
+    "Verify TypeScript build with tsc -b"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/portfolio_pnl_consistency.test.js",
+    "lint": "npx oxlint",
+    "typecheck": "npm run build --prefix frontend"
+  },
+
+  "acceptance_criteria": [
+    "calculateRealisticPortfolioPerformance outputs pnl24hUsd 0.00 when holdings entry price equals current price and trades is empty",
+    "pnl24hUsd matches allTimePnlUsd for positions created at current market price",
+    "closed trades with negative pnl_usd subtract from realizedProfit24h and realizedProfitAllTime",
+    "resetDemoBalance clears localHoldings to empty object in state and storage"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "Pnl across 24H and Todo tabs evaluates to identical 0.00 on newly initialized account"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/portfolioMath.ts frontend/src/contexts/PortfolioContext.tsx"
+  }
+}

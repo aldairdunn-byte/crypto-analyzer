@@ -40,7 +40,7 @@ export function calculateRealisticPortfolioPerformance(
   trades: TradeRow[] = [],
   holdings: Record<string, CryptoHolding> = {},
   livePrices: Record<string, number> = {},
-  allCoinsStats: Record<string, any> = {},
+  _allCoinsStats: Record<string, any> = {},
   virtualUsdt: number = 0
 ): PortfolioPerformanceMetrics {
   const now = Date.now();
@@ -67,21 +67,21 @@ export function calculateRealisticPortfolioPerformance(
       grossRealizedProfitUsd += grossPnl;
       realizedProfitAllTime += netPnl;
 
-      const tradeTime = t.created_at ? new Date(t.created_at).getTime() : now;
-      if (!isNaN(tradeTime)) {
-        if (tradeTime >= cutoff24h) {
-          realizedProfit24h += netPnl;
-        }
-        if (tradeTime >= cutoff7d) {
-          realizedProfit7d += netPnl;
+      if (t.created_at) {
+        const tradeTime = new Date(t.created_at).getTime();
+        if (!isNaN(tradeTime) && tradeTime <= now) {
+          if (tradeTime >= cutoff24h) {
+            realizedProfit24h += netPnl;
+          }
+          if (tradeTime >= cutoff7d) {
+            realizedProfit7d += netPnl;
+          }
         }
       }
     }
   });
 
-  // 2. Spot Holdings Valuation & Periodic Delta
-  let spotDelta24h = 0;
-  let spotDelta7d = 0;
+  // 2. Spot Holdings Valuation & Real Floating Unrealized Delta
   let totalSpotUnrealizedPnl = 0;
 
   Object.values(holdings).forEach((h) => {
@@ -93,27 +93,15 @@ export function calculateRealisticPortfolioPerformance(
     const currentVal = h.units * currentPrice;
     const investedVal = h.units * (h.avgEntryPrice > 0 ? h.avgEntryPrice : currentPrice);
 
-    // Unrealized floating PnL from entry
+    // Real floating PnL from entry basis
     const floatingPnl = currentVal - investedVal;
     totalSpotUnrealizedPnl += floatingPnl;
-
-    // Estimate 24H Spot Delta using 24h market change %
-    const stats = allCoinsStats[h.coinId];
-    const change24hPct = stats?.change24h ?? 0;
-    if (change24hPct !== 0) {
-      const factor = change24hPct / 100;
-      const val24hAgo = currentVal / (1 + factor);
-      spotDelta24h += (currentVal - val24hAgo);
-    }
-
-    // Estimate 7D Spot Delta using 7d market change %
-    const change7dPct = stats?.change7d ?? (change24hPct * 1.35);
-    if (change7dPct !== 0) {
-      const factor7d = change7dPct / 100;
-      const val7dAgo = currentVal / (1 + factor7d);
-      spotDelta7d += (currentVal - val7dAgo);
-    }
   });
+
+  // Real unrealized PnL is anchored to actual entry price.
+  // Synthetic external 24h ticker drift is excluded to prevent attributing past market changes to newly opened positions.
+  const spotDelta24h = totalSpotUnrealizedPnl;
+  const spotDelta7d = totalSpotUnrealizedPnl;
 
   // 3. Combined PnL Totals
   const pnl24hUsd = Number((realizedProfit24h + spotDelta24h).toFixed(2));

@@ -41,7 +41,10 @@ const PortfolioContext = createContext<PortfolioContextType | undefined>(undefin
 const loadLocalHoldingsForUser = (userId?: string | null): Record<string, { units: number; avgEntryPrice: number }> => {
   try {
     const saved = getScopedItem('crypto_analyzer_demo_holdings', userId, { legacyFallback: true });
-    const base: Record<string, { units: number; avgEntryPrice: number }> = saved ? JSON.parse(saved) : {};
+    if (!saved || saved === '{}') {
+      return {};
+    }
+    const base: Record<string, { units: number; avgEntryPrice: number }> = JSON.parse(saved);
 
     const savedTrades = getScopedItem('crypto_analyzer_trades', userId, { legacyFallback: true });
     if (savedTrades) {
@@ -220,9 +223,25 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   useEffect(() => {
     try {
-      setScopedItem('crypto_analyzer_demo_holdings', JSON.stringify(localHoldings), user?.id);
+      if (Object.keys(localHoldings).length === 0) {
+        removeScopedItem('crypto_analyzer_demo_holdings', user?.id);
+      } else {
+        setScopedItem('crypto_analyzer_demo_holdings', JSON.stringify(localHoldings), user?.id);
+      }
     } catch {}
   }, [localHoldings, user?.id]);
+
+  useEffect(() => {
+    const handleAccountReset = () => {
+      setLocalHoldings({});
+      const savedDemoCash = getScopedItem('demo_usdt_cash', user?.id, { legacyFallback: true });
+      setUsdtCashState(savedDemoCash !== null ? parseFloat(savedDemoCash) : 1000.0);
+    };
+    window.addEventListener('crypto_analyzer_reset', handleAccountReset);
+    return () => {
+      window.removeEventListener('crypto_analyzer_reset', handleAccountReset);
+    };
+  }, [user?.id]);
 
   const addOrUpdateHolding = useCallback((coinId: string, units: number, avgPrice: number) => {
     const coin = getDynamicCoinInfo(coinId);
@@ -397,6 +416,10 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setLocalHoldings({});
     setScopedItem('demo_usdt_cash', '1000', user?.id);
     removeScopedItem('crypto_analyzer_demo_holdings', user?.id);
+    removeScopedItem('crypto_analyzer_trades', user?.id);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('crypto_analyzer_reset'));
+    }
     if (user) {
       await updateDemoBalance(defaultAmount);
     }
