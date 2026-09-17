@@ -33,6 +33,12 @@ import {
   DEFAULT_TELEGRAM_CHAT_ID,
 } from '../lib/telegram';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  getNativeNotificationPermission,
+  requestNativeNotificationPermission,
+  showNativeNotification,
+  subscribeToRenderPush,
+} from '../lib/pwaNotifications';
 
 interface SettingsViewProps {
   onResetDemoBalance: () => void;
@@ -49,6 +55,11 @@ export const SettingsView = ({ onResetDemoBalance }: SettingsViewProps) => {
   const [isSendingTest, setIsSendingTest] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [copiedChatId, setCopiedChatId] = useState<boolean>(false);
+  const [nativePermission, setNativePermission] = useState<NotificationPermission | 'unsupported'>(() => {
+    if (typeof window === 'undefined') return 'unsupported';
+    return getNativeNotificationPermission();
+  });
+  const [nativePushStatus, setNativePushStatus] = useState<string | null>(null);
 
   // Telegram Custom Credentials
   const [customBotToken, setCustomBotToken] = useState<string>(getTelegramBotToken());
@@ -146,6 +157,46 @@ export const SettingsView = ({ onResetDemoBalance }: SettingsViewProps) => {
     }
 
     setTimeout(() => setTestResult(null), 6000);
+  };
+
+  const handleEnableNativeNotifications = async () => {
+    const permission = await requestNativeNotificationPermission();
+    setNativePermission(permission);
+
+    if (permission === 'granted') {
+      const subscriptionResult = await subscribeToRenderPush(user?.id);
+      if (subscriptionResult.ok) {
+        setNativePushStatus('Dispositivo vinculado a Render Push.');
+      } else if (subscriptionResult.reason === 'missing-user') {
+        setNativePushStatus('Inicia sesión para recibir alertas 24/7 desde Render.');
+      } else if (subscriptionResult.reason === 'missing-vapid') {
+        setNativePushStatus('Falta configurar VITE_VAPID_PUBLIC_KEY para vincular este dispositivo.');
+      } else {
+        setNativePushStatus('Permiso local activo, pero no se pudo vincular el dispositivo a Render Push.');
+      }
+
+      await showNativeNotification({
+        id: `native-test-${Date.now()}`,
+        coinId: 'bitcoin',
+        coinSymbol: 'BTC',
+        coinName: 'Bitcoin',
+        category: 'GRID_SETUP',
+        badge: 'PWA ACTIVA',
+        badgeColor: '#0ECB81',
+        badgeBg: 'rgba(14, 203, 129, 0.15)',
+        badgeBorder: 'rgba(14, 203, 129, 0.35)',
+        headline: 'Notificaciones PWA Activadas',
+        plainExplanation: 'Crypto Analyzer Pro ya puede mostrar alertas nativas mientras la app esté activa.',
+        highlightText: 'Recibirás compras, ventas, profits y señales en la bandeja del sistema.',
+        actionText: 'Abrir App',
+        actionCoinId: 'bitcoin',
+        timestamp: Date.now(),
+        timeAgo: 'Ahora',
+        isRead: false,
+      });
+    } else if (permission === 'denied') {
+      setNativePushStatus('Permiso bloqueado por el navegador.');
+    }
   };
 
   const handleCopyChatId = () => {
@@ -688,6 +739,35 @@ export const SettingsView = ({ onResetDemoBalance }: SettingsViewProps) => {
                 </div>
 
                 <div className="space-y-3">
+                  <div className="p-3 rounded-xl bg-[#08090C] border border-amber-500/20 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs text-white font-black">Alertas nativas PWA</div>
+                        <div className="text-[10.5px] text-slate-400">
+                          Estado: {nativePermission === 'unsupported' ? 'No soportado' : nativePermission === 'granted' ? 'Permitido' : nativePermission === 'denied' ? 'Bloqueado' : 'Pendiente'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleEnableNativeNotifications}
+                        disabled={nativePermission === 'unsupported' || nativePermission === 'denied'}
+                        className="px-3 py-2 rounded-lg bg-[#F59E0B] hover:bg-amber-400 text-black font-black text-[11px] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {nativePermission === 'granted' ? 'Probar' : 'Activar'}
+                      </button>
+                    </div>
+                    {nativePermission === 'denied' && (
+                      <p className="text-[10px] text-rose-300 leading-relaxed">
+                        Permiso bloqueado. Actívalo desde los ajustes del navegador/PWA en tu celular.
+                      </p>
+                    )}
+                    {nativePushStatus && (
+                      <p className="text-[10px] text-amber-200 leading-relaxed">
+                        {nativePushStatus}
+                      </p>
+                    )}
+                  </div>
+
                   {[
                     { label: 'Señales Técnicas (RSI / EMA / Breakout)', state: notifySignals, setter: handleToggleNotifySignals },
                     { label: 'Creación y Pausa de Grid Bots', state: notifyBots, setter: handleToggleNotifyBots },

@@ -668,8 +668,10 @@ if __name__ == "__main__":
     def _run_worker_thread():
         from supabase_client import get_supabase_client
         from bot_engine import evaluate_active_grid_bot_tick
+        from web_push import get_web_push_notifier
 
         sb = get_supabase_client()
+        web_push_notifier = get_web_push_notifier()
         logger.info("Worker 24/7 iniciado: evaluando bots activos cada 15 segundos...")
 
         BINANCE_SYMBOLS = {
@@ -692,6 +694,21 @@ if __name__ == "__main__":
             "shiba-inu": "SHIBUSDT"
         }
 
+        def _format_pair(symbol: str) -> str:
+            if symbol.endswith("USDT"):
+                return f"{symbol[:-4]}/USDT"
+            return symbol
+
+        def _format_price(price: float) -> str:
+            if price >= 1000:
+                return f"${price:,.2f}"
+            if price >= 1:
+                return f"${price:,.4f}"
+            return f"${price:,.8f}"
+
+        def _format_usd(amount: float) -> str:
+            return f"${amount:,.2f}"
+
         while True:
             try:
                 if sb.is_configured:
@@ -712,12 +729,38 @@ if __name__ == "__main__":
                                     live_price = binance_map.get(b_symbol)
 
                                     if live_price and live_price > 0:
-                                        evaluate_active_grid_bot_tick(
+                                        pair = _format_pair(b_symbol)
+                                        grid_result = evaluate_active_grid_bot_tick(
                                             bot=bot,
                                             current_price=live_price,
                                             client=sb,
                                             telegram_notifier=notifier
                                         )
+                                        for action in grid_result.get("actions_executed", []):
+                                            action_type = action.get("action", "GRID")
+                                            if action_type == "SELL":
+                                                pnl_usd = float(action.get("pnl_usd", 0.0))
+                                                title = f"GRID SELL · {pair}"
+                                                body = f"PnL {pnl_usd:+,.2f} · Salida {_format_price(live_price)}"
+                                            else:
+                                                amount_usd = float(action.get("amount_usd", 0.0))
+                                                level_price = float(action.get("level_price") or live_price)
+                                                title = f"GRID BUY · {pair}"
+                                                body = f"{_format_usd(amount_usd)} a {_format_price(live_price)} · Nivel {_format_price(level_price)}"
+                                            web_push_notifier.send_to_user(
+                                                user_id=bot.get("user_id"),
+                                                title=title,
+                                                body=body,
+                                                data={
+                                                    "url": f"{notifier.app_url}/?coin={coin_id}",
+                                                    "coinId": coin_id,
+                                                    "symbol": b_symbol,
+                                                    "pair": pair,
+                                                    "botId": bot.get("id"),
+                                                    "eventType": f"GRID_{action_type}",
+                                                    "tag": f"grid-{bot.get('id')}-{action_type}-{int(time.time())}",
+                                                },
+                                            )
 
                                 # 2. Evaluar Órdenes Spot Abiertas 24/7 (Auto TP / Stop Loss / Límite)
                                 for trade in (open_trades or []):
@@ -727,6 +770,7 @@ if __name__ == "__main__":
                                         cur_p = binance_map.get(b_symbol)
                                         if not cur_p or cur_p <= 0:
                                             continue
+                                        pair = _format_pair(b_symbol)
 
                                         raw_meta = trade.get("entry_reason") or ""
                                         meta = {}
@@ -754,6 +798,20 @@ if __name__ == "__main__":
                                                     price=cur_p,
                                                     amount_usd=float(trade.get("amount_usd", 0.0)),
                                                     units=float(trade.get("units", 0.0))
+                                                )
+                                                web_push_notifier.send_to_user(
+                                                    user_id=trade.get("user_id"),
+                                                    title=f"LIMIT BUY · {pair}",
+                                                    body=f"{_format_usd(float(trade.get('amount_usd', 0.0)))} a {_format_price(cur_p)}",
+                                                    data={
+                                                        "url": f"{notifier.app_url}/?coin={coin_id}",
+                                                        "coinId": coin_id,
+                                                        "symbol": b_symbol,
+                                                        "pair": pair,
+                                                        "tradeId": trade.get("id"),
+                                                        "eventType": "LIMIT_BUY",
+                                                        "tag": f"limit-fill-{trade.get('id')}",
+                                                    },
                                                 )
                                                 continue
 
@@ -792,6 +850,20 @@ if __name__ == "__main__":
                                                 units=units,
                                                 pnl_usd=round(net_pnl, 2),
                                                 pnl_pct=round(pnl_pct, 2)
+                                            )
+                                            web_push_notifier.send_to_user(
+                                                user_id=trade.get("user_id"),
+                                                title=f"{'TAKE PROFIT' if is_tp else 'STOP LOSS'} · {pair}",
+                                                body=f"PnL {net_pnl:+,.2f} ({pnl_pct:+.2f}%) · Salida {_format_price(cur_p)}",
+                                                data={
+                                                    "url": f"{notifier.app_url}/?coin={coin_id}",
+                                                    "coinId": coin_id,
+                                                    "symbol": b_symbol,
+                                                    "pair": pair,
+                                                    "tradeId": trade.get("id"),
+                                                    "eventType": "TAKE_PROFIT" if is_tp else "STOP_LOSS",
+                                                    "tag": f"spot-close-{trade.get('id')}",
+                                                },
                                             )
                                     except Exception as tr_err:
                                         logger.debug(f"Error evaluando spot trade 24/7: {tr_err}")

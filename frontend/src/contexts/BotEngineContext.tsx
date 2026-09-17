@@ -29,6 +29,7 @@ import {
   persistTradeToSupabase,
   updateTradeStatusInSupabase,
 } from '../lib/supabase';
+import { getScopedItem, removeScopedItem, setScopedItem } from '../lib/accountStorage';
 import {
   sendTelegramGridBotCreated,
   sendTelegramGridOrderFilled,
@@ -38,6 +39,7 @@ import {
 } from '../lib/telegram';
 import { soundFx } from '../lib/soundFx';
 import { calculateGridLiquidationRefund } from '../lib/portfolioMath';
+import { showNativeNotification } from '../lib/pwaNotifications';
 
 export interface ToastItem {
   id: string;
@@ -95,10 +97,12 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const { user } = useAuth();
   const { activeCoin, currentPrice, livePrices, allCoinsStats } = useMarketData();
   const { availableUsdt, currencyMode, penRate, setUsdtCash, setCapitalInBots, capitalInBots, holdings, updateHoldingFromTrade } = usePortfolio();
+  const storageOwnerId = user?.id ?? null;
+  const storageReadyOwnerRef = useRef<string>(storageOwnerId || 'guest');
 
   const [bots, setBots] = useState<BotRow[]>(() => {
     try {
-      const saved = localStorage.getItem('crypto_analyzer_bots');
+      const saved = getScopedItem('crypto_analyzer_bots', null, { legacyFallback: true });
       if (!saved) return [];
       const parsed: BotRow[] = JSON.parse(saved);
       if (!Array.isArray(parsed)) return [];
@@ -110,7 +114,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const [trades, setTrades] = useState<TradeRow[]>(() => {
     try {
-      const saved = localStorage.getItem('crypto_analyzer_trades');
+      const saved = getScopedItem('crypto_analyzer_trades', null, { legacyFallback: true });
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -118,20 +122,22 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
   useEffect(() => {
+    if (storageReadyOwnerRef.current !== (storageOwnerId || 'guest')) return;
     try {
-      localStorage.setItem('crypto_analyzer_bots', JSON.stringify(bots));
+      setScopedItem('crypto_analyzer_bots', JSON.stringify(bots), storageOwnerId);
     } catch (e) {
       console.warn('Could not persist bots to localStorage:', e);
     }
-  }, [bots]);
+  }, [bots, storageOwnerId]);
 
   useEffect(() => {
+    if (storageReadyOwnerRef.current !== (storageOwnerId || 'guest')) return;
     try {
-      localStorage.setItem('crypto_analyzer_trades', JSON.stringify(trades));
+      setScopedItem('crypto_analyzer_trades', JSON.stringify(trades), storageOwnerId);
     } catch (e) {
       console.warn('Could not persist trades to localStorage:', e);
     }
-  }, [trades]);
+  }, [trades, storageOwnerId]);
 
   const [signals, setSignals] = useState<SignalRow[]>([]);
   const [gridPreviewLevels, setGridPreviewLevels] = useState<GridLevelItem[]>([]);
@@ -140,7 +146,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // 4. Real-time Event-Driven Notifications Feed
   const [notifications, setNotifications] = useState<PlainSpanishNotification[]>(() => {
-    const saved = localStorage.getItem('crypto_analyzer_notifications');
+    const saved = getScopedItem('crypto_analyzer_notifications', null, { legacyFallback: true });
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -161,10 +167,11 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (isDuplicateRecent) return prev;
 
       const updated = [notif, ...prev.filter((item) => item.id !== notif.id)].slice(0, 30);
-      localStorage.setItem('crypto_analyzer_notifications', JSON.stringify(updated));
+      setScopedItem('crypto_analyzer_notifications', JSON.stringify(updated), storageOwnerId);
       return updated;
     });
-  }, []);
+    void showNativeNotification(notif);
+  }, [storageOwnerId]);
 
   // Memory ref for previous prices per coin to ensure strict Tick-Crossing
   const prevPricesRef = useRef<Record<string, number>>({});
@@ -196,7 +203,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Active Grid Orders with persistence
   const [activeGridOrders, setActiveGridOrders] = useState<GridLevelItem[]>(() => {
     try {
-      const saved = localStorage.getItem('crypto_analyzer_active_orders');
+      const saved = getScopedItem('crypto_analyzer_active_orders', null, { legacyFallback: true });
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -210,12 +217,13 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [activeGridOrders]);
 
   useEffect(() => {
+    if (storageReadyOwnerRef.current !== (storageOwnerId || 'guest')) return;
     try {
-      localStorage.setItem('crypto_analyzer_active_orders', JSON.stringify(activeGridOrders));
+      setScopedItem('crypto_analyzer_active_orders', JSON.stringify(activeGridOrders), storageOwnerId);
     } catch (e) {
       console.warn('Could not persist active grid orders to localStorage:', e);
     }
-  }, [activeGridOrders]);
+  }, [activeGridOrders, storageOwnerId]);
 
   // Toast Helpers with Haptic Trading Sounds
   const addToast = (toast: Omit<ToastItem, 'id'>) => {
@@ -243,6 +251,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // 1. Initial Load from Supabase with Non-Destructive Local Storage Fallback
   useEffect(() => {
     const loadSupabaseData = async () => {
+      storageReadyOwnerRef.current = 'loading';
       try {
         if (user?.id) {
           const [botsRes, tradesRes, signalsRes] = await Promise.all([
@@ -254,13 +263,11 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           if (botsRes.data) {
             const loadedBots = botsRes.data as BotRow[];
             setBots(loadedBots);
-            localStorage.setItem('crypto_analyzer_bots', JSON.stringify(loadedBots));
+            setScopedItem('crypto_analyzer_bots', JSON.stringify(loadedBots), user.id);
 
             // Reconstruct active grid orders for ACTIVE bots
             const activeBotsList = loadedBots.filter((b) => b.status === 'ACTIVE');
             if (activeBotsList.length > 0) {
-              setActiveGridOrders((currentOrders) => {
-                if (currentOrders.length > 0) return currentOrders;
                 const reconstructed: GridLevelItem[] = [];
                 activeBotsList.forEach((bot) => {
                   const cfg =
@@ -289,50 +296,24 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     }
                   }
                 });
-                return reconstructed;
-              });
+              setActiveGridOrders(reconstructed);
+            } else {
+              setActiveGridOrders([]);
             }
           }
           if (tradesRes.data) {
             // Deserialise all rows from Supabase, parsing metadata from entry_reason / exit_reason
             const cloudTrades: TradeRow[] = (tradesRes.data as any[]).map(parseSupabaseTradeRow);
-
-            // Reconcile with localStorage to guarantee that NO locally created trades are lost
-            const savedTrades = localStorage.getItem('crypto_analyzer_trades');
-            let localTrades: TradeRow[] = [];
-            if (savedTrades) {
-              try {
-                localTrades = JSON.parse(savedTrades);
-              } catch {
-                localTrades = [];
-              }
-            }
-
-            const tradeMap = new Map<string, TradeRow>();
-            localTrades.forEach((t) => tradeMap.set(t.id, t));
-            cloudTrades.forEach((t) => tradeMap.set(t.id, t)); // Cloud DB has latest status
-
-            const mergedTrades = Array.from(tradeMap.values()).sort(
-              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            );
-
-            setTrades(mergedTrades);
-            localStorage.setItem('crypto_analyzer_trades', JSON.stringify(mergedTrades));
-
-            // Sync any local trade to Supabase that is missing from cloud
-            localTrades.forEach((lt) => {
-              if (!cloudTrades.some((ct) => ct.id === lt.id)) {
-                persistTradeToSupabase(lt, user.id);
-              }
-            });
+            setTrades(cloudTrades);
+            setScopedItem('crypto_analyzer_trades', JSON.stringify(cloudTrades), user.id);
           }
           if (signalsRes.data && signalsRes.data.length > 0) {
             setSignals(signalsRes.data as SignalRow[]);
           }
         } else {
           // GUEST / DEMO MODE: Pure local sandbox (zero pollution from other Supabase users)
-          const savedBots = localStorage.getItem('crypto_analyzer_bots');
-          const savedTrades = localStorage.getItem('crypto_analyzer_trades');
+          const savedBots = getScopedItem('crypto_analyzer_bots', null, { legacyFallback: true });
+          const savedTrades = getScopedItem('crypto_analyzer_trades', null, { legacyFallback: true });
           if (savedBots) {
             try {
               const parsedBots = JSON.parse(savedBots);
@@ -358,6 +339,8 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
       } catch (err) {
         console.warn('Error loading Supabase bot data:', err);
+      } finally {
+        storageReadyOwnerRef.current = user?.id || 'guest';
       }
     };
 
@@ -423,7 +406,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             ...prev.filter((o) => o.botId !== xrpBot.id),
             ...restoredOrders,
           ];
-          localStorage.setItem('crypto_analyzer_active_orders', JSON.stringify(updatedOrders));
+          setScopedItem('crypto_analyzer_active_orders', JSON.stringify(updatedOrders), storageOwnerId);
           return updatedOrders;
         });
 
@@ -456,7 +439,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             isRead: false,
           };
           const updated = [restorationNotif, ...cleaned].slice(0, 30);
-          localStorage.setItem('crypto_analyzer_notifications', JSON.stringify(updated));
+          setScopedItem('crypto_analyzer_notifications', JSON.stringify(updated), storageOwnerId);
           return updated;
         });
 
@@ -473,9 +456,9 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           ...xrpBot,
           status: 'ACTIVE',
         };
-        localStorage.setItem('crypto_analyzer_bots', JSON.stringify(updatedBots));
+        setScopedItem('crypto_analyzer_bots', JSON.stringify(updatedBots), storageOwnerId);
         if (user) {
-          supabase.from('bots').update({ status: 'ACTIVE' }).eq('id', xrpBot.id).then(() => {});
+          supabase.from('bots').update({ status: 'ACTIVE' }).eq('id', xrpBot.id).eq('user_id', user.id).then(() => {});
         }
         return updatedBots;
       }
@@ -500,7 +483,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
 
       // Check notifications or orders for recent DASH bot creation
-      const savedNotifs = localStorage.getItem('crypto_analyzer_notifications');
+      const savedNotifs = getScopedItem('crypto_analyzer_notifications', storageOwnerId, { legacyFallback: !storageOwnerId });
       let notifsList: PlainSpanishNotification[] = [];
       if (savedNotifs) {
         try {
@@ -508,7 +491,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         } catch {}
       }
 
-      const savedOrders = localStorage.getItem('crypto_analyzer_active_orders');
+      const savedOrders = getScopedItem('crypto_analyzer_active_orders', storageOwnerId, { legacyFallback: !storageOwnerId });
       let ordersList: GridLevelItem[] = [];
       if (savedOrders) {
         try {
@@ -571,11 +554,11 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           }
           const finalOrders = [...ordersList, ...newOrders];
           setActiveGridOrders(finalOrders);
-          localStorage.setItem('crypto_analyzer_active_orders', JSON.stringify(finalOrders));
+          setScopedItem('crypto_analyzer_active_orders', JSON.stringify(finalOrders), storageOwnerId);
         }
 
         const updatedBots = [restoredBot, ...prevBots];
-        localStorage.setItem('crypto_analyzer_bots', JSON.stringify(updatedBots));
+        setScopedItem('crypto_analyzer_bots', JSON.stringify(updatedBots), storageOwnerId);
         localStorage.setItem(HEAL_DASH_KEY, 'true');
 
         addToast({
@@ -1190,7 +1173,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
 
     if (user) {
-      await supabase.from('bots').update({ status: newStatus }).eq('id', botId);
+      await supabase.from('bots').update({ status: newStatus }).eq('id', botId).eq('user_id', user.id);
     }
   };
 
@@ -1241,7 +1224,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setActiveGridOrders((prev) => prev.filter((o) => o.botId !== botId));
 
     if (user) {
-      await supabase.from('bots').delete().eq('id', botId);
+      await supabase.from('bots').delete().eq('id', botId).eq('user_id', user.id);
     }
   };
 
@@ -1562,6 +1545,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 status: 'OPEN',
                 units: remainingUnits,
                 amount_usd: remainingAmountUsd,
+                user_id: user?.id,
               });
               persistTradeToSupabase(closedPartial, user?.id);
             } else {
@@ -1585,6 +1569,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 pnl_pct: Number(profitPct.toFixed(2)),
                 fee_usd: Number(((t.fee_usd || 0) + feeUsd).toFixed(4)),
                 reason: 'MANUAL_SELL',
+                user_id: user?.id,
               });
             }
           } else {
@@ -1763,6 +1748,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           fee_usd: Number(((trade.fee_usd || 0) + feeUsd).toFixed(4)),
           gross_pnl_usd: Number(grossPnl.toFixed(2)),
           reason: isTp ? 'AUTO_TAKE_PROFIT' : 'AUTO_STOP_LOSS',
+          user_id: user?.id,
         });
 
         if (isTp) {
@@ -1947,6 +1933,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     updateTradeStatusInSupabase(tradeId, {
       status: 'CANCELLED',
       reason: 'USER_CANCELLED',
+      user_id: user?.id,
     });
 
     const coin = getDynamicCoinInfo(target.coin_id);
@@ -2022,8 +2009,8 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       try {
         await Promise.all([
           supabase.from('bot_trades').delete().eq('user_id', user.id),
-          supabase.from('trades').delete().eq('user_id', user.id),
-          supabase.from('profiles').update({ demo_usdt_balance: 1000.0 }).eq('id', user.id),
+          supabase.from('bots').delete().eq('user_id', user.id),
+          supabase.from('user_profiles').update({ demo_usdt_balance: 1000.0 }).eq('id', user.id),
         ]);
       } catch (err) {
         console.warn('Error purging user bots/trades from Supabase:', err);
@@ -2035,20 +2022,20 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setGridPreviewLevels([]);
     setSelectedBotForInspection(null);
     setNotifications(getInitialSeedNotifications());
-    localStorage.removeItem('crypto_analyzer_bots');
-    localStorage.removeItem('crypto_analyzer_trades');
-    localStorage.removeItem('crypto_analyzer_active_orders');
-    localStorage.removeItem('crypto_analyzer_notifications');
+    removeScopedItem('crypto_analyzer_bots', storageOwnerId);
+    removeScopedItem('crypto_analyzer_trades', storageOwnerId);
+    removeScopedItem('crypto_analyzer_active_orders', storageOwnerId);
+    removeScopedItem('crypto_analyzer_notifications', storageOwnerId);
     localStorage.removeItem('crypto_analyzer_xrp_sl_healed_v3');
     localStorage.removeItem('crypto_analyzer_dash_bot_healed_v2');
-    localStorage.removeItem('crypto_analyzer_demo_holdings');
+    removeScopedItem('crypto_analyzer_demo_holdings', storageOwnerId);
     localStorage.removeItem('crypto_analyzer_last_signals_dispatched');
     autoClosedTradesRef.current.clear();
     proximityAlertedRef.current.clear();
     setUsdtCash(1000.0);
     setCapitalInBots(0);
-    localStorage.setItem('demo_usdt_cash', '1000');
-    localStorage.setItem('usdtCash', '1000');
+    setScopedItem('demo_usdt_cash', '1000', storageOwnerId);
+    setScopedItem('usdtCash', '1000', storageOwnerId);
     addToast({
       type: 'INFO',
       title: 'Cuenta Limpia y Reiniciada',
@@ -2065,7 +2052,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
     }
     setTrades([]);
-    localStorage.removeItem('crypto_analyzer_trades');
+    removeScopedItem('crypto_analyzer_trades', storageOwnerId);
     addToast({
       type: 'INFO',
       title: 'Historial Limpiado',
@@ -2272,7 +2259,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const markAllNotificationsAsRead = useCallback(() => {
     setNotifications((prev) => {
       const updated = prev.map((n) => ({ ...n, isRead: true }));
-      localStorage.setItem('crypto_analyzer_notifications', JSON.stringify(updated));
+      setScopedItem('crypto_analyzer_notifications', JSON.stringify(updated), storageOwnerId);
       return updated;
     });
   }, []);
@@ -2280,14 +2267,14 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const dismissNotification = useCallback((id: string) => {
     setNotifications((prev) => {
       const updated = prev.filter((n) => n.id !== id);
-      localStorage.setItem('crypto_analyzer_notifications', JSON.stringify(updated));
+      setScopedItem('crypto_analyzer_notifications', JSON.stringify(updated), storageOwnerId);
       return updated;
     });
   }, []);
 
   const clearAllNotifications = useCallback(() => {
     setNotifications([]);
-    localStorage.setItem('crypto_analyzer_notifications', JSON.stringify([]));
+    setScopedItem('crypto_analyzer_notifications', JSON.stringify([]), storageOwnerId);
   }, []);
 
   return (

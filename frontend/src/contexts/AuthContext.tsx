@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { type User, type Session } from '@supabase/supabase-js';
 import { supabase, type UserProfile } from '../lib/supabase';
+import { getScopedItem, setScopedItem } from '../lib/accountStorage';
 
 interface AuthContextType {
   user: User | null;
@@ -50,7 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const newProfile: UserProfile = {
           id: userId,
           email: email || '',
-          preferred_currency: (localStorage.getItem('currencyMode') as 'USD' | 'PEN') || 'USD',
+          preferred_currency: (getScopedItem('currencyMode', userId, { legacyFallback: true }) as 'USD' | 'PEN') || 'USD',
           demo_usdt_balance: 1000.0,
         };
         await supabase.from('user_profiles').insert(newProfile);
@@ -157,7 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updatePreferredCurrency = async (currency: 'USD' | 'PEN') => {
-    localStorage.setItem('currencyMode', currency);
+    setScopedItem('currencyMode', currency, user?.id);
     if (user && profile) {
       setProfile((prev) => (prev ? { ...prev, preferred_currency: currency } : null));
       await supabase.from('user_profiles').update({ preferred_currency: currency }).eq('id', user.id);
@@ -165,7 +166,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateDemoBalance = async (amount: number) => {
-    localStorage.setItem('usdtCash', amount.toString());
+    setScopedItem('demo_usdt_cash', amount.toString(), user?.id);
     if (user && profile) {
       setProfile((prev) => (prev ? { ...prev, demo_usdt_balance: amount } : null));
       await supabase.from('user_profiles').update({ demo_usdt_balance: amount }).eq('id', user.id);

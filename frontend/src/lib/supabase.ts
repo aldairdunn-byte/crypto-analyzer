@@ -75,6 +75,7 @@ export interface PortfolioRow {
   symbol: string;
   svg?: string;
   amount: number;
+  avg_buy_price?: number;
   current_price: number;
   total_usd: number;
   total_pen?: number;
@@ -102,16 +103,78 @@ export async function fetchPortfolioFromSupabase(userId?: string): Promise<Portf
   try {
     if (!userId) return [];
     const { data, error } = await supabase
+      .from('user_portfolios')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+    if (!error) {
+      return (data || []).map((row: any) => ({
+        id: row.id,
+        user_id: row.user_id,
+        asset: row.asset,
+        symbol: row.symbol,
+        amount: Number(row.amount || 0),
+        avg_buy_price: Number(row.avg_buy_price || 0),
+        current_price: Number(row.avg_buy_price || 0),
+        total_usd: Number(row.amount || 0) * Number(row.avg_buy_price || 0),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+    }
+
+    const fallback = await supabase
       .from('portfolio')
       .select('*')
       .eq('user_id', userId)
       .order('total_usd', { ascending: false });
-    if (error) {
-      return [];
-    }
-    return data || [];
+    return fallback.error ? [] : fallback.data || [];
   } catch (err) {
     return [];
+  }
+}
+
+export async function upsertPortfolioHoldingToSupabase(
+  userId: string,
+  holding: { asset: string; symbol: string; amount: number; avgBuyPrice: number }
+): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('user_portfolios').upsert(
+      {
+        user_id: userId,
+        asset: holding.asset,
+        symbol: holding.symbol,
+        amount: holding.amount,
+        avg_buy_price: holding.avgBuyPrice,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,symbol' }
+    );
+    if (error) {
+      console.warn('Error upserting user portfolio holding:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Exception in upsertPortfolioHoldingToSupabase:', err);
+    return false;
+  }
+}
+
+export async function deletePortfolioHoldingFromSupabase(userId: string, symbol: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('user_portfolios')
+      .delete()
+      .eq('user_id', userId)
+      .eq('symbol', symbol);
+    if (error) {
+      console.warn('Error deleting user portfolio holding:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Exception in deletePortfolioHoldingFromSupabase:', err);
+    return false;
   }
 }
 
@@ -294,6 +357,7 @@ export async function updateTradeStatusInSupabase(
     reason?: string;
     units?: number;
     amount_usd?: number;
+    user_id?: string;
   }
 ): Promise<boolean> {
   try {
@@ -316,7 +380,11 @@ export async function updateTradeStatusInSupabase(
     if (updates.amount_usd !== undefined) payload.amount_usd = updates.amount_usd;
     payload.exit_time = new Date().toISOString();
 
-    const { error } = await supabase.from('bot_trades').update(payload).eq('id', tradeId);
+    let query = supabase.from('bot_trades').update(payload).eq('id', tradeId);
+    if (updates.user_id) {
+      query = query.eq('user_id', updates.user_id);
+    }
+    const { error } = await query;
     if (error) {
       console.warn('Error updating trade status in Supabase bot_trades:', error.message);
       return false;
@@ -327,5 +395,3 @@ export async function updateTradeStatusInSupabase(
     return false;
   }
 }
-
-
