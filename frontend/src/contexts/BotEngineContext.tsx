@@ -300,12 +300,19 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             } else {
               setActiveGridOrders([]);
             }
+          } else {
+            setBots([]);
+            setActiveGridOrders([]);
+            setScopedItem('crypto_analyzer_bots', '[]', user.id);
           }
           if (tradesRes.data) {
             // Deserialise all rows from Supabase, parsing metadata from entry_reason / exit_reason
             const cloudTrades: TradeRow[] = (tradesRes.data as any[]).map(parseSupabaseTradeRow);
             setTrades(cloudTrades);
             setScopedItem('crypto_analyzer_trades', JSON.stringify(cloudTrades), user.id);
+          } else {
+            setTrades([]);
+            setScopedItem('crypto_analyzer_trades', '[]', user.id);
           }
           if (signalsRes.data && signalsRes.data.length > 0) {
             setSignals(signalsRes.data as SignalRow[]);
@@ -319,16 +326,25 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               const parsedBots = JSON.parse(savedBots);
               if (Array.isArray(parsedBots) && parsedBots.length > 0) {
                 setBots(parsedBots.filter((b) => b && b.id && b.coin_id && isTradeableBinanceSpot(b.coin_id)));
+              } else {
+                setBots([]);
               }
             } catch {}
+          } else {
+            setBots([]);
+            setActiveGridOrders([]);
           }
           if (savedTrades) {
             try {
               const parsedTrades = JSON.parse(savedTrades);
               if (Array.isArray(parsedTrades) && parsedTrades.length > 0) {
                 setTrades(parsedTrades);
+              } else {
+                setTrades([]);
               }
             } catch {}
+          } else {
+            setTrades([]);
           }
 
           // Fetch only global market signals

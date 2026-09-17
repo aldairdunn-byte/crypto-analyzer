@@ -37,6 +37,33 @@ interface PortfolioContextType {
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
 
+const loadLocalHoldingsForUser = (userId?: string | null): Record<string, { units: number; avgEntryPrice: number }> => {
+  try {
+    const saved = getScopedItem('crypto_analyzer_demo_holdings', userId, { legacyFallback: true });
+    const base: Record<string, { units: number; avgEntryPrice: number }> = saved ? JSON.parse(saved) : {};
+
+    const savedTrades = getScopedItem('crypto_analyzer_trades', userId, { legacyFallback: true });
+    if (savedTrades) {
+      try {
+        const parsedTrades = JSON.parse(savedTrades);
+        if (Array.isArray(parsedTrades)) {
+          parsedTrades.forEach((t) => {
+            if (t && t.status === 'OPEN' && t.side === 'BUY' && !t.bot_id && t.units > 0) {
+              const coin = getDynamicCoinInfo(t.coin_id);
+              if (!base[coin.id] || base[coin.id].units <= 0) {
+                base[coin.id] = { units: t.units, avgEntryPrice: t.entry_price };
+              }
+            }
+          });
+        }
+      } catch {}
+    }
+    return base;
+  } catch {
+    return {};
+  }
+};
+
 export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, profile, updatePreferredCurrency, updateDemoBalance } = useAuth();
   const { livePrices, penRate } = useMarketData();
@@ -76,7 +103,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setUsdtCashState(liveAmt);
       setScopedItem('usdtCash', liveAmt.toString(), user?.id);
     } else {
-      // Switching to DEMO -> load demo USDT cash ($1,000)
+      // Switching to DEMO -> load persisted free demo cash.
       const demoAmt = profile?.demo_usdt_balance || parseFloat(getScopedItem('demo_usdt_cash', user?.id, { legacyFallback: true }) || '1000');
       setUsdtCashState(demoAmt);
       setScopedItem('demo_usdt_cash', demoAmt.toString(), user?.id);
@@ -121,16 +148,15 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return () => clearInterval(interval);
   }, [refreshPortfolio]);
 
-  // Cross-Device Cloud Sync: Synchronize demo USDT balance from Supabase profile on login
-  // The cloud stores TOTAL demo balance (cash + bots). On a new device we reconcile
-  // by subtracting capital already allocated in active bots to prevent double-counting.
+  // Cross-device cloud sync: profile.demo_usdt_balance stores free demo cash only.
+  // Bot capital and spot holdings are loaded from their own tables and counted separately.
   useEffect(() => {
     if (!isLiveMode && profile?.demo_usdt_balance !== undefined && profile.demo_usdt_balance !== null) {
-      const reconciled = Math.max(0, profile.demo_usdt_balance - capitalInBots);
-      setUsdtCashState(reconciled);
-      setScopedItem('demo_usdt_cash', reconciled.toString(), user?.id);
+      const freeCash = Math.max(0, profile.demo_usdt_balance);
+      setUsdtCashState(freeCash);
+      setScopedItem('demo_usdt_cash', freeCash.toString(), user?.id);
     }
-  }, [profile?.demo_usdt_balance, isLiveMode, capitalInBots, user?.id]);
+  }, [profile?.demo_usdt_balance, isLiveMode, user?.id]);
 
   // Ref to track the latest demo cash value for debounced cloud sync
   const demoBalanceSyncRef = useRef<number | null>(null);
@@ -149,18 +175,16 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   };
 
-  // Debounced cloud sync: persist TOTAL demo balance to Supabase after changes settle (2s)
-  // We store cash + capitalInBots so the next device can reconcile by subtracting active bots
+  // Debounced cloud sync: persist free demo cash only.
   useEffect(() => {
     if (isLiveMode || !user || demoBalanceSyncRef.current === null) return;
     const cashAmount = demoBalanceSyncRef.current;
     const timeout = setTimeout(() => {
-      const totalDemoBalance = cashAmount + capitalInBots;
-      updateDemoBalance(totalDemoBalance);
+      updateDemoBalance(cashAmount);
       demoBalanceSyncRef.current = null;
     }, 2000);
     return () => clearTimeout(timeout);
-  }, [usdtCash, isLiveMode, user, capitalInBots, updateDemoBalance]);
+  }, [usdtCash, isLiveMode, user, updateDemoBalance]);
 
   const setCurrencyMode = (mode: 'USD' | 'PEN') => {
     setCurrencyModeState(mode);
@@ -175,32 +199,23 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Local/Manual Spot Holdings with persistence and trade recovery
   const [localHoldings, setLocalHoldings] = useState<Record<string, { units: number; avgEntryPrice: number }>>(() => {
-    try {
-      const saved = getScopedItem('crypto_analyzer_demo_holdings', user?.id, { legacyFallback: true });
-      const base: Record<string, { units: number; avgEntryPrice: number }> = saved ? JSON.parse(saved) : {};
-
-      // Reconcile open manual spot trades from localStorage if missing from localHoldings
-      const savedTrades = getScopedItem('crypto_analyzer_trades', user?.id, { legacyFallback: true });
-      if (savedTrades) {
-        try {
-          const parsedTrades = JSON.parse(savedTrades);
-          if (Array.isArray(parsedTrades)) {
-            parsedTrades.forEach((t) => {
-              if (t && t.status === 'OPEN' && t.side === 'BUY' && !t.bot_id && t.units > 0) {
-                const coin = getDynamicCoinInfo(t.coin_id);
-                if (!base[coin.id] || base[coin.id].units <= 0) {
-                  base[coin.id] = { units: t.units, avgEntryPrice: t.entry_price };
-                }
-              }
-            });
-          }
-        } catch {}
-      }
-      return base;
-    } catch {
-      return {};
-    }
+    return loadLocalHoldingsForUser(user?.id);
   });
+
+  useEffect(() => {
+    setCurrencyModeState((getScopedItem('currencyMode', user?.id, { legacyFallback: true }) as 'USD' | 'PEN') || 'USD');
+    const nextIsLiveMode = getScopedItem('isLiveMode', user?.id, { legacyFallback: true }) === 'true';
+    setIsLiveModeState(nextIsLiveMode);
+    setLocalHoldings(loadLocalHoldingsForUser(user?.id));
+
+    if (nextIsLiveMode) {
+      const savedLiveCash = getScopedItem('usdtCash', user?.id, { legacyFallback: true });
+      setUsdtCashState(savedLiveCash !== null ? parseFloat(savedLiveCash) : 0.0);
+    } else {
+      const savedDemoCash = getScopedItem('demo_usdt_cash', user?.id, { legacyFallback: true });
+      setUsdtCashState(savedDemoCash !== null ? parseFloat(savedDemoCash) : profile?.demo_usdt_balance ?? 1000.0);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     try {

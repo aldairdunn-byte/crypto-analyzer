@@ -47,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
 
       if (error && error.code === 'PGRST116') {
-        // Profile not found -> create one with $1000 default demo balance
+        // Profile not found -> create one with $1000 default free demo cash.
         const newProfile: UserProfile = {
           id: userId,
           email: email || '',
