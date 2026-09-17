@@ -18,6 +18,15 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS full_name TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS telegram_chat_id BIGINT UNIQUE;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS telegram_link_token TEXT UNIQUE;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS preferred_currency TEXT NOT NULL DEFAULT 'USD';
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS demo_usdt_balance NUMERIC(18, 2) NOT NULL DEFAULT 1000.00;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
