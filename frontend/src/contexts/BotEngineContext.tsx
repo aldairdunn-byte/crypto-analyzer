@@ -65,7 +65,7 @@ interface BotEngineContextType {
   markAllNotificationsAsRead: () => void;
   dismissNotification: (id: string) => void;
   clearAllNotifications: () => void;
-  resetAllBotEngine: () => void;
+  resetAllBotEngine: () => Promise<void>;
   clearTradeHistory: () => Promise<void>;
   handleCreateBot: (botData: {
     name: string;
@@ -1802,15 +1802,56 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const resetAllBotEngine = useCallback(async () => {
     if (user?.id) {
+      // 1. Try atomic PostgreSQL RPC execution first
+      let rpcExecuted = false;
       try {
-        await Promise.all([
-          supabase.from('bot_trades').delete().eq('user_id', user.id),
-          supabase.from('bots').delete().eq('user_id', user.id),
-          supabase.from('user_portfolios').delete().eq('user_id', user.id),
-          supabase.from('user_profiles').update({ demo_usdt_balance: 1000.0 }).eq('id', user.id),
-        ]);
-      } catch (err) {
-        console.warn('Error purging user bots/trades from Supabase:', err);
+        const { data: rpcData, error: rpcError } = await supabase.rpc('reset_demo_account');
+        if (!rpcError && (rpcData as any)?.success) {
+          rpcExecuted = true;
+        }
+      } catch {
+        rpcExecuted = false;
+      }
+
+      // 2. Sequential fallback if RPC is not registered in schema cache
+      if (!rpcExecuted) {
+        const deleteTrades = await supabase.from('bot_trades').delete().eq('user_id', user.id).select('id');
+        if (deleteTrades.error) {
+          throw new Error(`No se pudieron borrar trades: ${deleteTrades.error.message}`);
+        }
+        const deleteBots = await supabase.from('bots').delete().eq('user_id', user.id).select('id');
+        if (deleteBots.error) {
+          throw new Error(`No se pudieron borrar bots: ${deleteBots.error.message}`);
+        }
+        const deletePortfolio = await supabase.from('user_portfolios').delete().eq('user_id', user.id).select('id');
+        if (deletePortfolio.error) {
+          throw new Error(`No se pudo borrar portafolio spot: ${deletePortfolio.error.message}`);
+        }
+        const upsertProfile = await supabase
+          .from('user_profiles')
+          .upsert({ id: user.id, demo_usdt_balance: 1000.0, updated_at: new Date().toISOString() })
+          .select('id');
+        if (upsertProfile.error) {
+          throw new Error(`No se pudo actualizar el perfil: ${upsertProfile.error.message}`);
+        }
+      }
+
+      // 3. Post-execution verification: ensure database confirmed zero remaining items
+      const [remainingBots, remainingTrades, remainingPortfolio] = await Promise.all([
+        supabase.from('bots').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('bot_trades').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('user_portfolios').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+      ]);
+
+      if (remainingBots.error || remainingTrades.error || remainingPortfolio.error) {
+        throw new Error('No se pudo verificar la limpieza en Supabase.');
+      }
+      const leftoverCount =
+        (remainingBots.count || 0) +
+        (remainingTrades.count || 0) +
+        (remainingPortfolio.count || 0);
+      if (leftoverCount > 0) {
+        throw new Error(`Supabase todavía conserva ${leftoverCount} registros de la cuenta. No se aplicó el reset local.`);
       }
     }
     setBots([]);
@@ -1838,7 +1879,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       title: 'Cuenta Limpia y Reiniciada',
       message: 'Saldo restaurado a $1,000.00 USDT. Todos los bots y operaciones de prueba han sido eliminados tanto en la nube como en local.',
     });
-  }, [user, setUsdtCash, setCapitalInBots, addToast]);
+  }, [user, storageOwnerId, setUsdtCash, setCapitalInBots, addToast]);
 
   const clearTradeHistory = useCallback(async () => {
     if (user?.id) {

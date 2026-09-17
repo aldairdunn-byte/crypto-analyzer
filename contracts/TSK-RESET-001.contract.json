@@ -1,0 +1,65 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-RESET-001",
+  "epic_id": "EPC-PERSISTENCE",
+  "goal": "Execute database reset and synchronize frontend state to eliminate phantom bot retention on page reload",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/contexts/BotEngineContext.tsx",
+      "frontend/src/components/SettingsView.tsx",
+      "supabase/reset_demo_account.sql"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": [],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/supabase.ts",
+    "interfaces": "export interface ResetResult { success: boolean; user_id: string; demo_usdt_balance: number; }",
+    "function_signatures": [
+      "resetAllBotEngine: () => Promise<void>"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit test in frontend/src/__tests__/reset_demo_account.test.js",
+    "Implement sequential and RPC reset in BotEngineContext.tsx",
+    "Wire non-optimistic confirmation and error handling in SettingsView.tsx",
+    "Execute tests with node --test",
+    "Verify TypeScript build with tsc -b"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/reset_demo_account.test.js",
+    "lint": "npx oxlint",
+    "typecheck": "npm run build --prefix frontend"
+  },
+
+  "acceptance_criteria": [
+    "reconcileDemoFreeCash restores 1000.00 when reservedBotCapitalUsd is 0",
+    "resetAllBotEngine throws if cloud verification detects leftover rows",
+    "local state mutation occurs only after cloud confirmation"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "Zero active bots remain in database after reset execution"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/contexts/BotEngineContext.tsx frontend/src/components/SettingsView.tsx"
+  }
+}

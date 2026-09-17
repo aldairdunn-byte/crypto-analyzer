@@ -41,7 +41,7 @@ import {
 } from '../lib/pwaNotifications';
 
 interface SettingsViewProps {
-  onResetDemoBalance: () => void;
+  onResetDemoBalance: () => void | Promise<void>;
 }
 
 type SettingsTab = 'ACCOUNT' | 'TELEGRAM' | 'QUANT' | 'MAINTENANCE';
@@ -137,6 +137,7 @@ export const SettingsView = ({ onResetDemoBalance }: SettingsViewProps) => {
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
   const [isResetting, setIsResetting] = useState<boolean>(false);
   const [resetSuccess, setResetSuccess] = useState<boolean>(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   const handleSendTestAlert = async () => {
     setIsSendingTest(true);
@@ -268,11 +269,17 @@ export const SettingsView = ({ onResetDemoBalance }: SettingsViewProps) => {
 
   const handleConfirmReset = async () => {
     setIsResetting(true);
-    await onResetDemoBalance();
-    setIsResetting(false);
-    setShowResetConfirm(false);
-    setResetSuccess(true);
-    setTimeout(() => setResetSuccess(false), 4000);
+    setResetError(null);
+    try {
+      await onResetDemoBalance();
+      setShowResetConfirm(false);
+      setResetSuccess(true);
+      setTimeout(() => setResetSuccess(false), 4000);
+    } catch (err: any) {
+      setResetError(err?.message || 'No se pudo limpiar la cuenta en Supabase. Intenta de nuevo o revisa permisos RLS.');
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   return (
@@ -1004,6 +1011,13 @@ export const SettingsView = ({ onResetDemoBalance }: SettingsViewProps) => {
                 <div className="p-3.5 bg-emerald-500/15 border border-emerald-500/40 text-[#0ECB81] rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in duration-200">
                   <CheckCircle2 className="w-4 h-4 text-[#0ECB81] shrink-0" />
                   <span>¡Saldo demo restablecido a $1,000.00 USDT con éxito!</span>
+                </div>
+              )}
+
+              {resetError && (
+                <div className="p-3.5 bg-rose-500/15 border border-rose-500/40 text-rose-300 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in duration-200">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{resetError}</span>
                 </div>
               )}
 
