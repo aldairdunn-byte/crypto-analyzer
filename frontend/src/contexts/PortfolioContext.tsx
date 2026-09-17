@@ -9,6 +9,7 @@ import {
   type PortfolioRow,
 } from '../lib/supabase';
 import { getScopedItem, removeScopedItem, setScopedItem } from '../lib/accountStorage';
+import { reconcileDemoFreeCash } from '../lib/portfolioMath';
 import { type CryptoHolding } from '../components/AssetsView';
 
 interface PortfolioContextType {
@@ -367,6 +368,24 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return acc + (h.units * currentP);
     }, 0);
   }, [holdings, livePrices]);
+
+  const totalSpotCostBasis = useMemo(() => {
+    return Object.values(holdings).reduce((acc, h) => {
+      if (h.units <= 0.000001) return acc;
+      return acc + (h.units * h.avgEntryPrice);
+    }, 0);
+  }, [holdings]);
+
+  useEffect(() => {
+    if (isLiveMode || !user?.id) return;
+    const reconciledCash = reconcileDemoFreeCash({
+      reservedBotCapitalUsd: capitalInBots,
+      spotCostBasisUsd: totalSpotCostBasis,
+    });
+    if (usdtCash > reconciledCash + 0.01) {
+      setUsdtCash(reconciledCash);
+    }
+  }, [capitalInBots, isLiveMode, setUsdtCash, totalSpotCostBasis, user?.id, usdtCash]);
 
   // Total Portfolio Capital = USDT Cash + Total in Active Bots + Spot Holdings Value
   const virtualUsdt = usdtCash + capitalInBots + totalSpotValue;

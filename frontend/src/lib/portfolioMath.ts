@@ -169,6 +169,20 @@ export interface GridLiquidationResult {
   closedTrades: ClosedTradeUpdate[];
 }
 
+export interface DemoFreeCashInput {
+  bankrollUsd?: number;
+  reservedBotCapitalUsd?: number;
+  spotCostBasisUsd?: number;
+}
+
+export function reconcileDemoFreeCash({
+  bankrollUsd = 1000,
+  reservedBotCapitalUsd = 0,
+  spotCostBasisUsd = 0,
+}: DemoFreeCashInput): number {
+  return Number(Math.max(0, bankrollUsd - reservedBotCapitalUsd - spotCostBasisUsd).toFixed(2));
+}
+
 export interface MinimalGridOrder {
   botId?: string;
   side?: 'BUY' | 'SELL';
