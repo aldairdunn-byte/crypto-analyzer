@@ -20,6 +20,7 @@ import { SettingsView } from './components/SettingsView';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
 import { BottomNavMobile, type MasterViewType } from './components/BottomNavMobile';
 import { AuthModal } from './components/AuthModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { type StrategyRecommendation, evaluateStrategyForCoin } from './lib/strategyAdvisor';
 import {
   Robot,
@@ -515,17 +516,19 @@ const MainContent: React.FC = () => {
 
 export function App() {
   return (
-    <AuthProvider>
-      <MarketDataProvider>
-        <PortfolioProvider>
-          <BotEngineProvider>
-            <AutoTraderProvider>
-              <MainContent />
-            </AutoTraderProvider>
-          </BotEngineProvider>
-        </PortfolioProvider>
-      </MarketDataProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <MarketDataProvider>
+          <PortfolioProvider>
+            <BotEngineProvider>
+              <AutoTraderProvider>
+                <MainContent />
+              </AutoTraderProvider>
+            </BotEngineProvider>
+          </PortfolioProvider>
+        </MarketDataProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
