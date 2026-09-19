@@ -57,7 +57,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await supabase.from('user_profiles').insert(newProfile);
         setProfile(newProfile);
       } else if (data) {
-        setProfile(data as UserProfile);
+        const loadedProfile = data as UserProfile;
+        if (loadedProfile.demo_usdt_balance === null || loadedProfile.demo_usdt_balance === undefined) {
+          loadedProfile.demo_usdt_balance = 1000.0;
+        }
+        setProfile(loadedProfile);
       }
     } catch (err) {
       console.warn('Error loading user profile:', err);

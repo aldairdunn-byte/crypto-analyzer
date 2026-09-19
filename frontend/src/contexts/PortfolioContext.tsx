@@ -248,7 +248,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setUsdtCashState(savedLiveCash !== null ? parseFloat(savedLiveCash) : 0.0);
     } else {
       const savedDemoCash = getScopedItem('demo_usdt_cash', user?.id, { legacyFallback: true });
-      setUsdtCashState(savedDemoCash !== null ? parseFloat(savedDemoCash) : profile?.demo_usdt_balance ?? 1000.0);
+      const fallbackCash = (profile?.demo_usdt_balance !== undefined && profile.demo_usdt_balance > 0) ? profile.demo_usdt_balance : 1000.0;
+      setUsdtCashState(savedDemoCash !== null ? parseFloat(savedDemoCash) : fallbackCash);
     }
   }, [user?.id]);
 
@@ -428,7 +429,10 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   useEffect(() => {
     if (isLiveMode) return;
-    const bankroll = profile?.demo_usdt_balance ?? 1000;
+    const profileBalance = profile?.demo_usdt_balance;
+    const bankroll = (profileBalance !== undefined && profileBalance > 0)
+      ? profileBalance
+      : ((profileBalance === 0 && (capitalInBots > 0 || totalSpotCostBasis > 0)) ? 0 : 1000.0);
     const reconciledCash = reconcileDemoFreeCash({
       bankrollUsd: bankroll,
       reservedBotCapitalUsd: capitalInGridBots,
@@ -438,7 +442,10 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (Math.abs(usdtCash - reconciledCash) > 0.01) {
       setUsdtCash(reconciledCash);
     }
-  }, [capitalInGridBots, capitalInAutoTrader, isLiveMode, setUsdtCash, totalSpotCostBasis, profile?.demo_usdt_balance, usdtCash]);
+    if (profileBalance !== undefined && profileBalance <= 0 && capitalInBots === 0 && totalSpotCostBasis === 0 && user?.id) {
+      void updateDemoBalance(1000.0);
+    }
+  }, [capitalInGridBots, capitalInAutoTrader, capitalInBots, isLiveMode, setUsdtCash, totalSpotCostBasis, profile?.demo_usdt_balance, usdtCash, user?.id, updateDemoBalance]);
 
   // Total Portfolio Capital = USDT Cash + Grid Bots + Auto Trader + Spot Holdings Value (Mark-to-Market exact)
   const virtualUsdt = calculateMarkToMarketTotalEquity({
