@@ -102,7 +102,8 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const [bots, setBots] = useState<BotRow[]>(() => {
     try {
-      const saved = getScopedItem('crypto_analyzer_bots', null, { legacyFallback: true });
+      // BUG-02 FIX: Use the actual user scope (storageOwnerId) not null/guest
+      const saved = getScopedItem('crypto_analyzer_bots', storageOwnerId, { legacyFallback: true });
       if (!saved) return [];
       const parsed: BotRow[] = JSON.parse(saved);
       if (!Array.isArray(parsed)) return [];
@@ -114,7 +115,8 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const [trades, setTrades] = useState<TradeRow[]>(() => {
     try {
-      const saved = getScopedItem('crypto_analyzer_trades', null, { legacyFallback: true });
+      // BUG-02 FIX: Use the actual user scope (storageOwnerId) not null/guest
+      const saved = getScopedItem('crypto_analyzer_trades', storageOwnerId, { legacyFallback: true });
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -146,7 +148,8 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // 4. Real-time Event-Driven Notifications Feed
   const [notifications, setNotifications] = useState<PlainSpanishNotification[]>(() => {
-    const saved = getScopedItem('crypto_analyzer_notifications', null, { legacyFallback: true });
+    // BUG-09 FIX: Use the actual user scope (storageOwnerId) not null/guest
+    const saved = getScopedItem('crypto_analyzer_notifications', storageOwnerId, { legacyFallback: true });
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -203,7 +206,8 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Active Grid Orders with persistence
   const [activeGridOrders, setActiveGridOrders] = useState<GridLevelItem[]>(() => {
     try {
-      const saved = getScopedItem('crypto_analyzer_active_orders', null, { legacyFallback: true });
+      // BUG-02 FIX: Use the actual user scope (storageOwnerId) not null/guest
+      const saved = getScopedItem('crypto_analyzer_active_orders', storageOwnerId, { legacyFallback: true });
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];

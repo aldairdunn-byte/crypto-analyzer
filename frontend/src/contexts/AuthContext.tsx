@@ -189,6 +189,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateDemoBalance = async (amount: number) => {
+    // BUG-01 FIX: Sanity guard — never persist an invalid or inflated balance to Supabase
+    if (typeof amount !== 'number' || !isFinite(amount) || amount < 0 || amount > 10000) {
+      console.warn('[AuthContext] updateDemoBalance bloqueado: valor inválido:', amount);
+      return;
+    }
     setScopedItem('demo_usdt_cash', amount.toString(), user?.id);
     if (user && profile) {
       setProfile((prev) => (prev ? { ...prev, demo_usdt_balance: amount } : null));

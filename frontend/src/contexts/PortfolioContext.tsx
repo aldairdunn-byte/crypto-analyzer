@@ -121,7 +121,15 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const capitalInBots = Number((capitalInGridBots + capitalInAutoTrader).toFixed(2));
 
   const setCapitalInBots: React.Dispatch<React.SetStateAction<number>> = (action) => {
-    setCapitalInGridBots(action);
+    // BUG-05 FIX: When setting capital in bots to a fixed value (like 0 for reset),
+    // we need to clear BOTH grid bots and auto trader. Only split-behavior (function form)
+    // is delegated to grid bots; a direct value of 0 clears both.
+    if (typeof action === 'number' && action === 0) {
+      setCapitalInGridBots(0);
+      setCapitalInAutoTrader(0);
+    } else {
+      setCapitalInGridBots(action);
+    }
   };
 
   useEffect(() => {
@@ -191,9 +199,18 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Cross-device cloud sync: profile.demo_usdt_balance stores free demo cash only.
   // Bot capital and spot holdings are loaded from their own tables and counted separately.
+  // BUG-01 FIX: Validate that the balance from Supabase is a sane value (0–10,000).
+  // If the DB has a corrupted/inflated value, do not blindly apply it.
   useEffect(() => {
     if (!isLiveMode && profile?.demo_usdt_balance !== undefined && profile.demo_usdt_balance !== null) {
-      const freeCash = Math.max(0, profile.demo_usdt_balance);
+      const rawBalance = profile.demo_usdt_balance;
+      // Sanity guard: balance must be a finite number in range [0, 10000]
+      const isValidBalance = typeof rawBalance === 'number' && isFinite(rawBalance) && rawBalance >= 0 && rawBalance <= 10000;
+      if (!isValidBalance) {
+        console.warn('[PortfolioContext] Saldo en Supabase inválido o corrupto:', rawBalance, '— se ignora y se mantiene $1,000');
+        return;
+      }
+      const freeCash = Math.max(0, rawBalance);
       setUsdtCashState(freeCash);
       setScopedItem('demo_usdt_cash', freeCash.toString(), user?.id);
     }
@@ -462,9 +479,19 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     if (isLiveMode) return;
     const profileBalance = profile?.demo_usdt_balance;
-    const bankroll = (profileBalance !== undefined && profileBalance > 0)
+    // BUG-01 FIX: Only trust profileBalance if it is a valid, sane value.
+    const isValidProfileBalance =
+      typeof profileBalance === 'number' &&
+      isFinite(profileBalance) &&
+      profileBalance >= 0 &&
+      profileBalance <= 10000;
+    // Use the profile balance if valid and > 0; otherwise default to $1,000.
+    // When profileBalance===0 with active bots/spots, it means the user spent all free cash (correct).
+    const bankroll = isValidProfileBalance && profileBalance > 0
       ? profileBalance
-      : ((profileBalance === 0 && (capitalInBots > 0 || totalSpotCostBasis > 0)) ? 0 : 1000.0);
+      : (isValidProfileBalance && profileBalance === 0 && (capitalInBots > 0 || totalSpotCostBasis > 0))
+        ? capitalInBots + totalSpotCostBasis  // Reconstruct bankroll from what's deployed
+        : 1000.0;
     const reconciledCash = reconcileDemoFreeCash({
       bankrollUsd: bankroll,
       reservedBotCapitalUsd: capitalInGridBots,
@@ -474,7 +501,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (Math.abs(usdtCash - reconciledCash) > 0.01) {
       setUsdtCash(reconciledCash);
     }
-    if (profileBalance !== undefined && profileBalance <= 0 && capitalInBots === 0 && totalSpotCostBasis === 0 && user?.id) {
+    // Only auto-repair the DB balance if everything is truly at zero (clean account)
+    if (isValidProfileBalance && profileBalance <= 0 && capitalInBots === 0 && totalSpotCostBasis === 0 && user?.id) {
       void updateDemoBalance(1000.0);
     }
   }, [capitalInGridBots, capitalInAutoTrader, capitalInBots, isLiveMode, setUsdtCash, totalSpotCostBasis, profile?.demo_usdt_balance, usdtCash, user?.id, updateDemoBalance]);
@@ -495,6 +523,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setCapitalInAutoTrader(0);
     setLocalHoldings({});
     setScopedItem('demo_usdt_cash', '1000', user?.id);
+    // BUG-06 FIX: Explicitly remove capital keys from localStorage (not just set to 0)
     removeScopedItem('capital_in_grid_bots', user?.id);
     removeScopedItem('capital_in_autotrader', user?.id);
     removeScopedItem('capital_in_bots', user?.id);
