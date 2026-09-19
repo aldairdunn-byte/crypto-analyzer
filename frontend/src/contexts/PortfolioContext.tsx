@@ -487,39 +487,54 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, 0);
   }, [holdings]);
 
+  // ─── CANONICAL DEMO BANKROLL INVARIANT (ENGINEERING-OS v4.1 RC) ───
+  // Single Source of Truth (SSOT):
+  // Canonical Bankroll = Base $1,000.00 USDT + Realized PnL from closed demo trades.
+  // Invariant 1: Free Cash (Disponible) = max(0, Canonical Bankroll - Grid Bots - AutoTrader - Spot Cost Basis)
+  // Invariant 2: Total Equity (Saldo Total) = Free Cash + Grid Bots + AutoTrader + Spot Market Value
+  const realizedTradesPnL = useMemo(() => {
+    try {
+      const saved = getScopedItem('crypto_analyzer_trades', user?.id, { legacyFallback: true });
+      if (!saved) return 0;
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return 0;
+      return parsed.reduce((acc: number, t: any) => {
+        if (t && t.status === 'CLOSED') {
+          const net = typeof t.pnl_usd === 'number' ? t.pnl_usd : (typeof t.gross_pnl_usd === 'number' ? t.gross_pnl_usd : 0);
+          return acc + net;
+        }
+        return acc;
+      }, 0);
+    } catch {
+      return 0;
+    }
+  }, [user?.id, usdtCash]);
+
+  const canonicalBankroll = Number((1000.0 + realizedTradesPnL).toFixed(2));
+
   useEffect(() => {
     // Skip reconciliation entirely during a reset sequence
     if (isResettingRef.current) return;
-
     if (isLiveMode) return;
-    const profileBalance = profile?.demo_usdt_balance;
-    // BUG-01 FIX: Only trust profileBalance if it is a valid, sane value.
-    const isValidProfileBalance =
-      typeof profileBalance === 'number' &&
-      isFinite(profileBalance) &&
-      profileBalance >= 0 &&
-      profileBalance <= 10000;
-    // Use the profile balance if valid and > 0; otherwise default to $1,000.
-    // When profileBalance===0 with active bots/spots, it means the user spent all free cash (correct).
-    const bankroll = isValidProfileBalance && profileBalance > 0
-      ? profileBalance
-      : (isValidProfileBalance && profileBalance === 0 && (capitalInBots > 0 || totalSpotCostBasis > 0))
-        ? capitalInBots + totalSpotCostBasis  // Reconstruct bankroll from what's deployed
-        : 1000.0;
+
+    // Use the mathematical canonical bankroll ($1,000 + realized PnL).
+    // NEVER pass free cash into bankrollUsd, as that causes the catastrophic subtractive spiral.
     const reconciledCash = reconcileDemoFreeCash({
-      bankrollUsd: bankroll,
+      bankrollUsd: canonicalBankroll,
       reservedBotCapitalUsd: capitalInGridBots,
       reservedAutoTraderCapitalUsd: capitalInAutoTrader,
       spotCostBasisUsd: totalSpotCostBasis,
     });
+
     if (Math.abs(usdtCash - reconciledCash) > 0.01) {
       setUsdtCash(reconciledCash);
     }
-    // Only auto-repair the DB balance if everything is truly at zero (clean account)
-    if (isValidProfileBalance && profileBalance <= 0 && capitalInBots === 0 && totalSpotCostBasis === 0 && user?.id) {
+
+    // Auto-repair DB balance if clean account (0 bots, 0 spot, 0 trades)
+    if (profile?.demo_usdt_balance !== undefined && profile.demo_usdt_balance <= 0 && capitalInBots === 0 && totalSpotCostBasis === 0 && user?.id) {
       void updateDemoBalance(1000.0);
     }
-  }, [capitalInGridBots, capitalInAutoTrader, capitalInBots, isLiveMode, setUsdtCash, totalSpotCostBasis, profile?.demo_usdt_balance, usdtCash, user?.id, updateDemoBalance]);
+  }, [canonicalBankroll, capitalInGridBots, capitalInAutoTrader, capitalInBots, isLiveMode, setUsdtCash, totalSpotCostBasis, profile?.demo_usdt_balance, usdtCash, user?.id, updateDemoBalance]);
 
   // Total Portfolio Capital = USDT Cash + Grid Bots + Auto Trader + Spot Holdings Value (Mark-to-Market exact)
   const virtualUsdt = calculateMarkToMarketTotalEquity({
