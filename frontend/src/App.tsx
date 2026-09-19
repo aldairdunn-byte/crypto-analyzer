@@ -70,6 +70,7 @@ const MainContent: React.FC = () => {
     totalSpotValue,
     addOrUpdateHolding,
     removeHolding,
+    refreshPortfolio,
   } = usePortfolio();
 
   const {
@@ -139,6 +140,26 @@ const MainContent: React.FC = () => {
   useEffect(() => {
     setGridPreviewLevels([]);
   }, [activeCoin, setGridPreviewLevels]);
+
+  // PWA Mobile Lifecycle: Fast Rehydration on App Wake-up (iPhone / Android)
+  useEffect(() => {
+    const handleWakeUp = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshMarketData();
+        void refreshPortfolio();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('crypto_analyzer_trades_updated'));
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleWakeUp);
+    window.addEventListener('focus', handleWakeUp);
+    return () => {
+      document.removeEventListener('visibilitychange', handleWakeUp);
+      window.removeEventListener('focus', handleWakeUp);
+    };
+  }, [refreshMarketData, refreshPortfolio]);
 
   // Filter grid levels for current active coin
   const displayGridLevels =

@@ -194,7 +194,16 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     refreshPortfolio();
     const interval = setInterval(refreshPortfolio, 30_000);
-    return () => clearInterval(interval);
+
+    const handleTradesUpdated = () => {
+      refreshPortfolio();
+    };
+    window.addEventListener('crypto_analyzer_trades_updated', handleTradesUpdated);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('crypto_analyzer_trades_updated', handleTradesUpdated);
+    };
   }, [refreshPortfolio]);
 
   // Cross-device cloud sync: profile.demo_usdt_balance stores free demo cash only.

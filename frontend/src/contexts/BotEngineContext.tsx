@@ -339,6 +339,9 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const cloudTrades: TradeRow[] = (tradesRes.data as any[]).map(parseSupabaseTradeRow);
             setTrades(cloudTrades);
             setScopedItem('crypto_analyzer_trades', JSON.stringify(cloudTrades), user.id);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new Event('crypto_analyzer_trades_updated'));
+            }
           } else {
             const localSavedTrades = getScopedItem('crypto_analyzer_trades', user.id);
             if (localSavedTrades) {

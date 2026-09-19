@@ -126,7 +126,7 @@ export async function fetchPortfolioFromSupabase(userId?: string): Promise<Portf
       .select('*')
       .eq('user_id', userId)
       .order('updated_at', { ascending: false });
-    if (!error) {
+    if (!error && data && data.length > 0) {
       return (data || []).map((row: any) => ({
         id: row.id,
         user_id: row.user_id,
@@ -138,6 +138,46 @@ export async function fetchPortfolioFromSupabase(userId?: string): Promise<Portf
         total_usd: Number(row.amount || 0) * Number(row.avg_buy_price || 0),
         created_at: row.created_at,
         updated_at: row.updated_at,
+      }));
+    }
+
+    // SSOT Cloud Fallback: Reconstruct open spot holdings directly from bot_trades
+    const { data: openTrades, error: tradesErr } = await supabase
+      .from('bot_trades')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'OPEN')
+      .eq('side', 'BUY')
+      .is('bot_id', null);
+
+    if (!tradesErr && openTrades && openTrades.length > 0) {
+      const grouped: Record<string, { asset: string; symbol: string; amount: number; totalCost: number }> = {};
+      openTrades.forEach((t: any) => {
+        const coinId = t.coin_id;
+        const units = Number(t.units || 0);
+        const cost = Number(t.amount_usd || (units * Number(t.entry_price || 0)));
+        if (!grouped[coinId]) {
+          grouped[coinId] = {
+            asset: coinId,
+            symbol: coinId.toUpperCase(),
+            amount: 0,
+            totalCost: 0,
+          };
+        }
+        grouped[coinId].amount += units;
+        grouped[coinId].totalCost += cost;
+      });
+
+      return Object.values(grouped).map((g) => ({
+        id: `spot-${g.asset}`,
+        user_id: userId,
+        asset: g.asset,
+        symbol: g.symbol,
+        amount: g.amount,
+        avg_buy_price: g.amount > 0 ? g.totalCost / g.amount : 0,
+        current_price: g.amount > 0 ? g.totalCost / g.amount : 0,
+        total_usd: g.totalCost,
+        created_at: new Date().toISOString(),
       }));
     }
 

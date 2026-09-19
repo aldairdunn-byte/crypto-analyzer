@@ -400,6 +400,13 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setSessionRealizedPnlPct(cloudSession.session_realized_pnl_pct || 0);
         setClosedTradesToday(cloudSession.closed_trades_today || 0);
 
+        if (cloudSession.session_start_time) {
+          const startTime = new Date(cloudSession.session_start_time).getTime();
+          setSessionStartTime(startTime);
+          const elapsed = Math.max(0, Math.floor((Date.now() - startTime) / 1000));
+          setElapsedSeconds(elapsed);
+        }
+
         if (cloudSession.status === 'PAUSED') {
           setIsRunning(false);
           setIsPaused(true);
@@ -668,6 +675,11 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setCapitalInAutoTrader(selectedCapital);
 
     // Persist session to Scoped Storage so F5 / reload does not wipe the bot!
+    setScopedItem('autotrader_is_running', 'true', user?.id);
+    setScopedItem('autotrader_session_start_time', now.toString(), user?.id);
+    setScopedItem('autotrader_capital_allocated', selectedCapital.toString(), user?.id);
+    removeScopedItem('autotrader_is_paused', user?.id);
+    removeScopedItem('autotrader_active_position', user?.id);
     setScopedItem('autotrader_is_running', 'true');
     setScopedItem('autotrader_session_start_time', now.toString());
     setScopedItem('autotrader_capital_allocated', selectedCapital.toString());
