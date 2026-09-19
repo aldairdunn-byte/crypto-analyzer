@@ -219,6 +219,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Ref to track the latest demo cash value for debounced cloud sync
   const demoBalanceSyncRef = useRef<number | null>(null);
 
+  // Flag to prevent reconciler from interfering during an active reset sequence
+  const isResettingRef = useRef<boolean>(false);
+
   // Sync USDT cash to LocalStorage (cloud persistence handled by debounced useEffect below)
   const setUsdtCash: React.Dispatch<React.SetStateAction<number>> = (value) => {
     setUsdtCashState((prev) => {
@@ -262,28 +265,36 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   useEffect(() => {
     if (user?.id) {
-      const { migratedHoldings, migratedCash } = migrateGuestDataToUser(user.id);
-      if (migratedHoldings && migratedHoldings !== '{}') {
-        try {
-          const parsed = JSON.parse(migratedHoldings);
-          Object.entries(parsed).forEach(([coinId, h]: [string, any]) => {
-            if (h && h.units > 0.000001) {
-              const coin = getDynamicCoinInfo(coinId);
-              void upsertPortfolioHoldingToSupabase(user.id, {
-                asset: coin.id,
-                symbol: coin.symbol,
-                amount: h.units,
-                avgBuyPrice: h.avgEntryPrice,
-              });
-            }
-          });
-        } catch {}
-      }
-      if (migratedCash) {
-        const amt = parseFloat(migratedCash);
-        if (!isNaN(amt) && amt > 0) {
-          void updateDemoBalance(amt);
+      // ONE-TIME MIGRATION GUARD: Only migrate guest data once per user account.
+      // This prevents re-migration on every re-render or user?.id dependency change.
+      const migrationDoneKey = `crypto_analyzer:migration_done:${user.id}`;
+      const alreadyMigrated = localStorage.getItem(migrationDoneKey);
+
+      if (!alreadyMigrated) {
+        const { migratedHoldings } = migrateGuestDataToUser(user.id);
+        // ROOT CAUSE FIX: We intentionally do NOT call updateDemoBalance(migratedCash) here.
+        // The cloud profile (Supabase user_profiles.demo_usdt_balance) is the single source
+        // of truth for cash balance. Migrating guest cash would OVERWRITE the $1,000 default
+        // that was just set in fetchProfile with whatever the guest had left (e.g., $800).
+        // Only migrate non-cash assets: holdings and bots (handled by BotEngineContext).
+        if (migratedHoldings && migratedHoldings !== '{}') {
+          try {
+            const parsed = JSON.parse(migratedHoldings);
+            Object.entries(parsed).forEach(([coinId, h]: [string, any]) => {
+              if (h && h.units > 0.000001) {
+                const coin = getDynamicCoinInfo(coinId);
+                void upsertPortfolioHoldingToSupabase(user.id, {
+                  asset: coin.id,
+                  symbol: coin.symbol,
+                  amount: h.units,
+                  avgBuyPrice: h.avgEntryPrice,
+                });
+              }
+            });
+          } catch {}
         }
+        // Mark migration as done so it never runs again for this user
+        localStorage.setItem(migrationDoneKey, '1');
       }
     }
 
@@ -477,6 +488,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [holdings]);
 
   useEffect(() => {
+    // Skip reconciliation entirely during a reset sequence
+    if (isResettingRef.current) return;
+
     if (isLiveMode) return;
     const profileBalance = profile?.demo_usdt_balance;
     // BUG-01 FIX: Only trust profileBalance if it is a valid, sane value.
@@ -518,23 +532,36 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const resetDemoBalance = async () => {
     const defaultAmount = 1000.0;
-    setUsdtCash(defaultAmount);
+
+    // Raise the reset flag FIRST so the reconciler doesn't fight us
+    isResettingRef.current = true;
+
+    // 1. Atomically clear all React state
+    setUsdtCashState(defaultAmount);
     setCapitalInGridBots(0);
     setCapitalInAutoTrader(0);
     setLocalHoldings({});
+
+    // 2. Write the authoritative values to localStorage immediately
     setScopedItem('demo_usdt_cash', '1000', user?.id);
-    // BUG-06 FIX: Explicitly remove capital keys from localStorage (not just set to 0)
     removeScopedItem('capital_in_grid_bots', user?.id);
     removeScopedItem('capital_in_autotrader', user?.id);
     removeScopedItem('capital_in_bots', user?.id);
     removeScopedItem('crypto_analyzer_demo_holdings', user?.id);
     removeScopedItem('crypto_analyzer_trades', user?.id);
+
+    // 3. Tell BotEngineContext to clear bots/trades too
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('crypto_analyzer_reset'));
     }
+
+    // 4. Persist to cloud
     if (user) {
       await updateDemoBalance(defaultAmount);
     }
+
+    // 5. Lower the reset flag after all async operations complete
+    isResettingRef.current = false;
   };
 
   return (
