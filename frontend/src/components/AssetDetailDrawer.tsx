@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { useModalKeyboard } from '../lib/formatters';
+import { ModalPortal } from './ui/ModalPortal';
 import { CryptoIcon } from './CryptoIcon';
 import {
   COINS,
@@ -53,6 +55,7 @@ export const AssetDetailDrawer = ({
   change24h = 0,
   high24h,
   low24h,
+  rsi,
   currencyMode = 'USD',
   penRate = 3.75,
   onQuickSell,
@@ -88,6 +91,8 @@ export const AssetDetailDrawer = ({
   const fundamentals = useMemo(() => {
     return getCoinFundamentals(coinMeta);
   }, [coinMeta]);
+
+  useModalKeyboard(isOpen, onClose);
 
   if (!isOpen || !coinId) return null;
 
@@ -134,16 +139,22 @@ export const AssetDetailDrawer = ({
   };
 
   return (
+    <ModalPortal>
     <>
       {/* ─── BACKDROP (Blur & Click Outside) ─── */}
       <div
         onClick={onClose}
-        className="fixed inset-0 bg-black/65 backdrop-blur-xs z-40 transition-opacity animate-fadeIn"
+        role="presentation"
+        className="fixed inset-0 bg-black/65 backdrop-blur-xs z-[75] transition-opacity animate-fadeIn"
       />
 
       {/* ─── DRAWER CONTAINER: SIDEBAR IN DESKTOP, BOTTOM SHEET IN MOBILE ─── */}
       <div
-        className="fixed z-50 bg-[#0E1118] border-white/10 shadow-2xl flex flex-col
+        role="dialog"
+        aria-modal="true"
+        aria-label="Detalle del Activo"
+        onClick={(e) => e.stopPropagation()}
+        className="fixed z-[75] bg-[#0E1118] border-white/10 shadow-2xl flex flex-col
           /* Desktop (Side Drawer) */
           md:top-0 md:right-0 md:bottom-0 md:w-[440px] md:border-l md:animate-slideLeft
           /* Mobile (Bottom Sheet) */
@@ -244,6 +255,34 @@ export const AssetDetailDrawer = ({
                     title={`Precio actual: ${curPrice}`}
                   />
                 </div>
+              </div>
+            )}
+
+            {/* Termómetro Cuantitativo RSI (14) & Volumen */}
+            {!isUsdt && (
+              <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between font-mono text-xs">
+                <div className="flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="text-[10.5px] text-slate-400 font-sans">RSI (14 Periodos):</span>
+                  <span className="font-extrabold text-white tabular-nums">
+                    {(rsi ?? 52.4).toFixed(1)}
+                  </span>
+                </div>
+                <span
+                  className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-full border ${
+                    (rsi ?? 52.4) < 30
+                      ? 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
+                      : (rsi ?? 52.4) > 70
+                      ? 'bg-amber-500/15 text-[#F59E0B] border-amber-500/30'
+                      : 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+                  }`}
+                >
+                  {(rsi ?? 52.4) < 30
+                    ? 'Zona de Acumulación'
+                    : (rsi ?? 52.4) > 70
+                    ? 'Zona de Toma de Beneficios'
+                    : 'Régimen Neutral'}
+                </span>
               </div>
             )}
           </div>
@@ -499,5 +538,7 @@ export const AssetDetailDrawer = ({
         </div>
       </div>
     </>
+    </ModalPortal>
   );
+
 };

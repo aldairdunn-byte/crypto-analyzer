@@ -17,8 +17,10 @@ import { DecisionHeroCard } from './dashboard/DecisionHeroCard';
 import { MarketOverview24h } from './dashboard/MarketOverview24h';
 import { RecentSignalsFeed, type DashboardSignalItem } from './dashboard/RecentSignalsFeed';
 import { AutoTraderDashboardWidget } from './dashboard/AutoTraderDashboardWidget';
+import { QuickActionSheet } from './dashboard/QuickActionSheet';
 import { useAutoTrader } from '../contexts/AutoTraderContext';
 import { usePortfolio } from '../contexts/PortfolioContext';
+import { useModalKeyboard } from '../lib/formatters';
 import { Activity, Globe, DollarSign } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -85,8 +87,11 @@ export const DashboardView = ({
     }
   });
   const [hideBalances, setHideBalances] = useState<boolean>(false);
+  const [quickAction, setQuickAction] = useState<boolean>(false);
   const autoTrader = useAutoTrader();
   const { capitalInAutoTrader, capitalInGridBots } = usePortfolio();
+
+  useModalKeyboard(quickAction, () => setQuickAction(false));
 
   useEffect(() => {
     if (externalStats && Object.keys(externalStats).length > 0) {
@@ -357,6 +362,29 @@ export const DashboardView = ({
           }
         }}
         onOpenAlerts={onOpenNotifications || (() => onNavigateView('RADAR'))}
+      />
+
+      {/* ─── PWA QUICK ACTION FLOATING TRIGGER ─── */}
+      <div className="fixed bottom-6 right-6 z-30">
+        <button
+          onClick={() => setQuickAction(true)}
+          className="flex items-center gap-2 px-4 py-3 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs shadow-xl shadow-amber-500/25 active:scale-95 transition-all cursor-pointer border border-amber-300/30"
+          aria-label="Abrir menú de acciones rápidas"
+        >
+          <Activity className="w-4 h-4 stroke-[3]" />
+          <span>Acciones</span>
+        </button>
+      </div>
+
+      {/* ─── PWA QUICK ACTION MODAL ─── */}
+      <QuickActionSheet
+        isOpen={quickAction}
+        onClose={() => setQuickAction(false)}
+        onNavigateView={onNavigateView}
+        onOpenCoinInTerminal={onOpenCoinInTerminal}
+        topHero={bestBuy || bestGridBot}
+        currencyMode={currencyMode}
+        penRate={penRate}
       />
     </div>
   );

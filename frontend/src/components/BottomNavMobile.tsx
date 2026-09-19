@@ -31,7 +31,7 @@ export const BottomNavMobile: React.FC<BottomNavMobileProps> = ({
   return (
     <nav
       aria-label="Navegación Móvil"
-      className="fixed bottom-0 left-0 right-0 z-50 bg-[#060709]/98 backdrop-blur-2xl border-t border-white/10 flex md:hidden items-center justify-around px-1 py-1 select-none shadow-2xl safe-area-bottom"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-[#060709]/98 backdrop-blur-2xl border-t border-white/10 flex md:hidden items-center justify-around px-1 py-1 select-none shadow-2xl safe-area-bottom"
     >
       {navItems.map((item) => {
         const Icon = item.icon;

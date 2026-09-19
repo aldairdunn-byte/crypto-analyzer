@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ModalPortal } from './ui/ModalPortal';
 import { type PlainSpanishNotification } from '../lib/notifications';
 import { CryptoIcon } from './CryptoIcon';
 import {
@@ -52,15 +53,20 @@ export const NotificationsDrawer = ({
   const dangerCount = notifications.filter((n) => n.category === 'DANGER').length;
 
   return (
-    <>
+    <ModalPortal>
       {/* Backdrop */}
       <div
         onClick={onClose}
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 transition-opacity animate-in fade-in duration-200"
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[75] transition-opacity animate-in fade-in duration-200"
       />
 
       {/* Drawer Panel (Responsive 100vw on mobile, 440px on desktop) */}
-      <div className="fixed inset-y-0 right-0 w-full sm:w-[440px] max-w-full bg-[#08090C] border-l border-white/10 z-50 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 select-none">
+      <div
+        className="fixed inset-y-0 right-0 w-full sm:w-[440px] max-w-full bg-[#08090C] border-l border-white/10 z-[75] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 select-none"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Centro de Notificaciones"
+      >
         {/* Drawer Header */}
         <div className="h-16 px-4 sm:px-5 border-b border-white/10 bg-[#0E1118] flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
@@ -248,6 +254,6 @@ export const NotificationsDrawer = ({
           )}
         </div>
       </div>
-    </>
+    </ModalPortal>
   );
 };

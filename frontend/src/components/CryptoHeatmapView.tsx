@@ -9,6 +9,9 @@ import {
   type TreemapGroupRect,
 } from '../lib/treemapLayout';
 import { CryptoIcon } from './CryptoIcon';
+import { useModalKeyboard } from '../lib/formatters';
+import { ModalPortal } from './ui/ModalPortal';
+import { X } from 'lucide-react';
 import {
   ArrowsIn,
   Lightning,
@@ -223,6 +226,9 @@ export const CryptoHeatmapView: React.FC<CryptoHeatmapViewProps> = ({
     clientX: number;
     clientY: number;
   } | null>(null);
+  const [selectedCoin, setSelectedCoin] = useState<TileData | null>(null);
+
+  useModalKeyboard(Boolean(selectedCoin), () => setSelectedCoin(null));
 
   // Responsive ResizeObserver
   useEffect(() => {
@@ -598,6 +604,87 @@ export const CryptoHeatmapView: React.FC<CryptoHeatmapViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* ─── PWA COIN DETAIL POPOVER / MODAL ─── */}
+      {selectedCoin && (
+        <ModalPortal>
+        <div onClick={() => setSelectedCoin(null)} role="presentation" className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn select-none">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Detalle de ${selectedCoin.coin.name}`}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#0D1117] border border-white/20 rounded-2xl p-5 sm:p-6 max-w-sm w-full shadow-2xl space-y-4 select-none relative max-h-[85vh] overflow-y-auto"
+          >
+            <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-2 sm:hidden" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <CryptoIcon symbol={selectedCoin.coin.symbol} size={32} />
+                <div>
+                  <h3 className="text-base font-black text-white leading-tight">
+                    {selectedCoin.coin.name}
+                  </h3>
+                  <span className="text-xs font-mono font-bold text-amber-400">
+                    {selectedCoin.coin.symbol}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedCoin(null)}
+                className="p-1.5 rounded-full hover:bg-white/10 text-slate-400 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-black/40 border border-white/10 rounded-2xl p-3.5 space-y-2 text-xs font-mono">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Precio Actual:</span>
+                <span className="font-bold text-white text-sm">
+                  {formatDynamicPrice(selectedCoin.price, selectedCoin.coin.decimals, currencyMode, penRate)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Variación 24h:</span>
+                <span className={`font-bold ${selectedCoin.changeDisplay >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                  {selectedCoin.changeDisplay >= 0 ? '+' : ''}{selectedCoin.changeDisplay.toFixed(2)}%
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Volumen 24h:</span>
+                <span className="text-slate-200">${(selectedCoin.vol24h / 1_000_000).toFixed(2)}M</span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-400">Mín / Máx 24h:</span>
+                <span className="text-slate-300">
+                  {formatDynamicPrice(selectedCoin.low24h, selectedCoin.coin.decimals, currencyMode, penRate)} - {formatDynamicPrice(selectedCoin.high24h, selectedCoin.coin.decimals, currencyMode, penRate)}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setSelectedCoin(null)}
+                className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-300 transition-colors cursor-pointer"
+              >
+                Cerrar
+              </button>
+              <button
+                onClick={() => {
+                  const id = selectedCoin.coin.id;
+                  setSelectedCoin(null);
+                  onSelectCoin(id);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-xs font-black text-black shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <Lightning weight="fill" className="w-3.5 h-3.5" />
+                <span>Operar</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
     </div>
   );
 
@@ -619,7 +706,7 @@ export const CryptoHeatmapView: React.FC<CryptoHeatmapViewProps> = ({
     return (
       <div
         key={rect.id}
-        onClick={() => onSelectCoin(rect.data.coin.id)}
+        onClick={() => setSelectedCoin(rect.data)}
         onMouseEnter={(e) => handleMouseEnter(rect, e)}
         className={`absolute rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center p-1 overflow-hidden group ${
           colors.bg

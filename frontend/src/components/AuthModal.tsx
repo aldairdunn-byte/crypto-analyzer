@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { ModalPortal } from './ui/ModalPortal';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Zap,
@@ -80,9 +81,28 @@ export const AuthModal: React.FC = () => {
     closeAuthModal();
   };
 
+  // Escape key to close
+  useEffect(() => {
+    if (!isAuthModalOpen) return;
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeAuthModal(); };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isAuthModalOpen, closeAuthModal]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 select-none">
-      <div className="bg-[#0D1117] border border-white/15 rounded-3xl p-5 sm:p-7 max-w-md w-full shadow-2xl space-y-4 relative overflow-hidden">
+    <ModalPortal>
+      <div
+        className="fixed inset-0 z-[80] flex items-center justify-center p-3.5 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 select-none"
+        onClick={closeAuthModal}
+        role="presentation"
+      >
+      <div
+        className="bg-[#0D1117] border border-white/15 rounded-3xl p-5 sm:p-7 max-w-md w-full shadow-2xl space-y-4 relative overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Autenticación"
+      >
         {/* Glowing ambient background effect */}
         <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#F59E0B]/15 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -257,5 +277,6 @@ export const AuthModal: React.FC = () => {
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 };

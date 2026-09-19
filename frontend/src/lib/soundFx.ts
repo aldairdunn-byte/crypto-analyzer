@@ -158,6 +158,30 @@ class SoundFxEngine {
       osc.stop(now + 0.03);
     } catch {}
   }
+
+  public buy() {
+    this.playBuy();
+  }
+
+  public sell() {
+    this.playProfit();
+  }
+
+  public warning() {
+    this.playAlert();
+  }
+
+  public profit() {
+    this.playProfit();
+  }
+
+  public alert() {
+    this.playAlert();
+  }
+
+  public click() {
+    this.playClick();
+  }
 }
 
 export const soundFx = new SoundFxEngine();

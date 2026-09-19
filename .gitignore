@@ -6,6 +6,8 @@
 # Antigravity IDE Agents & Skills (Sensitive keys)
 .agents/
 .agents
+.antigravity/
+.antigravity
 
 # Node / Frontend
 node_modules/
@@ -33,3 +35,5 @@ logs/
 
 # Streamlit
 .streamlit/secrets.toml
+
+.vercel

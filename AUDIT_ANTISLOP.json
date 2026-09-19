@@ -1,0 +1,301 @@
+{
+  "errors": [],
+  "warnings": [
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/MarketRadarView.tsx",
+      "rule": "PWA_MODAL",
+      "message": "[MarketRadarView.tsx] Recommended modal missing: \"Signal Detail Modal\"",
+      "fixHint": "Consider adding: Signal Detail Modal"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/AssetDetailDrawer.tsx",
+      "rule": "COMPONENT_SIZE",
+      "message": "AssetDetailDrawer.tsx has 541 lines (>500 consider splitting)",
+      "fixHint": ""
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/AssetsView.tsx",
+      "rule": "COMPONENT_SIZE",
+      "message": "AssetsView.tsx has 738 lines (>500 consider splitting)",
+      "fixHint": ""
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/AutoTraderView.tsx",
+      "rule": "COMPONENT_SIZE",
+      "message": "AutoTraderView.tsx has 763 lines (>500 consider splitting)",
+      "fixHint": ""
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/BotDetailModal.tsx",
+      "rule": "COMPONENT_SIZE",
+      "message": "BotDetailModal.tsx has 607 lines (>500 consider splitting)",
+      "fixHint": ""
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/BottomActivityPanel.tsx",
+      "rule": "COMPONENT_SIZE",
+      "message": "BottomActivityPanel.tsx has 757 lines (>500 consider splitting)",
+      "fixHint": ""
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/CryptoHeatmapView.tsx",
+      "rule": "COMPONENT_SIZE",
+      "message": "CryptoHeatmapView.tsx has 785 lines (>500 consider splitting)",
+      "fixHint": ""
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/MarketRadarView.tsx",
+      "rule": "COMPONENT_SIZE",
+      "message": "MarketRadarView.tsx has 652 lines (>500 consider splitting)",
+      "fixHint": ""
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/SettingsView.tsx",
+      "rule": "COMPONENT_SIZE",
+      "message": "SettingsView.tsx has 510 lines (>500 consider splitting)",
+      "fixHint": ""
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/TradingBotPanel.tsx",
+      "rule": "COMPONENT_SIZE",
+      "message": "TradingBotPanel.tsx has 679 lines (>500 consider splitting)",
+      "fixHint": ""
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/TradingViewChart.tsx",
+      "rule": "COMPONENT_SIZE",
+      "message": "TradingViewChart.tsx has 737 lines (>500 consider splitting)",
+      "fixHint": ""
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/dashboard/TotalEquityCard.tsx",
+      "rule": "INLINE_STYLE",
+      "message": "TotalEquityCard.tsx has 4 inline style blocks",
+      "fixHint": "Move to CSS classes or Tailwind utilities."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/BotDetailModal.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotDetailModal.tsx:516 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1173 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1217 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1231 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1232 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1274 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1303 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1304 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1742 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1743 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1791 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1805 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/contexts/BotEngineContext.tsx",
+      "rule": "DECIMAL_PRECISION",
+      "message": "BotEngineContext.tsx:1806 raw .toFixed(2) on financial value",
+      "fixHint": "Use formatMicroPnl() for values that could be < $1.00"
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/AssetDetailDrawer.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "AssetDetailDrawer.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/AuthModal.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "AuthModal.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/BotDetailModal.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "BotDetailModal.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/chart/CoinInfoModal.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "CoinInfoModal.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/CryptoHeatmapView.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "CryptoHeatmapView.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/dashboard/QuickActionSheet.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "QuickActionSheet.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/NotificationsDrawer.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "NotificationsDrawer.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/radar/AlertSetupSheet.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "AlertSetupSheet.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/radar/RadarSignalModal.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "RadarSignalModal.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/SettingsView.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "SettingsView.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/TradingBotPanel.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "TradingBotPanel.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/TradingViewChart.tsx",
+      "rule": "MODAL_BACKDROP",
+      "message": "TradingViewChart.tsx � backdrop div missing onClick to close",
+      "fixHint": "Add onClick={onClose} to the fixed inset-0 div."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/TradingBotPanel.tsx",
+      "rule": "LOADING_STATE",
+      "message": "TradingBotPanel.tsx � no loading state",
+      "fixHint": "Add isLoading prop + skeleton UI."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/AutoTraderView.tsx",
+      "rule": "LOADING_STATE",
+      "message": "AutoTraderView.tsx � no loading state",
+      "fixHint": "Add isLoading prop + skeleton UI."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/MarketRadarView.tsx",
+      "rule": "LOADING_STATE",
+      "message": "MarketRadarView.tsx � no loading state",
+      "fixHint": "Add isLoading prop + skeleton UI."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/HeaderTickerBar.tsx",
+      "rule": "A11Y",
+      "message": "HeaderTickerBar.tsx modal missing role=\"dialog\" aria-modal=\"true\"",
+      "fixHint": "Add role=\"dialog\" aria-modal=\"true\" to modal container."
+    },
+    {
+      "severity": "WARN",
+      "file": "frontend/src/components/TradingViewChart.tsx",
+      "rule": "A11Y",
+      "message": "TradingViewChart.tsx modal missing role=\"dialog\" aria-modal=\"true\"",
+      "fixHint": "Add role=\"dialog\" aria-modal=\"true\" to modal container."
+    }
+  ],
+  "passedChecks": 346,
+  "timestamp": "2026-09-19T07:57:39.354Z"
+}

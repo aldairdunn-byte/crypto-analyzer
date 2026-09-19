@@ -2,16 +2,18 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { type GridLevelItem, type QuantitativeAnalysis, formatDynamicPrice, getDynamicCoinInfo } from '../lib/marketData';
 import { type StrategyRecommendation } from '../lib/strategyAdvisor';
 import { PositionCalculatorCard } from './PositionCalculatorCard';
+import { BotDetailModal } from './BotDetailModal';
+import { GridBotTab } from './trading/GridBotTab';
+import { ManualTradeTab } from './trading/ManualTradeTab';
+import { useModalKeyboard } from '../lib/formatters';
+import { ModalPortal } from './ui/ModalPortal';
+import { X, Trash2 } from 'lucide-react';
 import {
   Robot,
   Target,
   TrendUp,
   Lightning,
   Sparkle,
-  SlidersHorizontal,
-  ShieldCheck,
-  ChartLineUp,
-  Stack,
   XCircle,
 } from '@phosphor-icons/react';
 
@@ -64,16 +66,6 @@ export const TradingBotPanel = ({
 }: TradingBotPanelProps) => {
   const [activeTab, setActiveTab] = useState<'GRID' | 'DCA' | 'CALCULATOR' | 'MANUAL'>('GRID');
   const [gridMode, setGridMode] = useState<'AI' | 'MANUAL'>('AI');
-  const [spotSide, setSpotSide] = useState<'BUY' | 'SELL'>('BUY');
-  const [spotAmountUsd, setSpotAmountUsd] = useState<number>(() => availableUsdt > 0 ? Math.min(25, availableUsdt) : 0);
-  const [spotOrderType, setSpotOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
-  const [spotTargetBuyPrice, setSpotTargetBuyPrice] = useState<number>(() => currentPrice);
-  const [spotTakeProfitPrice, setSpotTakeProfitPrice] = useState<number>(() =>
-    analysis?.levels?.takeProfit1?.price || (currentPrice > 0 ? Number((currentPrice * 1.05).toFixed(currentPrice >= 1 ? 2 : 4)) : 0)
-  );
-  const [spotStopLossPrice, setSpotStopLossPrice] = useState<number>(() =>
-    analysis?.levels?.stopLoss?.price || (currentPrice > 0 ? Number((currentPrice * 0.95).toFixed(currentPrice >= 1 ? 2 : 4)) : 0)
-  );
 
   // Grid Bot State (strictly sync with availableUsdt & currentPrice)
   const initialDecimals = currentPrice >= 1 ? 2 : 4;
@@ -92,6 +84,15 @@ export const TradingBotPanel = ({
   );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isCreatingBot, setIsCreatingBot] = useState<'GRID' | 'DCA' | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ botName: string } | null>(null);
+  const [selectedBotForDetail, setSelectedBotForDetail] = useState<any | null>(null);
+
+  useModalKeyboard(Boolean(isCreatingBot || deleteConfirm || selectedBotForDetail), () => {
+    setIsCreatingBot(null);
+    setDeleteConfirm(null);
+    setSelectedBotForDetail(null);
+  });
 
   // DCA Bot State
   const [dcaAmount, setDcaAmount] = useState<number>(() => availableUsdt > 0 ? Math.min(25, availableUsdt) : 0);
@@ -190,7 +191,6 @@ export const TradingBotPanel = ({
         );
       } else if (terminalIntent.regime === 'SPOT_HOLD') {
         setActiveTab('MANUAL');
-        setSpotSide('BUY');
       } else if (terminalIntent.regime === 'DCA_DIP') {
         setActiveTab('DCA');
       }
@@ -290,35 +290,6 @@ export const TradingBotPanel = ({
     }
   };
 
-  const handleExecuteSpot = async () => {
-    setIsSubmitting(true);
-    setSuccessMessage(null);
-    try {
-      const isLimit = spotSide === 'BUY' && spotOrderType === 'LIMIT';
-      const targetPrice = isLimit && spotTargetBuyPrice > 0 ? spotTargetBuyPrice : currentPrice;
-      await onExecuteSpotTrade({
-        coinId,
-        side: spotSide,
-        price: targetPrice,
-        amountUsd: spotAmountUsd,
-        orderType: isLimit ? 'LIMIT' : 'MARKET',
-        takeProfitPrice: spotSide === 'BUY' && spotTakeProfitPrice > 0 ? spotTakeProfitPrice : undefined,
-        stopLossPrice: spotSide === 'BUY' && spotStopLossPrice > 0 ? spotStopLossPrice : undefined,
-        strategyType: 'SPOT_MANUAL',
-      });
-      setSuccessMessage(
-        isLimit
-          ? `Orden Límite Programada: Comprar en $${targetPrice} ➔ Vender en $${spotTakeProfitPrice}`
-          : `Orden Spot de ${spotSide} ejecutada con éxito`
-      );
-      setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (err: any) {
-      alert('Error en trade spot: ' + err.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   return (
     <div className="w-full bg-[#0E1118] flex flex-col h-full min-h-0 text-xs select-none md:border-l border-white/10 overflow-hidden shrink-0">
       {/* Top Main Mode Tabs (4 Modes with Phosphor Duotone Icons) */}
@@ -406,354 +377,36 @@ export const TradingBotPanel = ({
 
         {/* ─── TAB: SPOT GRID BOT ─── */}
         {activeTab === 'GRID' && (
-          <div className="space-y-3">
-            {/* 1. Quantitative Analysis Verdict Card (Human Plain Language) */}
-            {analysis && (
-              <div className="bg-[#08090C] border border-white/10 rounded-2xl p-3.5 shadow-xl space-y-2.5 relative group overflow-hidden">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase text-slate-400 font-extrabold flex items-center gap-1.5">
-                    <Sparkle weight="duotone" className="w-4 h-4 text-[#F59E0B]" />
-                    <span>Análisis de Mercado IA</span>
-                  </span>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border font-mono ${
-                      analysis.signalType === 'BUY'
-                        ? 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
-                        : analysis.signalType === 'SELL'
-                        ? 'bg-rose-500/15 text-[#F6465D] border-rose-500/30'
-                        : analysis.signalType === 'AVOID'
-                        ? 'bg-red-500/20 text-red-400 border-red-500/40'
-                        : 'bg-amber-500/15 text-[#F59E0B] border-amber-500/30'
-                    }`}
-                  >
-                    {analysis.badge}
-                  </span>
-                </div>
-
-                {/* 3 Plain Metrics without cryptic jargon */}
-                <div className="grid grid-cols-3 gap-1.5 bg-[#0E1118] p-2 rounded-xl border border-white/5 text-[10px] font-mono text-center">
-                  <div>
-                    <span className="text-slate-500 block text-[9px]">Compradores</span>
-                    <span className="font-bold text-white text-xs tabular-nums">
-                      {analysis.rsi >= 55 ? 'Fuerte' : analysis.rsi >= 45 ? 'Equilibrado' : 'Débil'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[9px]">Volatilidad</span>
-                    <span className="font-bold text-white text-xs tabular-nums">
-                      {analysis.atrPercent <= 1 ? 'Estable' : 'Alta'} ({analysis.atrPercent}%)
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[9px]">Fuerza Canal</span>
-                    <span className="font-bold text-[#F59E0B] text-xs tabular-nums">{analysis.momentumScore}%</span>
-                  </div>
-                </div>
-
-                {/* Market Strength Meter */}
-                <div>
-                  <div className="flex justify-between text-[9px] text-slate-400 mb-1">
-                    <span>Tendencia de Oscilación</span>
-                    <span className="font-bold text-[#F59E0B] tabular-nums">{analysis.momentumScore}%</span>
-                  </div>
-                  <div className="w-full bg-[#151922] h-1.5 rounded-full overflow-hidden border border-white/5">
-                    <div
-                      className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-[#F6465D] via-[#F59E0B] to-[#0ECB81]"
-                      style={{ width: `${analysis.momentumScore}%` }}
-                    />
-                  </div>
-                </div>
-
-                <p className="text-[11px] text-slate-300 leading-relaxed">{analysis.plainExplanation}</p>
-
-                {/* 1-Click AI Strategy Button */}
-                <button
-                  onClick={applyAIAutoRange}
-                  className="w-full bg-[#F59E0B]/15 hover:bg-[#F59E0B]/25 border border-[#F59E0B]/40 text-[#F59E0B] font-extrabold py-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-98"
-                >
-                  <Sparkle weight="duotone" className="w-4 h-4" />
-                  <span>Autocompletar Rango Seguro con IA</span>
-                </button>
-              </div>
-            )}
-
-            {/* AI vs Manual Mode Switcher */}
-            <div className="flex items-center bg-[#08090C] p-1 rounded-xl border border-white/10 text-xs">
-              <button
-                onClick={() => {
-                  setGridMode('AI');
-                  applyAIAutoRange();
-                }}
-                className={`flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  gridMode === 'AI' ? 'bg-white/10 text-[#F59E0B] shadow-sm' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Sparkle weight="duotone" className="w-3.5 h-3.5" />
-                <span>Estrategia IA</span>
-              </button>
-              <button
-                onClick={() => setGridMode('MANUAL')}
-                className={`flex-1 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  gridMode === 'MANUAL' ? 'bg-white/10 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <SlidersHorizontal weight="duotone" className="w-3.5 h-3.5" />
-                <span>Personalizado</span>
-              </button>
-            </div>
-
-            {/* Quick Percentage Range Presets (with Active Highlight) */}
-            <div>
-              <div className="flex justify-between text-[10px] text-slate-400 font-bold mb-1">
-                <span>Rango Rápido Sugerido:</span>
-                <span className="text-slate-500 font-mono">Spot: ${currentPrice >= 1 ? currentPrice.toFixed(2) : currentPrice.toFixed(4)}</span>
-              </div>
-              <div className="flex gap-1.5">
-                {[
-                  { label: 'Corto (±3%)', pct: 3 },
-                  { label: 'Medio (±5%)', pct: 5 },
-                  { label: 'Amplio (±10%)', pct: 10 },
-                ].map((item) => (
-                  <button
-                    key={item.pct}
-                    onClick={() => applyQuickRangePercent(item.pct)}
-                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer border ${
-                      selectedQuickPct === item.pct
-                        ? 'bg-[#F59E0B] text-black border-transparent shadow-sm font-black'
-                        : 'bg-[#08090C] text-slate-300 hover:text-white hover:bg-white/10 border-white/5'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Form Fields: Price Low & High with Fixed Decimal Stepping */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <label className="text-[10px] text-slate-400 font-bold block mb-1">Precio Piso (Mínimo)</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step={currentPrice >= 1 ? "0.01" : "0.000001"}
-                    value={gridLow}
-                    onChange={(e) => handleUpdateGridParams(Number(e.target.value), gridHigh, gridCount, gridCapital)}
-                    className="w-full bg-[#08090C] border border-white/10 rounded-xl px-3 py-2 pr-11 text-white font-mono font-bold focus:outline-none focus:border-[#F59E0B] tabular-nums"
-                  />
-                  <span className="absolute right-2.5 top-2.5 text-[10px] text-slate-500 font-mono">USDT</span>
-                </div>
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 font-bold block mb-1">Precio Techo (Máximo)</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step={currentPrice >= 1 ? "0.01" : "0.000001"}
-                    value={gridHigh}
-                    onChange={(e) => handleUpdateGridParams(gridLow, Number(e.target.value), gridCount, gridCapital)}
-                    className="w-full bg-[#08090C] border border-white/10 rounded-xl px-3 py-2 pr-11 text-white font-mono font-bold focus:outline-none focus:border-[#F59E0B] tabular-nums"
-                  />
-                  <span className="absolute right-2.5 top-2.5 text-[10px] text-slate-500 font-mono">USDT</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Grids Count Slider & Inversión */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-[10px] font-bold">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Stack weight="duotone" className="w-3.5 h-3.5 text-[#F59E0B]" />
-                  <span>Cantidad de Mallas: {gridCount}</span>
-                </span>
-                <span className="text-slate-500 font-mono">
-                  {gridCount <= 6 ? 'Espaciado Seguro' : gridCount <= 12 ? 'Densidad Óptima' : 'Alta Frecuencia'}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={2}
-                max={20}
-                value={gridCount}
-                onChange={(e) => handleUpdateGridParams(gridLow, gridHigh, Number(e.target.value), gridCapital)}
-                className="w-full accent-[#F59E0B] h-1.5 bg-white/10 rounded-lg cursor-pointer"
-              />
-            </div>
-
-            {/* Inversión Asignada */}
-            <div>
-              <div className="flex justify-between items-center text-[10px] font-bold mb-1">
-                <div className="flex items-center gap-1 text-slate-400">
-                  <span>Inversión Asignada</span>
-                  <span className="text-slate-500 font-mono font-normal">
-                    (Libre: <span className="text-[#0ECB81] font-bold">${availableUsdt.toFixed(2)} USDT</span>)
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 font-mono text-[9.5px]">
-                  <span className="text-slate-400">Equivale a:</span>
-                  <span className="text-amber-300 font-bold">~S/ {(gridCapital * penRate).toFixed(2)} PEN</span>
-                </div>
-              </div>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="1"
-                  value={gridCapital}
-                  onChange={(e) => handleUpdateGridParams(gridLow, gridHigh, gridCount, Number(e.target.value))}
-                  className={`w-full bg-[#08090C] border rounded-xl px-3 py-2 pr-11 text-white font-mono font-bold focus:outline-none tabular-nums ${
-                    gridCapital > availableUsdt
-                      ? 'border-rose-500/50 focus:border-rose-500 text-rose-300'
-                      : 'border-white/10 focus:border-[#F59E0B]'
-                  }`}
-                />
-                <span className="absolute right-2.5 top-2.5 text-[10px] text-slate-500 font-mono">USDT</span>
-              </div>
-              {gridCapital > availableUsdt && (
-                <p className="text-[10px] text-rose-400 font-sans mt-1 leading-tight">
-                  Has ingresado <strong>${gridCapital} USDT</strong> (S/ {(gridCapital * penRate).toFixed(0)} PEN). Tu saldo líquido disponible es de <strong>${availableUsdt.toFixed(2)} USDT</strong>.
-                </p>
-              )}
-            </div>
-
-            {/* Quick Capital Presets */}
-            <div className="flex flex-wrap gap-1.5">
-              {(availableUsdt <= 20
-                ? [
-                    { label: '$2', val: 2 },
-                    { label: '$5', val: 5 },
-                    { label: '50%', val: Number((availableUsdt * 0.5).toFixed(2)) },
-                    { label: 'MAX', val: Number(availableUsdt.toFixed(2)) },
-                  ]
-                : [
-                    { label: '25%', val: Number((availableUsdt * 0.25).toFixed(2)) },
-                    { label: '50%', val: Number((availableUsdt * 0.5).toFixed(2)) },
-                    { label: '75%', val: Number((availableUsdt * 0.75).toFixed(2)) },
-                    { label: 'MAX', val: Number(availableUsdt.toFixed(2)) },
-                  ]
-              ).map((preset) => (
-                <button
-                  key={preset.label}
-                  disabled={availableUsdt <= 0}
-                  onClick={() => handleUpdateGridParams(gridLow, gridHigh, gridCount, preset.val)}
-                  className={`flex-1 min-w-[48px] py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                    gridCapital === preset.val && availableUsdt > 0
-                      ? 'bg-[#F59E0B] text-black shadow-sm font-black'
-                      : 'bg-[#08090C] text-slate-400 hover:text-white border border-white/5'
-                  }`}
-                >
-                  {preset.label} {preset.label.includes('%') || preset.label === 'MAX' ? `($${preset.val})` : ''}
-                </button>
-              ))}
-            </div>
-
-            {/* Live Financial Profit Projection Box & Pionex-style Backtest APR */}
-            <div className="bg-[#08090C] border border-white/10 rounded-2xl p-3 space-y-2 text-xs font-mono">
-              <div className="flex items-center justify-between text-slate-400 text-[10px] font-sans font-bold pb-1.5 border-b border-white/5">
-                <span className="flex items-center gap-1.5 text-slate-300">
-                  <ChartLineUp weight="duotone" className="w-3.5 h-3.5 text-[#0ECB81]" />
-                  <span>Proyección & Backtest 7D</span>
-                </span>
-                <span className="text-[#0ECB81] font-extrabold font-mono tracking-tight">
-                  Est. +{Math.abs(estimatedApy).toFixed(1)}% APY Anual
-                </span>
-              </div>
-
-              {/* 7D vs 30D Backtest Badges */}
-              <div className="grid grid-cols-2 gap-2 pb-1 border-b border-white/5 text-[10px]">
-                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-1.5 text-center">
-                  <span className="text-slate-400 block text-[9px]">Backtest 7D</span>
-                  <span className="text-emerald-400 font-black font-mono">
-                    +{(Math.abs(estimatedApy) * 1.15).toFixed(1)}% APR
-                  </span>
-                </div>
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-1.5 text-center">
-                  <span className="text-slate-400 block text-[9px]">Backtest 30D</span>
-                  <span className="text-blue-400 font-black font-mono">
-                    +{(Math.abs(estimatedApy) * 1.02).toFixed(1)}% APR
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center text-slate-400 text-[11px]">
-                <span>Ganancia Neta por Ciclo:</span>
-                <span className="text-[#0ECB81] font-black tabular-nums">
-                  +${profitPerFillUsd.toFixed(2)} (+{netProfitPct.toFixed(2)}%)
-                </span>
-              </div>
-
-              <div className="flex justify-between items-center text-slate-400 text-[11px]">
-                <span>Asignación por Nivel:</span>
-                <span className="text-white font-bold tabular-nums">
-                  {formatDynamicPrice(capPerGrid, 2, currencyMode, penRate)}
-                </span>
-              </div>
-            </div>
-
-            {/* Stop Loss & Capital Protection Module */}
-            <div className="bg-[#08090C] border border-white/10 rounded-2xl p-3 space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={enableStopLoss}
-                    onChange={(e) => setEnableStopLoss(e.target.checked)}
-                    className="accent-[#F59E0B] w-4 h-4 rounded"
-                  />
-                  <span className="font-bold text-white text-[11px] flex items-center gap-1.5">
-                    <ShieldCheck weight="duotone" className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Protección de Capital</span>
-                  </span>
-                </label>
-                <span className="text-[10px] text-emerald-400 font-mono font-bold">Stop Loss Activo</span>
-              </div>
-
-              {enableStopLoss && (
-                <div className="space-y-1.5">
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step={currentPrice >= 1 ? "0.01" : "0.000001"}
-                      value={stopLossPrice}
-                      onChange={(e) => setStopLossPrice(Number(e.target.value))}
-                      className="w-full bg-[#0E1118] border border-white/10 focus:border-[#F59E0B] rounded-xl px-3 py-1.5 pr-11 text-slate-200 font-mono font-bold focus:outline-none tabular-nums text-xs"
-                      placeholder="Precio de Stop Loss"
-                    />
-                    <span className="absolute right-2.5 top-2 text-[10px] text-slate-500 font-mono">USDT</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-mono flex justify-between">
-                    <span>Pérdida máxima protegida:</span>
-                    <span className="text-rose-400 font-bold">-${maxProtectedLossUsd.toFixed(2)} USDT</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {successMessage && (
-              <div className="p-3 bg-emerald-500/15 border border-emerald-500/30 text-[#0ECB81] rounded-xl text-xs font-bold text-center animate-fadeIn">
-                {successMessage}
-              </div>
-            )}
-
-            {/* Create Grid Bot Button */}
-            <button
-              onClick={handleCreateGridBot}
-              disabled={isSubmitting || gridCapital > availableUsdt || gridCapital <= 0}
-              className={`w-full font-black py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-98 disabled:cursor-not-allowed ${
-                gridCapital > availableUsdt || availableUsdt <= 0
-                  ? 'bg-rose-500/15 border border-rose-500/30 text-rose-400 opacity-90'
-                  : 'bg-gradient-to-r from-[#F59E0B] to-amber-400 hover:from-amber-400 hover:to-[#F59E0B] text-black shadow-amber-500/20 disabled:opacity-50'
-              }`}
-            >
-              <Robot weight="duotone" className="w-4 h-4" />
-              <span>
-                {isSubmitting
-                  ? 'Iniciando Bot...'
-                  : gridCapital > availableUsdt || availableUsdt <= 0
-                  ? `Saldo Insuficiente ($${availableUsdt.toFixed(2)} USDT disp.)`
-                  : `Iniciar Bot Grid en ${coinSymbol} ($${gridCapital} USDT)`}
-              </span>
-            </button>
-          </div>
+          <GridBotTab
+            analysis={analysis}
+            currentPrice={currentPrice}
+            coinSymbol={coinSymbol}
+            gridMode={gridMode}
+            setGridMode={setGridMode}
+            applyAIAutoRange={applyAIAutoRange}
+            selectedQuickPct={selectedQuickPct}
+            applyQuickRangePercent={applyQuickRangePercent}
+            gridLow={gridLow}
+            gridHigh={gridHigh}
+            gridCount={gridCount}
+            gridCapital={gridCapital}
+            handleUpdateGridParams={handleUpdateGridParams}
+            availableUsdt={availableUsdt}
+            penRate={penRate}
+            currencyMode={currencyMode}
+            estimatedApy={estimatedApy}
+            profitPerFillUsd={profitPerFillUsd}
+            netProfitPct={netProfitPct}
+            capPerGrid={capPerGrid}
+            enableStopLoss={enableStopLoss}
+            setEnableStopLoss={setEnableStopLoss}
+            stopLossPrice={stopLossPrice}
+            setStopLossPrice={setStopLossPrice}
+            maxProtectedLossUsd={maxProtectedLossUsd}
+            successMessage={successMessage}
+            setIsCreatingBot={setIsCreatingBot}
+            isSubmitting={isSubmitting}
+          />
         )}
 
         {/* ─── TAB: CALCULADORA DE NIVELES & R:R ─── */}
@@ -832,7 +485,7 @@ export const TradingBotPanel = ({
             </div>
 
             <button
-              onClick={handleCreateDcaBot}
+              onClick={() => setIsCreatingBot('DCA')}
               disabled={isSubmitting || dcaAmount <= 0}
               className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-black py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-purple-500/20 active:scale-98 disabled:opacity-50"
             >
@@ -844,384 +497,179 @@ export const TradingBotPanel = ({
 
         {/* ─── TAB: SPOT MANUAL & PROGRAMADO ─── */}
         {activeTab === 'MANUAL' && (
-          <div className="space-y-3.5">
-            {/* Side Selector (COMPRAR vs VENDER) */}
-            <div className="flex bg-[#08090C] p-1 rounded-xl border border-white/10 text-xs">
-              <button
-                type="button"
-                onClick={() => setSpotSide('BUY')}
-                className={`flex-1 py-2 rounded-lg font-black transition-all cursor-pointer ${
-                  spotSide === 'BUY' ? 'bg-[#0ECB81] text-black shadow-md' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                COMPRAR {coinSymbol}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSpotSide('SELL')}
-                className={`flex-1 py-2 rounded-lg font-black transition-all cursor-pointer ${
-                  spotSide === 'SELL' ? 'bg-[#F6465D] text-white shadow-md' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                VENDER {coinSymbol}
-              </button>
-            </div>
+          <ManualTradeTab
+            coinId={coinId}
+            coinSymbol={coinSymbol}
+            currentPrice={currentPrice}
+            availableUsdt={availableUsdt}
+            holdingUnits={holdingUnits}
+            analysis={analysis}
+            onExecuteSpotTrade={onExecuteSpotTrade}
+            isSubmitting={isSubmitting}
+            setIsSubmitting={setIsSubmitting}
+            setSuccessMessage={setSuccessMessage}
+          />
+        )}
 
-            {/* Sub-Selector for BUY: Mercado vs Límite Programada */}
-            {spotSide === 'BUY' && (
-              <div className="flex bg-[#08090C] p-1 rounded-xl border border-white/10 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setSpotOrderType('MARKET')}
-                  className={`flex-1 py-1.5 rounded-lg font-extrabold transition-all cursor-pointer ${
-                    spotOrderType === 'MARKET'
-                      ? 'bg-emerald-500/20 text-[#0ECB81] border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  ⚡ A Mercado (Inmediata)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSpotOrderType('LIMIT');
-                    if (!spotTargetBuyPrice || spotTargetBuyPrice <= 0) {
-                      setSpotTargetBuyPrice(currentPrice);
-                    }
-                  }}
-                  className={`flex-1 py-1.5 rounded-lg font-extrabold transition-all cursor-pointer ${
-                    spotOrderType === 'LIMIT'
-                      ? 'bg-amber-500/20 text-[#F59E0B] border border-amber-500/30'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  🎯 Límite Programada
-                </button>
-              </div>
-            )}
-
-            {/* Available Balance / Holdings Context */}
-            <div className="bg-[#08090C] p-2.5 rounded-xl border border-white/5 flex items-center justify-between text-xs font-mono">
-              <span className="text-slate-400">
-                {spotSide === 'BUY' ? 'Efectivo Disponible:' : 'Tenencia en Custodia:'}
-              </span>
-              <span className={`font-bold tabular-nums ${spotSide === 'BUY' ? 'text-[#0ECB81]' : 'text-amber-400'}`}>
-                {spotSide === 'BUY'
-                  ? `$${availableUsdt.toFixed(2)} USDT`
-                  : `${holdingUnits.toFixed(4)} ${coinSymbol} (~$${(holdingUnits * currentPrice).toFixed(2)} USDT)`
-                }
-              </span>
-            </div>
-
-            {/* Field: PRECIO DE COMPRA OBJETIVO (Only in LIMIT BUY) */}
-            {spotSide === 'BUY' && spotOrderType === 'LIMIT' && (
-              <div className="bg-[#08090C]/80 border border-amber-500/30 rounded-xl p-2.5 space-y-2">
-                <div className="flex justify-between items-center text-[10px]">
-                  <span className="font-bold text-amber-400 flex items-center gap-1">
-                    <Target className="w-3 h-3" />
-                    <span>Precio de Compra Programado ($)</span>
-                  </span>
-                  <span className="text-slate-400 font-mono">
-                    Actual: ${currentPrice.toFixed(currentPrice >= 1 ? 2 : 4)}
-                  </span>
-                </div>
-                <input
-                  type="number"
-                  step="any"
-                  value={spotTargetBuyPrice || ''}
-                  onChange={(e) => setSpotTargetBuyPrice(Number(e.target.value))}
-                  placeholder={`Ej: ${(currentPrice * 0.97).toFixed(2)}`}
-                  className="w-full bg-[#0E1118] border border-white/10 rounded-lg px-3 py-1.5 text-white font-mono font-bold focus:outline-none focus:border-amber-400 tabular-nums"
-                />
-                <div className="flex gap-1 overflow-x-auto no-scrollbar">
-                  <button
-                    type="button"
-                    onClick={() => setSpotTargetBuyPrice(currentPrice)}
-                    className="px-2 py-0.5 rounded text-[9.5px] font-mono font-bold bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 cursor-pointer"
-                  >
-                    Usar Precio Actual
-                  </button>
-                  {analysis?.levels?.entryLimit && (
-                    <button
-                      type="button"
-                      onClick={() => setSpotTargetBuyPrice(analysis.levels!.entryLimit)}
-                      className="px-2 py-0.5 rounded text-[9.5px] font-mono font-bold bg-amber-500/15 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 cursor-pointer"
-                    >
-                      Soporte AI (${analysis.levels.entryLimit.toFixed(2)})
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Field: MONTO EN USDT */}
-            <div>
-              <label className="text-[10px] text-slate-400 font-bold block mb-1">Monto a Operar (USDT)</label>
-              <input
-                type="number"
-                step="any"
-                min="1"
-                value={spotAmountUsd || ''}
-                onChange={(e) => setSpotAmountUsd(Number(e.target.value))}
-                placeholder={spotSide === 'BUY' ? 'Ej: 50.00' : 'Monto a vender'}
-                className="w-full bg-[#08090C] border border-white/10 rounded-xl px-3 py-2 text-white font-mono font-bold focus:outline-none focus:border-[#F59E0B] tabular-nums"
-              />
-              <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1 px-1">
-                <span>Estimado en {coinSymbol}:</span>
-                <span className="text-slate-300 font-bold">
-                  {(() => {
-                    const effectiveEntry = spotSide === 'BUY' && spotOrderType === 'LIMIT' && spotTargetBuyPrice > 0
-                      ? spotTargetBuyPrice
-                      : currentPrice;
-                    return effectiveEntry > 0 ? (spotAmountUsd / effectiveEntry).toFixed(4) : '0.0000';
-                  })()}{' '}
-                  {coinSymbol}
-                </span>
-              </div>
-            </div>
-
-            {/* Dynamic Buttons (Presets on BUY vs Percentages on SELL) */}
-            <div className="flex gap-1.5">
-              {spotSide === 'BUY' ? (
-                <>
-                  {[25, 50, 100, 250].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setSpotAmountUsd(amt)}
-                      className={`flex-1 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
-                        spotAmountUsd === amt
-                          ? 'bg-[#0ECB81] text-black shadow-sm font-black'
-                          : 'bg-[#08090C] text-slate-400 hover:text-white border border-white/5'
-                      }`}
-                    >
-                      ${amt}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setSpotAmountUsd(Math.floor(availableUsdt))}
-                    className="flex-1 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer bg-[#08090C] text-[#0ECB81] hover:bg-emerald-500/10 border border-emerald-500/20"
-                  >
-                    MAX
-                  </button>
-                </>
-              ) : (
-                [25, 50, 75, 100].map((pct) => (
-                  <button
-                    key={pct}
-                    type="button"
-                    onClick={() => {
-                      const totalVal = holdingUnits * currentPrice;
-                      const amt = Number(((totalVal * pct) / 100).toFixed(2));
-                      setSpotAmountUsd(amt);
-                    }}
-                    className="flex-1 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer bg-[#08090C] text-slate-300 hover:text-white border border-white/5 hover:border-rose-500/30 active:bg-rose-500/20"
-                  >
-                    {pct === 100 ? '100% MAX' : `${pct}%`}
-                  </button>
-                ))
-              )}
-            </div>
-
-            {/* Take Profit & Stop Loss Settings (for BUY trades) */}
-            {spotSide === 'BUY' && (
-              <div className="space-y-2 pt-1">
-                {/* Take Profit Field */}
-                <div className="bg-[#08090C]/80 border border-emerald-500/30 rounded-xl p-2.5 space-y-1.5">
-                  <div className="flex justify-between items-center text-[10px]">
-                    <span className="font-bold text-[#0ECB81] flex items-center gap-1">
-                      <TrendUp className="w-3 h-3" />
-                      <span>Venta Automática / Take Profit ($)</span>
-                    </span>
-                    {(() => {
-                      const buyP = spotOrderType === 'LIMIT' && spotTargetBuyPrice > 0 ? spotTargetBuyPrice : currentPrice;
-                      const tpP = spotTakeProfitPrice;
-                      const pct = buyP > 0 && tpP > 0 ? ((tpP - buyP) / buyP) * 100 : 0;
-                      return (
-                        <span className={`font-mono font-bold ${pct >= 0 ? 'text-[#0ECB81]' : 'text-rose-400'}`}>
-                          {pct >= 0 ? `+${pct.toFixed(1)}%` : `${pct.toFixed(1)}%`}
-                        </span>
-                      );
-                    })()}
-                  </div>
-                  <input
-                    type="number"
-                    step="any"
-                    value={spotTakeProfitPrice || ''}
-                    onChange={(e) => setSpotTakeProfitPrice(Number(e.target.value))}
-                    placeholder="Precio objetivo de venta"
-                    className="w-full bg-[#0E1118] border border-white/10 rounded-lg px-3 py-1.5 text-white font-mono font-bold focus:outline-none focus:border-[#0ECB81] tabular-nums"
-                  />
-                  <div className="flex gap-1 overflow-x-auto no-scrollbar">
-                    {(() => {
-                      const baseP = spotOrderType === 'LIMIT' && spotTargetBuyPrice > 0 ? spotTargetBuyPrice : currentPrice;
-                      return [5, 10, 20].map((pct) => {
-                        const p = Number((baseP * (1 + pct / 100)).toFixed(currentPrice >= 1 ? 2 : 4));
-                        return (
-                          <button
-                            key={pct}
-                            type="button"
-                            onClick={() => setSpotTakeProfitPrice(p)}
-                            className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/20 cursor-pointer"
-                          >
-                            +{pct}% (${p})
-                          </button>
-                        );
-                      });
-                    })()}
-                    {analysis?.levels?.takeProfit1 && (
-                      <button
-                        type="button"
-                        onClick={() => setSpotTakeProfitPrice(analysis.levels!.takeProfit1.price)}
-                        className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-[#0ECB81]/20 hover:bg-[#0ECB81]/30 text-[#0ECB81] border border-[#0ECB81]/40 cursor-pointer"
-                      >
-                        TP AI (${analysis.levels.takeProfit1.price})
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Stop Loss Field (Optional) */}
-                <div className="bg-[#08090C]/80 border border-rose-500/30 rounded-xl p-2.5 space-y-1.5">
-                  <div className="flex justify-between items-center text-[10px]">
-                    <span className="font-bold text-rose-400 flex items-center gap-1">
-                      <ShieldCheck className="w-3 h-3" />
-                      <span>Protección / Stop Loss ($)</span>
-                    </span>
-                    {(() => {
-                      const buyP = spotOrderType === 'LIMIT' && spotTargetBuyPrice > 0 ? spotTargetBuyPrice : currentPrice;
-                      const slP = spotStopLossPrice;
-                      const pct = buyP > 0 && slP > 0 ? ((slP - buyP) / buyP) * 100 : 0;
-                      return (
-                        <span className="font-mono font-bold text-rose-400">
-                          {pct.toFixed(1)}%
-                        </span>
-                      );
-                    })()}
-                  </div>
-                  <input
-                    type="number"
-                    step="any"
-                    value={spotStopLossPrice || ''}
-                    onChange={(e) => setSpotStopLossPrice(Number(e.target.value))}
-                    placeholder="Precio de salida por pérdida"
-                    className="w-full bg-[#0E1118] border border-white/10 rounded-lg px-3 py-1.5 text-white font-mono font-bold focus:outline-none focus:border-rose-400 tabular-nums"
-                  />
-                  <div className="flex gap-1 overflow-x-auto no-scrollbar">
-                    {(() => {
-                      const baseP = spotOrderType === 'LIMIT' && spotTargetBuyPrice > 0 ? spotTargetBuyPrice : currentPrice;
-                      return [3, 5].map((pct) => {
-                        const p = Number((baseP * (1 - pct / 100)).toFixed(currentPrice >= 1 ? 2 : 4));
-                        return (
-                          <button
-                            key={pct}
-                            type="button"
-                            onClick={() => setSpotStopLossPrice(p)}
-                            className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-500/10 hover:bg-rose-500/25 text-rose-300 border border-rose-500/20 cursor-pointer"
-                          >
-                            -{pct}% (${p})
-                          </button>
-                        );
-                      });
-                    })()}
-                    {analysis?.levels?.stopLoss && (
-                      <button
-                        type="button"
-                        onClick={() => setSpotStopLossPrice(analysis.levels!.stopLoss.price)}
-                        className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 cursor-pointer"
-                      >
-                        SL AI (${analysis.levels.stopLoss.price})
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Financial Projection Summary Box */}
-                {spotTakeProfitPrice > 0 && (
-                  <div className="bg-[#0E1118] border border-white/10 rounded-xl p-2.5 font-mono text-[10.5px] space-y-1">
-                    {(() => {
-                      const buyP = spotOrderType === 'LIMIT' && spotTargetBuyPrice > 0 ? spotTargetBuyPrice : currentPrice;
-                      const tpGainPct = buyP > 0 ? ((spotTakeProfitPrice - buyP) / buyP) * 100 : 0;
-                      const netTpGainUsd = (spotAmountUsd * (tpGainPct / 100)) - (spotAmountUsd * 0.002);
-                      const slLossPct = buyP > 0 && spotStopLossPrice > 0 ? ((spotStopLossPrice - buyP) / buyP) * 100 : 0;
-                      const slLossUsd = spotAmountUsd * (Math.abs(slLossPct) / 100);
-                      const rr = Math.abs(slLossPct) > 0 ? (tpGainPct / Math.abs(slLossPct)).toFixed(1) : '2.5';
-
-                      return (
-                        <div className="space-y-1">
-                          <div className="flex justify-between items-center">
-                            <span className="text-slate-400">Ganancia Neta (TP):</span>
-                            <span className="text-[#0ECB81] font-black">
-                              +{netTpGainUsd >= 0 ? `$${netTpGainUsd.toFixed(2)}` : '$0.00'} USDT (+{tpGainPct.toFixed(1)}%)
-                            </span>
-                          </div>
-                          {spotStopLossPrice > 0 && (
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Riesgo Máximo (SL):</span>
-                              <span className="text-rose-400 font-bold">
-                                -${slLossUsd.toFixed(2)} USDT ({slLossPct.toFixed(1)}%)
-                              </span>
-                            </div>
-                          )}
-                          <div className="flex justify-between items-center pt-0.5 border-t border-white/5 text-[9.5px]">
-                            <span className="text-slate-500">Ratio R:R estimado:</span>
-                            <span className="text-amber-400 font-bold">{rr}x</span>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Submit Action Button */}
-            <button
-              onClick={handleExecuteSpot}
-              disabled={isSubmitting || spotAmountUsd <= 0}
-              className={`w-full py-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg active:scale-98 disabled:opacity-50 ${
-                spotSide === 'BUY'
-                  ? spotOrderType === 'LIMIT'
-                    ? 'bg-gradient-to-r from-amber-400 to-[#F59E0B] hover:from-[#F59E0B] hover:to-amber-500 text-black shadow-amber-500/20'
-                    : 'bg-[#0ECB81] hover:bg-emerald-400 text-black shadow-emerald-500/20'
-                  : 'bg-[#F6465D] hover:bg-rose-600 text-white shadow-rose-500/20'
-              }`}
-            >
-              {spotSide === 'BUY' ? (
-                spotOrderType === 'LIMIT' ? (
-                  <>
-                    <Target className="w-4 h-4 text-black" />
-                    <span>
-                      {isSubmitting
-                        ? 'Programando...'
-                        : `Programar Orden Límite (${coinSymbol} · $${spotAmountUsd.toFixed(2)} USDT)`}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <Lightning weight="duotone" className="w-4 h-4" />
-                    <span>
-                      {isSubmitting
-                        ? 'Ejecutando...'
-                        : `Comprar a Mercado (${coinSymbol} · $${spotAmountUsd.toFixed(2)} USDT)`}
-                    </span>
-                  </>
-                )
-              ) : (
-                <>
-                  <Lightning weight="duotone" className="w-4 h-4" />
-                  <span>
-                    {isSubmitting
-                      ? 'Ejecutando Venta...'
-                      : `Ejecutar Venta a Mercado (${coinSymbol})`}
-                  </span>
-                </>
-              )}
-            </button>
+        {/* Empty state when coin is not selected or no data */}
+        {(!coinSymbol || currentPrice <= 0) && (
+          <div className="p-4 text-center text-xs text-slate-500 font-mono">
+            Sin datos de mercado para el activo seleccionado.
           </div>
         )}
       </div>
+
+      {/* ─── PWA CREATE BOT CONFIRMATION MODAL ─── */}
+      {isCreatingBot && (
+        <ModalPortal>
+        <div onClick={() => setIsCreatingBot(null)} role="presentation" className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn select-none">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirmar Despliegue de Bot"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#0D1117] border border-white/20 rounded-2xl p-5 sm:p-6 max-w-md w-full shadow-2xl space-y-4 select-none relative max-h-[85vh] overflow-y-auto"
+          >
+            <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-2 sm:hidden" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Robot weight="duotone" className="w-6 h-6 text-amber-400" />
+                <h3 className="text-base font-black text-white">
+                  Desplegar Bot {isCreatingBot === 'GRID' ? 'Grid' : 'DCA'} · {coinSymbol}
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsCreatingBot(null)}
+                className="p-1 rounded-full hover:bg-white/10 text-slate-400 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-black/40 border border-white/10 rounded-2xl p-3.5 space-y-2 text-xs font-mono">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Estrategia:</span>
+                <span className="font-bold text-amber-400">{isCreatingBot}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Capital Asignado:</span>
+                <span className="font-bold text-white">${isCreatingBot === 'GRID' ? gridCapital : dcaAmount * dcaPeriods} USDT</span>
+              </div>
+              {isCreatingBot === 'GRID' ? (
+                <>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Rango de Precios:</span>
+                    <span className="font-bold text-slate-200">${gridLow} - ${gridHigh}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Niveles de Rejilla:</span>
+                    <span className="font-bold text-slate-200">{gridCount} rejillas</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Rendimiento Proyectado:</span>
+                    <span className="font-bold text-[#0ECB81]">{estimatedApy.toFixed(1)}% APY</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Inversión Recurrente:</span>
+                    <span className="font-bold text-slate-200">${dcaAmount} c/{dcaFrequencyHours}h</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Órdenes Totales:</span>
+                    <span className="font-bold text-slate-200">{dcaPeriods} compras programadas</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setIsCreatingBot(null)}
+                className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-300 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  const mode = isCreatingBot;
+                  setIsCreatingBot(null);
+                  if (mode === 'GRID') await handleCreateGridBot();
+                  else await handleCreateDcaBot();
+                }}
+                disabled={isSubmitting}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-xs font-black text-black shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Robot weight="fill" className="w-3.5 h-3.5" />
+                <span>Confirmar y Ejecutar</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+
+      {/* ─── PWA DELETE BOT CONFIRM MODAL ─── */}
+      {deleteConfirm && (
+        <ModalPortal>
+        <div onClick={() => setDeleteConfirm(null)} role="presentation" className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn select-none">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirmar Eliminación de Bot"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#0D1117] border border-rose-500/20 rounded-2xl p-5 sm:p-6 max-w-sm w-full shadow-2xl space-y-4 select-none relative max-h-[85vh] overflow-y-auto"
+          >
+            <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-2 sm:hidden" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-rose-500" />
+                <h3 className="text-base font-black text-white">Eliminar Bot</h3>
+              </div>
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="p-1 rounded-full hover:bg-white/10 text-slate-400 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              ¿Estás seguro de que deseas cancelar y eliminar <strong className="text-white">{deleteConfirm.botName}</strong>? El capital no asignado volverá inmediatamente a tu balance de caja.
+            </p>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-300 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  alert(`Bot ${deleteConfirm.botName} cancelado.`);
+                  setDeleteConfirm(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-xs font-black text-white shadow-lg shadow-rose-500/20 transition-all cursor-pointer"
+              >
+                Eliminar Definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+        </ModalPortal>
+      )}
+
+      {/* ─── BOT DETAIL MODAL PREVIEW ─── */}
+      {selectedBotForDetail && (
+        <BotDetailModal
+          bot={selectedBotForDetail}
+          trades={[]}
+          currentPrice={currentPrice}
+          onClose={() => setSelectedBotForDetail(null)}
+          currencyMode={currencyMode}
+          penRate={penRate}
+        />
+      )}
     </div>
   );
 };

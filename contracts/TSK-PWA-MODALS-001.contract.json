@@ -1,0 +1,144 @@
+{
+  "contract_version": "4.0",
+  "status": "APPROVED",
+  "language": "typescript",
+  "task_id": "TSK-PWA-MODALS-001",
+  "epic_id": "EPC-PWA-DESIGN",
+  "goal": "Implement PWA-grade modal design system across all app screens: backdrop click-to-close, role=dialog a11y, vite-plugin-pwa infrastructure, formatMicroPnl centavo precision, loading/empty states",
+  "audit_source": {
+    "script": ".antigravity/scripts/audit_antislop.js",
+    "report": "AUDIT_ANTISLOP.json",
+    "run_at": "2026-09-18T23:04:00Z",
+    "errors": 11,
+    "warnings": 42,
+    "passed": 98
+  },
+  "scope": {
+    "target_files": [
+      "frontend/src/components/AssetDetailDrawer.tsx",
+      "frontend/src/components/AssetsView.tsx",
+      "frontend/src/components/AuthModal.tsx",
+      "frontend/src/components/BotDetailModal.tsx",
+      "frontend/src/components/MarketRadarView.tsx",
+      "frontend/src/components/NotificationsDrawer.tsx",
+      "frontend/src/components/TradingViewChart.tsx",
+      "frontend/src/components/AutoTraderView.tsx",
+      "frontend/src/components/TradingBotPanel.tsx",
+      "frontend/src/contexts/BotEngineContext.tsx",
+      "frontend/src/lib/formatters.ts",
+      "frontend/vite.config.ts",
+      "frontend/public/manifest.json",
+      "frontend/public/sw.js"
+    ],
+    "forbidden_files": [
+      "frontend/src/lib/supabase.ts",
+      "frontend/src/App.tsx",
+      "supabase/**/*",
+      "app.py",
+      "*.py"
+    ],
+    "authorized_global_files": [
+      "frontend/package.json"
+    ]
+  },
+  "depends_on": [],
+  "contracts": {
+    "types_file": "frontend/src/lib/formatters.ts",
+    "function_signatures": [
+      "export function formatMicroPnl(val: number, currencyMode?: 'USD' | 'PEN', penRate?: number): string",
+      "export function useModalKeyboard(onClose: () => void): void"
+    ]
+  },
+  "subtasks": [
+    {
+      "id": "PWA-001",
+      "title": "Modal Backdrop click-to-close + Escape key",
+      "priority": "P0",
+      "target_lines": "All fixed inset-0 overlay divs in 7 components",
+      "pattern_backdrop": "onClick={onClose} role='presentation'",
+      "pattern_container": "onClick={(e)=>e.stopPropagation()} role='dialog' aria-modal='true'"
+    },
+    {
+      "id": "PWA-002",
+      "title": "Accessibility role=dialog aria-modal on all overlays",
+      "priority": "P0"
+    },
+    {
+      "id": "PWA-003",
+      "title": "PWA Infrastructure manifest.json + vite-plugin-pwa",
+      "priority": "P0",
+      "manifest_spec": {
+        "name": "Crypto Analyzer Pro",
+        "short_name": "CryptoAP",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#08090C",
+        "theme_color": "#F59E0B",
+        "icons": [
+          { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+          { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+        ]
+      }
+    },
+    {
+      "id": "PWA-004",
+      "title": "Decimal precision: migrate toFixed(2) to formatMicroPnl()",
+      "priority": "P1",
+      "target_lines": {
+        "AssetsView.tsx": [1331, 1573, 1894],
+        "AutoTraderView.tsx": [800],
+        "BotDetailModal.tsx": [504],
+        "MarketRadarView.tsx": [367],
+        "BotEngineContext.tsx": [1173,1217,1231,1232,1274,1303,1304,1742,1743,1791,1805,1806]
+      }
+    },
+    {
+      "id": "PWA-005",
+      "title": "Loading and empty states for data-driven screens",
+      "priority": "P1",
+      "empty_state_design": "Centered column: Icon(opacity-30) + Title + Subtitle + CTA amber button"
+    }
+  ],
+  "pwa_modal_pattern": {
+    "backdrop": "fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4",
+    "container": "glass-card rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-white/10 animate-scaleIn",
+    "header": "flex items-center justify-between p-4 border-b border-white/10 shrink-0",
+    "body": "flex-1 min-h-0 overflow-y-auto p-4 space-y-4",
+    "footer": "p-4 border-t border-white/10 flex gap-2 shrink-0",
+    "drawer": "fixed right-0 top-0 bottom-0 w-full max-w-sm glass-card border-l border-white/10 flex flex-col overflow-hidden animate-slideInRight shadow-2xl"
+  },
+  "execution_steps": [
+    "PWA-001: Add backdrop onClick + stopPropagation + Escape useEffect to all 7 modal components",
+    "PWA-002: Add role=dialog aria-modal=true aria-label to modal container divs",
+    "PWA-003: npm i vite-plugin-pwa -D; update vite.config.ts; create public/manifest.json; generate 192 and 512 icons",
+    "PWA-004: Create frontend/src/lib/formatters.ts with formatMicroPnl; replace raw toFixed(2) in 5 files at audited lines",
+    "PWA-005: Add empty states to AssetsView + TradingBotPanel; add shimmer skeleton to MarketRadarView"
+  ],
+  "commands": {
+    "test": "npx vitest run frontend/src/__tests__",
+    "lint": "npx eslint frontend/src --ext .tsx,.ts",
+    "typecheck": "npx tsc --noEmit",
+    "audit": "node .antigravity/scripts/audit_antislop.js . --fix-hints"
+  },
+  "acceptance_criteria": [
+    "audit script exits with code 0 (0 errors)",
+    "All modals close on Escape key press",
+    "All modals close on backdrop click without closing when clicking inside",
+    "Lighthouse PWA score >= 90",
+    "Financial values < $1.00 show 4 decimal places not $0.00",
+    "Empty portfolio state shows CTAs not blank space",
+    "npx tsc --noEmit exits with code 0"
+  ],
+  "definition_of_done": [
+    "commands.typecheck returns exit code 0",
+    "commands.audit returns exit code 0",
+    "All 7 modals pass MODAL_BACKDROP check",
+    "All modals pass A11Y check",
+    "manifest.json exists with display=standalone and 2+ icon sizes",
+    "formatMicroPnl used for financial values in all target files",
+    "AssetsView and TradingBotPanel have empty state UI"
+  ],
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/components/AssetDetailDrawer.tsx frontend/src/components/AssetsView.tsx frontend/src/components/AuthModal.tsx frontend/src/components/BotDetailModal.tsx frontend/src/components/MarketRadarView.tsx frontend/src/components/NotificationsDrawer.tsx frontend/src/components/TradingViewChart.tsx frontend/src/contexts/BotEngineContext.tsx frontend/vite.config.ts frontend/public/manifest.json"
+  }
+}

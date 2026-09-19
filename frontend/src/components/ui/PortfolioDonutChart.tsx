@@ -46,6 +46,11 @@ export const PortfolioDonutChart: React.FC<PortfolioDonutChartProps> = ({
     ? totalUsd
     : (validSegments.reduce((sum, s) => sum + s.valUsd, 0) || 1);
 
+  // Calculate real allocation: Invested (Bots + Spot) vs Free Cash (USDT)
+  const investedVal = validSegments.filter((s) => s.type !== 'CASH').reduce((sum, s) => sum + s.valUsd, 0);
+  const investedPct = totalVal > 0 ? (investedVal / totalVal) * 100 : 0;
+  const cashPct = Math.max(0, 100 - investedPct);
+
   let accumulatedPercent = 0;
 
   // Active Segment resolution: Priority to selectedSegmentId, then hoveredIdx
@@ -153,8 +158,8 @@ export const PortfolioDonutChart: React.FC<PortfolioDonutChartProps> = ({
               <span className="text-sm sm:text-base font-black font-mono text-white tabular-nums mt-0.5">
                 {formatDynamicPrice(totalVal, 2, currencyMode, penRate)}
               </span>
-              <span className="text-[9.5px] font-mono text-emerald-400 font-bold">
-                100% Asignado
+              <span className="text-[9.5px] font-mono text-amber-400/90 font-bold mt-0.5">
+                {investedPct.toFixed(1)}% Invertido · {cashPct.toFixed(1)}% Libre
               </span>
             </div>
           )}
