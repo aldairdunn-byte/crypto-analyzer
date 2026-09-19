@@ -1,0 +1,72 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-AUTOTRADER-005",
+  "epic_id": "EPC-AUTOTRADER",
+  "goal": "Implement adaptive exit engine, thesis re-evaluation, cost-aware opportunity rotation, and overtrading safeguards in Auto Trader BETA runner",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/paperExecutionAdapter.ts",
+      "frontend/src/lib/autoTraderRunner.ts"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": ["TSK-AUTOTRADER-004"],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/autoTraderRunner.ts",
+    "interfaces": "export interface AutoTraderRunnerConfig { assignedCapital: number; thesisReevalIntervalSeconds?: number; momentumExitThreshold?: number; momentumDropThreshold?: number; rotationThreshold?: number; minimumHoldTimeSeconds?: number; maxTradesPerHour?: number; maxRotationsPerSession?: number; expectedEdgeRatio?: number; feeRate?: number; slippageRate?: number; spreadRate?: number; }",
+    "function_signatures": [
+      "createAutoTraderRunner(config: any): any",
+      "createPaperExecutionAdapter(config?: any): any"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write comprehensive unit test suite in frontend/src/__tests__/auto_trader_adaptive_rotation.test.js covering dynamic ATR, thesis re-evaluation, cost-aware rotation, overtrading guards, and edge checks",
+    "Run node --test to verify red phase on new features",
+    "Update paperExecutionAdapter.ts with spread calculation and expanded exit reasons",
+    "Update autoTraderRunner.ts with adaptive ATR levels, thesis monitoring loop, cost-aware rotation engine, and extended metrics",
+    "Run node --test to verify green phase",
+    "Run npm run build and npx oxlint",
+    "Run 30-minute live paper trading session with live Binance market data and report comprehensive findings"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/auto_trader_adaptive_rotation.test.js",
+    "lint": "npx oxlint frontend/src/lib/paperExecutionAdapter.ts frontend/src/lib/autoTraderRunner.ts",
+    "typecheck": "npm run build --prefix frontend"
+  },
+
+  "acceptance_criteria": [
+    "All new thresholds are configurable and logged explicitly",
+    "Expected edge separates Gross Profit, Fees, Slippage, Spread, and Net Edge",
+    "Thesis check exits positions upon momentum decay or regime flip to AVOID",
+    "Opportunity rotation requires score advantage >= threshold, positive net advantage after costs, and minimum hold time",
+    "Overtrading guards enforce max trades per hour and max rotations per session",
+    "All automated tests pass with exit code 0"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "Zero private Binance API or real money endpoints are used",
+    "30-minute live paper session executes with live Binance data and outputs full comparative report"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/paperExecutionAdapter.ts frontend/src/lib/autoTraderRunner.ts; rm -f frontend/src/__tests__/auto_trader_adaptive_rotation.test.js"
+  }
+}

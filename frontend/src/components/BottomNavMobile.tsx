@@ -2,12 +2,13 @@ import React from 'react';
 import {
   SquaresFour,
   Lightning,
+  Robot,
   Target,
   Wallet,
   SlidersHorizontal,
 } from '@phosphor-icons/react';
 
-export type MasterViewType = 'DASHBOARD' | 'TERMINAL' | 'RADAR' | 'ASSETS' | 'SETTINGS';
+export type MasterViewType = 'DASHBOARD' | 'TERMINAL' | 'AUTOTRADER' | 'RADAR' | 'ASSETS' | 'SETTINGS';
 
 interface BottomNavMobileProps {
   activeView: MasterViewType;
@@ -21,6 +22,7 @@ export const BottomNavMobile: React.FC<BottomNavMobileProps> = ({
   const navItems = [
     { id: 'DASHBOARD' as const, label: 'Inicio', icon: SquaresFour },
     { id: 'TERMINAL' as const, label: 'Terminal', icon: Lightning },
+    { id: 'AUTOTRADER' as const, label: 'Auto Trader', icon: Robot },
     { id: 'RADAR' as const, label: 'Radar', icon: Target },
     { id: 'ASSETS' as const, label: 'Portafolio', icon: Wallet },
     { id: 'SETTINGS' as const, label: 'Ajustes', icon: SlidersHorizontal },

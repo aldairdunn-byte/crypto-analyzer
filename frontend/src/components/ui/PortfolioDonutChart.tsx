@@ -42,7 +42,9 @@ export const PortfolioDonutChart: React.FC<PortfolioDonutChartProps> = ({
 
   // Filter non-zero segments
   const validSegments = segments.filter((s) => s.valUsd > 0.001);
-  const totalVal = validSegments.reduce((sum, s) => sum + s.valUsd, 0) || totalUsd || 1;
+  const totalVal = (totalUsd !== undefined && totalUsd > 0)
+    ? totalUsd
+    : (validSegments.reduce((sum, s) => sum + s.valUsd, 0) || 1);
 
   let accumulatedPercent = 0;
 
@@ -149,7 +151,7 @@ export const PortfolioDonutChart: React.FC<PortfolioDonutChartProps> = ({
                 Patrimonio Total
               </span>
               <span className="text-sm sm:text-base font-black font-mono text-white tabular-nums mt-0.5">
-                {formatDynamicPrice(totalUsd, 2, currencyMode, penRate)}
+                {formatDynamicPrice(totalVal, 2, currencyMode, penRate)}
               </span>
               <span className="text-[9.5px] font-mono text-emerald-400 font-bold">
                 100% Asignado

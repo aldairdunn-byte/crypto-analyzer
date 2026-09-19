@@ -33,6 +33,8 @@ import {
 } from 'lucide-react';
 
 import { type CryptoHolding } from '../lib/portfolioMath';
+import { useAutoTrader } from '../contexts/AutoTraderContext';
+import { usePortfolio } from '../contexts/PortfolioContext';
 export type { CryptoHolding };
 
 interface AssetsViewProps {
@@ -49,9 +51,11 @@ interface AssetsViewProps {
   onOpenCoinInTerminal: (coinId: string) => void;
   onUpdateBotStatus?: (botId: string, newStatus: 'ACTIVE' | 'PAUSED' | 'STOPPED') => Promise<void>;
   onExecuteSpotTrade?: (trade: { coinId: string; side: 'BUY' | 'SELL'; price: number; amountUsd: number }) => Promise<void>;
+  onNavigateToAutoTrader?: () => void;
 }
 
 const COIN_COLORS: Record<string, string> = {
+  auto: '#F59E0B',
   usdt: '#0ECB81',
   bitcoin: '#F7931A',
   ethereum: '#627EEA',
@@ -85,7 +89,11 @@ export const AssetsView = ({
   onOpenCoinInTerminal,
   onUpdateBotStatus,
   onExecuteSpotTrade,
+  onNavigateToAutoTrader,
 }: AssetsViewProps) => {
+  const { capitalInBots, capitalInAutoTrader } = usePortfolio();
+  const autoTrader = useAutoTrader();
+
   // Navigation & View Mode inside Assets
   const [activeTab, setActiveTab] = useState<'ALL' | 'BOTS' | 'SPOT' | 'FILLS'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -112,9 +120,9 @@ export const AssetsView = ({
 
   const coinsList = Object.values(COINS);
 
-  // ─── 1. CONSOLIDAR ASISTENTES GRID BOTS (1 FILA POR BOT, SIN DUPLICADOS) ───
+  // ─── 1. CONSOLIDAR ASISTENTES GRID BOTS & AUTO TRADER QUANT ───
   const consolidatedBots = useMemo(() => {
-    return bots
+    const gridList = bots
       .filter((b) => b.status === 'ACTIVE' || b.status === 'PAUSED')
       .map((b) => {
         const coin = resolveBotCoin(b);
@@ -132,7 +140,7 @@ export const AssetsView = ({
         const closedTrades = botTrades.filter((t) => t.status === 'CLOSED');
         const profitRealized = closedTrades.length > 0
           ? closedTrades.reduce((sum, t) => sum + (t.pnl_usd || 0), 0)
-          : 0; // 0.00 hasta que se cierren trades reales
+          : 0;
 
         const change24h = ((currentPrice - coin.basePrice) / (coin.basePrice || 1)) * 100;
         const totalValUsd = capitalAllocated;
@@ -141,6 +149,7 @@ export const AssetsView = ({
         return {
           id: b.id,
           bot: b,
+          isAutoTrader: false,
           coin,
           name: b.name,
           symbol: coin.symbol,
@@ -155,9 +164,72 @@ export const AssetsView = ({
           strategy: b.strategy,
           numGrids: config.num_grids || 16,
           tradesCount: closedTrades.length,
+          activePosition: null as any,
         };
       });
-  }, [bots, trades, livePrices]);
+
+    // Detect if Auto Trader is actively operating or in position (independent from Grid Bots)
+    const isAutoTraderActive =
+      autoTrader.isRunning ||
+      autoTrader.isPaused ||
+      autoTrader.status === 'IN_POSITION' ||
+      autoTrader.status === 'SCANNING' ||
+      autoTrader.activePosition !== null ||
+      capitalInAutoTrader > 0;
+    if (isAutoTraderActive) {
+      const activePos = autoTrader.activePosition;
+      const coin = activePos ? getDynamicCoinInfo(activePos.symbol.toLowerCase()) : getDynamicCoinInfo('bitcoin');
+      const capitalAllocated = capitalInAutoTrader > 0 ? capitalInAutoTrader : autoTrader.selectedCapital;
+      const currentPrice = activePos ? activePos.currentPrice : (livePrices[coin.id] ?? coin.basePrice);
+      const unrealizedPnl = activePos ? (activePos.unrealizedPnlUsd || 0) : 0;
+      const totalValUsd = capitalAllocated + unrealizedPnl;
+      const profitRealized = autoTrader.sessionRealizedPnlUsd || 0;
+      const roiPct = capitalAllocated > 0 ? ((profitRealized + unrealizedPnl) / capitalAllocated) * 100 : 0;
+      const change24h = activePos ? (activePos.unrealizedPnlPct || 0) : 0;
+
+      const autoTraderItem = {
+        id: 'autotrader-quant-pro',
+        bot: null as any,
+        isAutoTrader: true,
+        coin,
+        name: 'Auto Trader Quant Pro',
+        symbol: activePos ? activePos.symbol : 'AUTO',
+        category: 'TOP' as const,
+        capitalAllocated,
+        currentPrice,
+        totalValUsd,
+        profitRealized,
+        roiPct,
+        change24h,
+        status: autoTrader.isPaused
+          ? 'PAUSED'
+          : (autoTrader.isRunning || autoTrader.status === 'IN_POSITION' || autoTrader.status === 'SCANNING')
+          ? 'ACTIVE'
+          : 'ACTIVE',
+        strategy: 'MOMENTUM INTRADAY',
+        numGrids: 0,
+        tradesCount: autoTrader.closedTradesToday,
+        activePosition: activePos,
+      };
+
+      return [autoTraderItem, ...gridList];
+    }
+
+    return gridList;
+  }, [
+    bots,
+    trades,
+    livePrices,
+    capitalInBots,
+    capitalInAutoTrader,
+    autoTrader.isRunning,
+    autoTrader.status,
+    autoTrader.selectedCapital,
+    autoTrader.activePosition,
+    autoTrader.sessionRealizedPnlUsd,
+    autoTrader.closedTradesToday,
+    autoTrader.isPaused,
+  ]);
 
   // ─── 2. CONSOLIDAR TENENCIAS SPOT (AGRUPADAS POR CRIPTOMONEDA) ───
   const consolidatedSpotHoldings = useMemo(() => {
@@ -198,12 +270,19 @@ export const AssetsView = ({
 
   // ─── 3. TOTALES PATRIMONIALES EXACTOS (SIN DUPLICACIONES) ───
   const totalBotsCapitalUsd = consolidatedBots.reduce((sum, b) => sum + b.capitalAllocated, 0);
+  const totalBotsValUsd = consolidatedBots.reduce((sum, b) => sum + b.totalValUsd, 0);
   const totalBotsProfitUsd = consolidatedBots.reduce((sum, b) => sum + b.profitRealized, 0);
+  const totalBotsFloatingPnlUsd = consolidatedBots.reduce((sum, b) => {
+    if (b.isAutoTrader && b.activePosition) {
+      return sum + (b.activePosition.unrealizedPnlUsd || 0);
+    }
+    return sum;
+  }, 0);
   const totalSpotValueUsd = consolidatedSpotHoldings.reduce((sum, s) => sum + s.totalValUsd, 0);
   const totalSpotPnlUsd = consolidatedSpotHoldings.reduce((sum, s) => sum + s.pnlUsd, 0);
 
-  // Total Portfolio Net Worth
-  const totalPortfolioValueUsd = usdtCash + totalBotsCapitalUsd + totalSpotValueUsd;
+  // Total Portfolio Net Worth (Mark-to-Market exact sum of segments)
+  const totalPortfolioValueUsd = Number((usdtCash + totalBotsValUsd + totalSpotValueUsd).toFixed(2));
   const totalPortfolioValuePen = totalPortfolioValueUsd * penRate;
   const maxDemoCashUsd = Math.max(0, Number((1000 - totalBotsCapitalUsd - totalSpotValueUsd).toFixed(2)));
 
@@ -213,13 +292,13 @@ export const AssetsView = ({
     .reduce((sum, t) => sum + (t.pnl_usd || 0), 0);
   const totalRealizedProfitUsd = Math.max(totalBotsProfitUsd, totalClosedTradesProfit);
 
-  // 24H PnL: Realized Bot Profit + Spot Floating PnL
-  const pnl24hUsd = totalRealizedProfitUsd + totalSpotPnlUsd;
+  // 24H PnL: Realized Bot Profit + Spot Floating PnL + Bot Floating PnL
+  const pnl24hUsd = Number((totalRealizedProfitUsd + totalSpotPnlUsd + totalBotsFloatingPnlUsd).toFixed(2));
   const pnl24hPct = totalPortfolioValueUsd > 0 ? (pnl24hUsd / Math.max(1, totalPortfolioValueUsd - pnl24hUsd)) * 100 : 0;
 
   // Sector Percentages
   const stablePct = totalPortfolioValueUsd > 0 ? (usdtCash / totalPortfolioValueUsd) * 100 : 100;
-  const botsPct = totalPortfolioValueUsd > 0 ? (totalBotsCapitalUsd / totalPortfolioValueUsd) * 100 : 0;
+  const botsPct = totalPortfolioValueUsd > 0 ? (totalBotsValUsd / totalPortfolioValueUsd) * 100 : 0;
   const spotPct = totalPortfolioValueUsd > 0 ? (totalSpotValueUsd / totalPortfolioValueUsd) * 100 : 0;
 
   // ─── 4. SEGMENTOS CONSOLIDADOS PARA LA BARRA GRÁFICA (MÁXIMO 8 CHIPS LIMPIOS) ───
@@ -476,9 +555,16 @@ export const AssetsView = ({
               <span className="text-[9px] text-slate-400 block">({stablePct.toFixed(0)}% Libre)</span>
             </div>
             <div className="bg-[#08090C] p-2 rounded-xl border border-white/5">
-              <span className="text-[9px] text-slate-400 block font-semibold">En Asistentes & Bots</span>
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] text-slate-400 block font-semibold">En Asistentes & Bots</span>
+                {Math.abs(totalBotsFloatingPnlUsd) >= 0.01 && (
+                  <span className={`text-[8.5px] font-mono font-bold ${totalBotsFloatingPnlUsd >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                    {totalBotsFloatingPnlUsd >= 0 ? '+' : ''}${totalBotsFloatingPnlUsd.toFixed(2)}
+                  </span>
+                )}
+              </div>
               <span className="font-extrabold text-[#F59E0B] tabular-nums">
-                ${(totalBotsCapitalUsd + totalSpotValueUsd).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                ${(totalBotsValUsd + totalSpotValueUsd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
               <span className="text-[9px] text-slate-400 block">
                 ({botsPct.toFixed(0)}% Bots{spotPct > 0 ? ` · ${spotPct.toFixed(0)}% Spot` : ''})
@@ -524,13 +610,13 @@ export const AssetsView = ({
               <span className="text-[9px] text-emerald-400/80 block font-bold">Acreditado Real</span>
             </div>
             <div className="bg-[#08090C] p-2 rounded-xl border border-white/5">
-              <span className="text-[9px] text-slate-400 block font-semibold">PnL Spot Flotante</span>
-              <span className={`font-extrabold tabular-nums ${totalSpotPnlUsd >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
-                {totalSpotPnlUsd >= 0 ? '+' : ''}
-                {formatDynamicPrice(totalSpotPnlUsd, 2, currencyMode, penRate)}
+              <span className="text-[9px] text-slate-400 block font-semibold">PnL Flotante (Total)</span>
+              <span className={`font-extrabold tabular-nums ${(totalSpotPnlUsd + totalBotsFloatingPnlUsd) >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                {(totalSpotPnlUsd + totalBotsFloatingPnlUsd) >= 0 ? '+' : ''}
+                {formatDynamicPrice(totalSpotPnlUsd + totalBotsFloatingPnlUsd, 2, currencyMode, penRate)}
               </span>
               <span className="text-[9px] text-slate-400 block font-bold">
-                ({consolidatedSpotHoldings.length} activos spot)
+                ({consolidatedSpotHoldings.length} spot · {consolidatedBots.length} bot{consolidatedBots.length !== 1 ? 's' : ''})
               </span>
             </div>
           </div>
@@ -581,7 +667,7 @@ export const AssetsView = ({
           </div>
 
           <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
-            <span>{consolidatedBots.length} Grid Bots</span>
+            <span>{consolidatedBots.length} Bots Activos</span>
             <span>·</span>
             <span>{consolidatedSpotHoldings.length} Criptos Spot</span>
             <span>·</span>
@@ -627,7 +713,7 @@ export const AssetsView = ({
               }`}
             >
               <Robot weight="duotone" className="w-4 h-4 text-amber-400" />
-              <span>Asistentes Grid Bots ({consolidatedBots.length})</span>
+              <span>Asistentes & Bots ({consolidatedBots.length})</span>
             </button>
 
             <button
@@ -656,13 +742,13 @@ export const AssetsView = ({
           </div>
         </div>
 
-        {/* ─── TAB CONTENT 1: ASISTENTES GRID BOTS O VISTA ALL ─── */}
+        {/* ─── TAB CONTENT 1: ASISTENTES & BOTS O VISTA ALL ─── */}
         {(activeTab === 'ALL' || activeTab === 'BOTS') && (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-xs font-bold text-slate-300">
               <span className="flex items-center gap-1.5 text-[#F59E0B]">
                 <Bot className="w-4 h-4" />
-                <span>Asistentes de Trading Grid Bots ({consolidatedBots.length} activos)</span>
+                <span>Asistentes de Trading & Bots ({consolidatedBots.length} activo{consolidatedBots.length !== 1 ? 's' : ''})</span>
               </span>
               <span className="text-[11px] text-slate-500 font-mono">
                 ${totalBotsCapitalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT Asignados
@@ -691,14 +777,18 @@ export const AssetsView = ({
                   return (
                     <div
                       key={botItem.id}
-                      onClick={() => setSelectedBotForModal(botItem.bot)}
+                      onClick={() => botItem.isAutoTrader ? onNavigateToAutoTrader?.() : setSelectedBotForModal(botItem.bot)}
                       className="surface-card p-3.5 space-y-3 border border-white/10 hover:border-amber-500/40 transition-all shadow-md cursor-pointer hover:bg-white/[0.02] active:scale-[0.99] group"
                     >
                       {/* Header Row */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2.5">
                           <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow shrink-0">
-                            <CryptoIcon symbol={botItem.symbol} size={20} />
+                            {botItem.isAutoTrader ? (
+                              <Robot weight="duotone" className="w-5 h-5 text-[#F59E0B]" />
+                            ) : (
+                              <CryptoIcon symbol={botItem.symbol} size={20} />
+                            )}
                           </div>
                           <div>
                             <div className="font-extrabold text-white text-xs flex items-center gap-1.5">
@@ -708,7 +798,9 @@ export const AssetsView = ({
                               </span>
                             </div>
                             <div className="text-[10px] text-slate-400 font-mono">
-                              {botItem.numGrids} Mallas · {botItem.tradesCount} Fills
+                              {botItem.isAutoTrader
+                                ? `${botItem.tradesCount} Trades Hoy · ${botItem.activePosition ? `Posición ${botItem.activePosition.symbol}` : 'Escaneando 105 Pares'}`
+                                : `${botItem.numGrids} Mallas · ${botItem.tradesCount} Fills`}
                             </div>
                           </div>
                         </div>
@@ -767,21 +859,49 @@ export const AssetsView = ({
                       {/* Footer Actions */}
                       <div className="flex items-center justify-between pt-1 border-t border-white/5">
                         <span className="text-[10px] text-[#F59E0B] font-bold flex items-center gap-1 group-hover:underline">
-                          <span>Ver Ficha y Mallas</span>
+                          <span>{botItem.isAutoTrader ? 'Abrir Estación de Mando' : 'Ver Ficha y Mallas'}</span>
                           <ArrowUpRight className="w-3 h-3" />
                         </span>
                         <div className="flex items-center space-x-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenCoinInTerminal(botItem.coin.id);
-                            }}
-                            className="px-3 py-1.5 bg-[#F59E0B]/10 hover:bg-[#F59E0B] text-[#F59E0B] hover:text-black rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-[#F59E0B]/20"
-                          >
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                            <span>Terminal</span>
-                          </button>
-                          {onUpdateBotStatus && (
+                          {botItem.isAutoTrader ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateToAutoTrader?.();
+                              }}
+                              className="px-3 py-1.5 bg-[#F59E0B]/10 hover:bg-[#F59E0B] text-[#F59E0B] hover:text-black rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-[#F59E0B]/20"
+                            >
+                              <Robot weight="duotone" className="w-3.5 h-3.5" />
+                              <span>Estación</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenCoinInTerminal(botItem.coin.id);
+                              }}
+                              className="px-3 py-1.5 bg-[#F59E0B]/10 hover:bg-[#F59E0B] text-[#F59E0B] hover:text-black rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-[#F59E0B]/20"
+                            >
+                              <ArrowUpRight className="w-3.5 h-3.5" />
+                              <span>Terminal</span>
+                            </button>
+                          )}
+                          {botItem.isAutoTrader ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                autoTrader.pauseSession();
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+                                !autoTrader.isPaused
+                                  ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-black border-amber-500/20'
+                                  : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-black border-emerald-500/20'
+                              }`}
+                            >
+                              {!autoTrader.isPaused ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                              <span>{!autoTrader.isPaused ? 'Pausar' : 'Reanudar'}</span>
+                            </button>
+                          ) : onUpdateBotStatus && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -840,13 +960,17 @@ export const AssetsView = ({
                       return (
                         <tr
                           key={botItem.id}
-                          onClick={() => setSelectedBotForModal(botItem.bot)}
+                          onClick={() => botItem.isAutoTrader ? onNavigateToAutoTrader?.() : setSelectedBotForModal(botItem.bot)}
                           className="hover:bg-white/[0.04] transition-colors h-14 cursor-pointer group"
                         >
                           <td className="pl-3">
                             <div className="flex items-center space-x-3">
                               <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shadow-md shrink-0 group-hover:scale-105 transition-transform">
-                                <CryptoIcon symbol={botItem.symbol} size={24} />
+                                {botItem.isAutoTrader ? (
+                                  <Robot weight="duotone" className="w-5 h-5 text-[#F59E0B]" />
+                                ) : (
+                                  <CryptoIcon symbol={botItem.symbol} size={24} />
+                                )}
                               </div>
                               <div>
                                 <div className="font-extrabold text-white font-sans text-xs flex items-center gap-1.5">
@@ -856,8 +980,14 @@ export const AssetsView = ({
                                   </span>
                                 </div>
                                 <div className="text-[10px] text-slate-400 font-sans flex items-center gap-1">
-                                  <span>{botItem.numGrids} Mallas · {botItem.tradesCount} Fills</span>
-                                  <span className="text-[9px] text-[#F59E0B] font-bold opacity-0 group-hover:opacity-100 transition-opacity">· Clic para ver mallas</span>
+                                  <span>
+                                    {botItem.isAutoTrader
+                                      ? `${botItem.tradesCount} Trades Hoy · ${botItem.activePosition ? `En posición ${botItem.activePosition.symbol}` : 'Escaneando 105 Pares'}`
+                                      : `${botItem.numGrids} Mallas · ${botItem.tradesCount} Fills`}
+                                  </span>
+                                  <span className="text-[9px] text-[#F59E0B] font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {botItem.isAutoTrader ? '· Clic para abrir Estación' : '· Clic para ver mallas'}
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -907,40 +1037,72 @@ export const AssetsView = ({
                           </td>
                           <td className="text-right pr-3">
                             <div className="flex items-center justify-end space-x-1.5">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onOpenCoinInTerminal(botItem.coin.id);
-                                }}
-                                title="Ver en Terminal Pro"
-                                className="p-1.5 text-[#F59E0B] hover:text-white rounded-lg hover:bg-[#F59E0B]/20 bg-[#F59E0B]/10 cursor-pointer transition-all border border-[#F59E0B]/20"
-                              >
-                                <ArrowUpRight className="w-3.5 h-3.5" />
-                              </button>
-                              {onUpdateBotStatus && (
-                                botItem.status === 'ACTIVE' ? (
+                              {botItem.isAutoTrader ? (
+                                <>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      onUpdateBotStatus(botItem.bot.id, 'PAUSED');
+                                      onNavigateToAutoTrader?.();
                                     }}
-                                    title="Pausar Bot"
-                                    className="p-1.5 text-amber-400 hover:text-white rounded-lg hover:bg-amber-500/10 cursor-pointer transition-all"
+                                    title="Ir a Estación de Mando Auto Trader"
+                                    className="px-2.5 py-1 text-xs font-bold text-[#F59E0B] hover:text-black rounded-lg hover:bg-[#F59E0B] bg-[#F59E0B]/10 cursor-pointer transition-all border border-[#F59E0B]/20 flex items-center gap-1"
                                   >
-                                    <Pause className="w-3.5 h-3.5" />
+                                    <Robot weight="duotone" className="w-3.5 h-3.5" />
+                                    <span>Estación</span>
                                   </button>
-                                ) : (
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      onUpdateBotStatus(botItem.bot.id, 'ACTIVE');
+                                      autoTrader.pauseSession();
                                     }}
-                                    title="Reanudar Bot"
-                                    className="p-1.5 text-emerald-400 hover:text-white rounded-lg hover:bg-emerald-500/10 cursor-pointer transition-all"
+                                    title={!autoTrader.isPaused ? 'Pausar Auto Trader' : 'Reanudar Auto Trader'}
+                                    className={`p-1.5 rounded-lg cursor-pointer transition-all ${
+                                      !autoTrader.isPaused
+                                        ? 'text-amber-400 hover:text-white hover:bg-amber-500/10'
+                                        : 'text-emerald-400 hover:text-white hover:bg-emerald-500/10'
+                                    }`}
                                   >
-                                    <Play className="w-3.5 h-3.5" />
+                                    {!autoTrader.isPaused ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                                   </button>
-                                )
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onOpenCoinInTerminal(botItem.coin.id);
+                                    }}
+                                    title="Ver en Terminal Pro"
+                                    className="p-1.5 text-[#F59E0B] hover:text-white rounded-lg hover:bg-[#F59E0B]/20 bg-[#F59E0B]/10 cursor-pointer transition-all border border-[#F59E0B]/20"
+                                  >
+                                    <ArrowUpRight className="w-3.5 h-3.5" />
+                                  </button>
+                                  {onUpdateBotStatus && (
+                                    botItem.status === 'ACTIVE' ? (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onUpdateBotStatus(botItem.bot.id, 'PAUSED');
+                                        }}
+                                        title="Pausar Bot"
+                                        className="p-1.5 text-amber-400 hover:text-white rounded-lg hover:bg-amber-500/10 cursor-pointer transition-all"
+                                      >
+                                        <Pause className="w-3.5 h-3.5" />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onUpdateBotStatus(botItem.bot.id, 'ACTIVE');
+                                        }}
+                                        title="Reanudar Bot"
+                                        className="p-1.5 text-emerald-400 hover:text-white rounded-lg hover:bg-emerald-500/10 cursor-pointer transition-all"
+                                      >
+                                        <Play className="w-3.5 h-3.5" />
+                                      </button>
+                                    )
+                                  )}
+                                </>
                               )}
                             </div>
                           </td>

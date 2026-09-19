@@ -1,0 +1,84 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-AUTOTRADER-011",
+  "epic_id": "EPC-AUTOTRADER",
+  "goal": "Implement Auto Trader Pro Institutional Frontend UI & Session Scheduler: 5-Level Zero-Emoji Visual Hierarchy, Dedicated Master View, Dashboard Widget, Daily Guardrails (+3% Target, -2% Loss, Max Trades), and Real Demo Balance Accounting",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/autoTraderRunner.ts",
+      "frontend/src/components/AutoTraderView.tsx"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": [
+      "frontend/src/components/dashboard/AutoTraderDashboardWidget.tsx",
+      "frontend/src/components/BottomNavMobile.tsx",
+      "frontend/src/components/DashboardView.tsx",
+      "frontend/src/components/HeaderTickerBar.tsx",
+      "frontend/src/contexts/AutoTraderContext.tsx",
+      "frontend/src/App.tsx"
+    ]
+  },
+
+  "depends_on": ["TSK-AUTOTRADER-010"],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/autoTraderRunner.ts",
+    "interfaces": "export interface AutoTraderSessionConfig { allocatedCapital: number; sessionDurationMinutes: number; dailyTargetProfitPct: number; dailyMaxLossPct: number; maxTradesPerDay: number; tradingProfile: 'MOMENTUM_INTRADAY' | 'FAST_SCALP' | 'SCALP' | 'SWING'; }",
+    "function_signatures": [
+      "createAutoTraderRunner(config: any): any",
+      "AutoTraderView(props: any): React.ReactElement"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit tests in frontend/src/__tests__/auto_trader_session_ui.test.js covering session scheduler, daily guardrails, and real demo balance debit/credit flow",
+    "Run node --test to verify red phase",
+    "Update autoTraderRunner.ts to support session scheduling, daily target profit, daily max loss, and trade limits",
+    "Create frontend/src/components/dashboard/AutoTraderDashboardWidget.tsx with vectorial SVG icons and zero emojis",
+    "Create frontend/src/components/AutoTraderView.tsx with 5-level institutional hierarchy, capital/duration pills, active trade radar, Break-Even SVG lock, Trailing Stop line, and MFE/MAE telemetry",
+    "Update BottomNavMobile.tsx and App.tsx to register AUTOTRADER in MasterViewType and render AutoTraderView",
+    "Update DashboardView.tsx to embed AutoTraderDashboardWidget in the top hero area",
+    "Run node --test to verify green phase",
+    "Run full regression test suites across auto trader modules",
+    "Run npm run build --prefix frontend and npx oxlint to guarantee zero errors and zero warnings"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/auto_trader_session_ui.test.js",
+    "lint": "npx oxlint frontend/src/components/AutoTraderView.tsx",
+    "typecheck": "npm run build --prefix frontend"
+  },
+
+  "acceptance_criteria": [
+    "Dedicated AUTOTRADER master view is accessible from navigation in both desktop and mobile",
+    "AutoTraderDashboardWidget is rendered in DashboardView providing quick glance of status and CTA link",
+    "Zero emojis are used anywhere in the UI; only professional SVG icons (Phosphor / Lucide) are rendered",
+    "Capital selection allows $10, $100, $1,000, and custom amounts with validation against available demo balance",
+    "Session duration selector allows 30m, 1h, 2h, 3h, 4h, 5h, 8h, 12h, 24h, and continuous",
+    "Guardrails support configurable daily profit target (+3%), daily max loss shield (-2%), and max trades ceiling (3-5)",
+    "Active trade card displays Break-Even lock state, Trailing Stop dynamic level, and MFE/MAE metrics",
+    "Demo balance debits on trade allocation and credits principal plus net profit/loss upon exit",
+    "All unit tests pass with exit code 0 and build finishes with 0 errors"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "No pre-existing bots, portfolios, or views are broken or regressed"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/autoTraderRunner.ts frontend/src/components/BottomNavMobile.tsx frontend/src/components/DashboardView.tsx frontend/src/App.tsx; rm -f frontend/src/components/AutoTraderView.tsx frontend/src/components/dashboard/AutoTraderDashboardWidget.tsx frontend/src/__tests__/auto_trader_session_ui.test.js contracts/TSK-AUTOTRADER-011.contract.json"
+  }
+}

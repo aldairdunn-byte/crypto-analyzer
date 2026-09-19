@@ -1,0 +1,74 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-AUTOTRADER-006",
+  "epic_id": "EPC-AUTOTRADER",
+  "goal": "Implement scalping dynamic execution profile, break-even capital protection, trailing stop profit locking, and stagnation exit engine in Auto Trader BETA",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/quantitativeEngine.ts",
+      "frontend/src/lib/autoTraderRunner.ts",
+      "scripts/run_live_paper_test.js"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": ["TSK-AUTOTRADER-005"],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/autoTraderRunner.ts",
+    "interfaces": "export interface AutoTraderRunnerConfig { assignedCapital: number; tradingProfile?: 'SCALP' | 'SWING'; scalpTpPct?: number; scalpSlPct?: number; breakEvenTriggerPct?: number; breakEvenBufferPct?: number; trailingStopTriggerPct?: number; trailingStopDistancePct?: number; maxStagnationSeconds?: number; stagnationThresholdPct?: number; }",
+    "function_signatures": [
+      "calculateDynamicLevels(currentPrice: number, rsi: number, change24h: number, atr?: number | null, profile?: 'SWING' | 'SCALP'): DynamicLevels",
+      "createAutoTraderRunner(config: any): any"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write comprehensive unit test suite in frontend/src/__tests__/auto_trader_scalp_trail.test.js covering Scalp TP/SL levels, Break-Even arming, Trailing Stop updates, and Stagnation Exit",
+    "Run node --test to verify red phase on new features",
+    "Update quantitativeEngine.ts to support profile parameter in calculateDynamicLevels",
+    "Update autoTraderRunner.ts to implement Scalping profile, Break-Even Lock, Trailing Stop, and Stagnation Exit",
+    "Run node --test to verify green phase",
+    "Run npm run build and npx oxlint",
+    "Update scripts/run_live_paper_test.js to support Scalping profile and monitor new triggers",
+    "Run Live Paper Trading Session #3 with Binance Spot live market data to demonstrate positive P&L / profit capturing"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/auto_trader_scalp_trail.test.js",
+    "lint": "npx oxlint frontend/src/lib/autoTraderRunner.ts frontend/src/lib/quantitativeEngine.ts",
+    "typecheck": "npm run build --prefix frontend"
+  },
+
+  "acceptance_criteria": [
+    "tradingProfile is configurable with default SCALP for responsive intraday execution",
+    "In SCALP profile, TP levels are realistic (+1.8% to +2.8%) and risk/reward remains >= 1.25",
+    "Break-Even arms automatically when price gains >= breakEvenTriggerPct (default 0.8%), elevating SL above entry to guarantee fee coverage",
+    "Trailing Stop arms when price gains >= trailingStopTriggerPct (default 1.2%) and trails peak price by trailingStopDistancePct (default 0.5%)",
+    "Stagnation exit triggers when position holds >= maxStagnationSeconds without achieving break-even or TP progress",
+    "All unit tests pass with exit code 0"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "Zero private Binance API or real money endpoints are used",
+    "Live Paper Trading Session #3 runs and logs real-time Break-Even, Trailing Stop, or Take Profit actions"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/quantitativeEngine.ts frontend/src/lib/autoTraderRunner.ts scripts/run_live_paper_test.js; rm -f frontend/src/__tests__/auto_trader_scalp_trail.test.js contracts/TSK-AUTOTRADER-006.contract.json"
+  }
+}

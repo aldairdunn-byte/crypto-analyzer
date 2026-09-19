@@ -1,0 +1,70 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-AUTOTRADER-003",
+  "epic_id": "EPC-AUTOTRADER",
+  "goal": "Implement configurable assigned capital state engine and eliminate fixed initial capital dependencies from analysis and execution pipeline",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/autoTraderEngine.ts",
+      "frontend/src/lib/quantitativeEngine.ts"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": ["TSK-PNL-002"],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/autoTraderEngine.ts",
+    "interfaces": "export interface AutoTraderState { assignedCapital: number; availableCapital: number; capitalInPosition: number; realizedPnL: number; unrealizedPnL: number; currentPosition: AutoTraderPosition | null; tradingState: string; minTradeCapital: number; maxRiskPerTradePct: number; consecutiveLosses: number; lastUpdated: string; }",
+    "function_signatures": [
+      "createAutoTraderState(assignedCapital: number, options?: any): AutoTraderState",
+      "updateAssignedCapital(state: AutoTraderState, newCapital: number): AutoTraderState",
+      "evaluateAutoTraderScan(state: AutoTraderState, opportunities: any[]): any",
+      "executeAutoTraderBuy(state: AutoTraderState, decision: any): AutoTraderState",
+      "executeAutoTraderSell(state: AutoTraderState, exitPrice: number, reason: string): any"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit test in frontend/src/__tests__/auto_trader_capital.test.js covering Tests A through H",
+    "Run node --test to verify failure on missing autoTraderEngine module",
+    "Implement autoTraderEngine.ts with pure state transitions for capital allocation, sizing and compounding",
+    "Remove default capital 7.35 hardcode in quantitativeEngine.ts",
+    "Run node --test to verify pass",
+    "Verify TypeScript build with tsc -b"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/auto_trader_capital.test.js",
+    "lint": "npx oxlint",
+    "typecheck": "npm run build --prefix frontend"
+  },
+
+  "acceptance_criteria": [
+    "assignedCapital accepts any positive number without fixed constant defaults",
+    "subsequent trade capital reflects realized profit compounding ($100 to $102) and loss deductions ($100 to $97)",
+    "capital below minTradeCapital transitions to INSUFFICIENT_CAPITAL with zero trades emitted",
+    "serialized state recovers all capital metrics and trading state after restart"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0 for all 8 mandatory tests",
+    "commands.typecheck returns exit code 0",
+    "No production code assumes 7.35 as a default or constant"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/quantitativeEngine.ts; rm -f frontend/src/lib/autoTraderEngine.ts"
+  }
+}

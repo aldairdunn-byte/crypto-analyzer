@@ -9,7 +9,7 @@ import {
   type PortfolioRow,
 } from '../lib/supabase';
 import { getScopedItem, removeScopedItem, setScopedItem } from '../lib/accountStorage';
-import { reconcileDemoFreeCash } from '../lib/portfolioMath';
+import { reconcileDemoFreeCash, calculateMarkToMarketTotalEquity } from '../lib/portfolioMath';
 import { type CryptoHolding } from '../components/AssetsView';
 
 interface PortfolioContextType {
@@ -25,6 +25,10 @@ interface PortfolioContextType {
   supabasePortfolio: PortfolioRow[];
   virtualUsdt: number;
   totalSpotValue: number;
+  capitalInGridBots: number;
+  setCapitalInGridBots: React.Dispatch<React.SetStateAction<number>>;
+  capitalInAutoTrader: number;
+  setCapitalInAutoTrader: React.Dispatch<React.SetStateAction<number>>;
   capitalInBots: number;
   setCapitalInBots: React.Dispatch<React.SetStateAction<number>>;
   availableUsdt: number;
@@ -94,7 +98,34 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return demoSaved !== null ? parseFloat(demoSaved) : 1000.0;
   });
 
-  const [capitalInBots, setCapitalInBots] = useState<number>(0);
+  const [capitalInGridBots, setCapitalInGridBots] = useState<number>(() => {
+    const saved = getScopedItem('capital_in_grid_bots', user?.id, { legacyFallback: true });
+    if (saved !== null) return parseFloat(saved);
+    const legacySaved = getScopedItem('capital_in_bots', user?.id, { legacyFallback: true });
+    return legacySaved !== null ? parseFloat(legacySaved) : 0.0;
+  });
+
+  const [capitalInAutoTrader, setCapitalInAutoTrader] = useState<number>(() => {
+    const saved = getScopedItem('capital_in_autotrader', user?.id, { legacyFallback: true });
+    if (saved !== null) return parseFloat(saved);
+    const legacyAutoTraderAlloc = getScopedItem('autotrader_capital_allocated');
+    return legacyAutoTraderAlloc !== null ? parseFloat(legacyAutoTraderAlloc) : 0.0;
+  });
+
+  const capitalInBots = Number((capitalInGridBots + capitalInAutoTrader).toFixed(2));
+
+  const setCapitalInBots: React.Dispatch<React.SetStateAction<number>> = (action) => {
+    setCapitalInGridBots(action);
+  };
+
+  useEffect(() => {
+    setScopedItem('capital_in_grid_bots', capitalInGridBots.toString(), user?.id);
+    setScopedItem('capital_in_bots', capitalInBots.toString(), user?.id);
+  }, [capitalInGridBots, capitalInBots, user?.id]);
+
+  useEffect(() => {
+    setScopedItem('capital_in_autotrader', capitalInAutoTrader.toString(), user?.id);
+  }, [capitalInAutoTrader, user?.id]);
 
   // Toggle Live Mode with proper cash isolation
   const setIsLiveMode = useCallback((val: boolean) => {
@@ -396,25 +427,38 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [holdings]);
 
   useEffect(() => {
-    if (isLiveMode || !user?.id) return;
+    if (isLiveMode) return;
+    const bankroll = profile?.demo_usdt_balance ?? 1000;
     const reconciledCash = reconcileDemoFreeCash({
-      reservedBotCapitalUsd: capitalInBots,
+      bankrollUsd: bankroll,
+      reservedBotCapitalUsd: capitalInGridBots,
+      reservedAutoTraderCapitalUsd: capitalInAutoTrader,
       spotCostBasisUsd: totalSpotCostBasis,
     });
-    if (usdtCash > reconciledCash + 0.01) {
+    if (Math.abs(usdtCash - reconciledCash) > 0.01) {
       setUsdtCash(reconciledCash);
     }
-  }, [capitalInBots, isLiveMode, setUsdtCash, totalSpotCostBasis, user?.id, usdtCash]);
+  }, [capitalInGridBots, capitalInAutoTrader, isLiveMode, setUsdtCash, totalSpotCostBasis, profile?.demo_usdt_balance, usdtCash]);
 
-  // Total Portfolio Capital = USDT Cash + Total in Active Bots + Spot Holdings Value
-  const virtualUsdt = usdtCash + capitalInBots + totalSpotValue;
+  // Total Portfolio Capital = USDT Cash + Grid Bots + Auto Trader + Spot Holdings Value (Mark-to-Market exact)
+  const virtualUsdt = calculateMarkToMarketTotalEquity({
+    usdtCash,
+    botsMarketValueUsd: capitalInGridBots,
+    autoTraderMarketValueUsd: capitalInAutoTrader,
+    spotMarketValueUsd: totalSpotValue,
+  });
   const availableUsdt = usdtCash;
 
   const resetDemoBalance = async () => {
     const defaultAmount = 1000.0;
     setUsdtCash(defaultAmount);
+    setCapitalInGridBots(0);
+    setCapitalInAutoTrader(0);
     setLocalHoldings({});
     setScopedItem('demo_usdt_cash', '1000', user?.id);
+    removeScopedItem('capital_in_grid_bots', user?.id);
+    removeScopedItem('capital_in_autotrader', user?.id);
+    removeScopedItem('capital_in_bots', user?.id);
     removeScopedItem('crypto_analyzer_demo_holdings', user?.id);
     removeScopedItem('crypto_analyzer_trades', user?.id);
     if (typeof window !== 'undefined') {
@@ -440,6 +484,10 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         supabasePortfolio,
         virtualUsdt,
         totalSpotValue,
+        capitalInGridBots,
+        setCapitalInGridBots,
+        capitalInAutoTrader,
+        setCapitalInAutoTrader,
         capitalInBots,
         setCapitalInBots,
         availableUsdt,

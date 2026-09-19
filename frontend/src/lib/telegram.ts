@@ -6,7 +6,7 @@ export function getTelegramBotToken(): string {
     const custom = localStorage.getItem('crypto_analyzer_telegram_bot_token');
     if (custom && custom.trim().length > 0) return custom.trim();
   } catch {}
-  return import.meta.env.VITE_TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+  return (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_TELEGRAM_BOT_TOKEN) || DEFAULT_TELEGRAM_BOT_TOKEN;
 }
 
 export function getTelegramChatId(): string {
@@ -60,13 +60,20 @@ export function getUserDisplayName(): string {
       const raw = localStorage.getItem(authKey);
       if (raw) {
         const parsed = JSON.parse(raw);
-        const email = parsed?.user?.email || parsed?.session?.user?.email;
+        const usr = parsed?.user || parsed?.session?.user;
+        const fullName = usr?.user_metadata?.full_name || usr?.user_metadata?.name;
+        if (fullName && typeof fullName === 'string' && fullName.trim().length > 0) {
+          return fullName.trim();
+        }
+        const email = usr?.email;
         if (email && typeof email === 'string') {
           return email.split('@')[0];
         }
       }
     }
     // Fallback: check custom key some apps use
+    const fallbackName = localStorage.getItem('crypto_analyzer_user_name');
+    if (fallbackName && fallbackName.trim().length > 0) return fallbackName.trim();
     const fallbackEmail = localStorage.getItem('crypto_analyzer_user_email');
     if (fallbackEmail) return fallbackEmail.split('@')[0];
   } catch {}
@@ -651,6 +658,194 @@ export async function sendTelegramTestMessage(): Promise<{ success: boolean; err
         { text: '🟡 Binance Spot Live', url: 'https://www.binance.com/es/trade/SOL_USDT' },
       ],
       [
+        { text: '📢 Canal de Alertas', url: TELEGRAM_CHANNEL_URL },
+      ],
+    ],
+  };
+
+  return sendTelegramMessage(lines.join('\n'), replyMarkup);
+}
+
+/**
+ * 7. NOTIFICACIONES DE AUTO TRADER PRO
+ */
+export interface TelegramAutoTraderStartParams {
+  selectedCapital: number;
+  durationMinutes: number;
+  digestInterval: '30m' | '1h' | 'off';
+  penRate?: number;
+}
+
+export async function sendTelegramAutoTraderSessionStart(
+  params: TelegramAutoTraderStartParams
+): Promise<{ success: boolean; error?: string }> {
+  const { selectedCapital, durationMinutes, digestInterval, penRate = 3.75 } = params;
+  const nowUtc = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+  const dualCapital = formatDualCurrency(selectedCapital, penRate);
+  const durationText =
+    durationMinutes > 0 ? `${durationMinutes} Minutos (Parada Automática)` : 'Continua 24/7 (Sin límite)';
+  const digestText =
+    digestInterval === '30m'
+      ? 'Cada 30 Minutos'
+      : digestInterval === '1h'
+      ? 'Cada 1 Hora'
+      : 'Solo en Operaciones (Trades)';
+
+  const lines = [
+    `━━━━━━━━━━━━━━━━━━━━━━`,
+    `🧠⚡ <b>CEREBRO AUTO TRADER ACTIVADO</b>`,
+    `━━━━━━━━━━━━━━━━━━━━━━`,
+    `💼 <b>Capital Asignado:</b> ${dualCapital}`,
+    `⏱️ <b>Ventana Operativa:</b> ${durationText}`,
+    `📡 <b>Reportes Periódicos:</b> ${digestText}`,
+    `🛡️ <b>Gestión de Riesgo:</b> Stop Loss dinámico (-2.0%) & Break-Even (+0.50%)`,
+    `🎯 <b>Estrategia:</b> Momentum Intraday (105 pares monitoreados)`,
+    `🟢 <b>Estado:</b> 100% OPERATIVO & ESCANEANDO MERCADO`,
+    `━━━━━━━━━━━━━━━━━━━━━━`,
+    `<i>⏰ ${nowUtc} | Crypto Analyzer Pro</i>`,
+  ];
+
+  const replyMarkup = {
+    inline_keyboard: [
+      [
+        { text: '🚀 Abrir Cabina Auto Trader', url: APP_LIVE_URL },
+        { text: '📢 Canal de Alertas', url: TELEGRAM_CHANNEL_URL },
+      ],
+    ],
+  };
+
+  return sendTelegramMessage(lines.join('\n'), replyMarkup);
+}
+
+export interface TelegramAutoTraderTokenEntryParams {
+  symbol: string;
+  entryPrice: number;
+  units: number;
+  capitalUsd: number;
+  thesis?: string;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
+  penRate?: number;
+}
+
+export async function sendTelegramAutoTraderTokenEntry(
+  params: TelegramAutoTraderTokenEntryParams
+): Promise<{ success: boolean; error?: string }> {
+  const {
+    symbol,
+    entryPrice,
+    units,
+    capitalUsd,
+    thesis = 'Ruptura alcista Momentum + Rebote sobreventa RSI(14)',
+    stopLossPrice,
+    takeProfitPrice,
+    penRate = 3.75,
+  } = params;
+
+  const nowUtc = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+  const dualPrice = formatDualPrice(entryPrice, entryPrice >= 1 ? 2 : 4, penRate);
+  const dualAmount = formatDualCurrency(capitalUsd, penRate);
+
+  const lines = [
+    `━━━━━━━━━━━━━━━━━━━━━━`,
+    `🎯🚀 <b>ROTACIÓN DE ACTIVO & ENTRADA EJECUTADA — ${symbol}/USDT</b>`,
+    `━━━━━━━━━━━━━━━━━━━━━━`,
+    `🪙 <b>Activo Seleccionado:</b> ${symbol}`,
+    `🏷️ <b>Precio de Entrada:</b> ${dualPrice}`,
+    `📦 <b>Tamaño Posición:</b> ${units.toFixed(units >= 1 ? 4 : 6)} ${symbol} (${dualAmount})`,
+    `💡 <b>Tesis Cuantitativa:</b> <i>${thesis}</i>`,
+  ];
+
+  if (stopLossPrice) {
+    const slPct = (((stopLossPrice - entryPrice) / entryPrice) * 100).toFixed(2);
+    lines.push(`🔴 <b>Stop Loss Dinámico:</b> $${stopLossPrice.toFixed(stopLossPrice >= 1 ? 2 : 4)} USDT (${slPct}%)`);
+  }
+  if (takeProfitPrice) {
+    const tpPct = (((takeProfitPrice - entryPrice) / entryPrice) * 100).toFixed(2);
+    lines.push(`🟢 <b>Take Profit Objetivo:</b> $${takeProfitPrice.toFixed(takeProfitPrice >= 1 ? 2 : 4)} USDT (+${tpPct}%)`);
+  }
+
+  lines.push(``);
+  lines.push(`🛡️ <b>Protección Activa:</b> Break-Even (+0.50%) & Trailing Stop (+1.20%)`);
+  lines.push(`━━━━━━━━━━━━━━━━━━━━━━`);
+  lines.push(`<i>⏰ ${nowUtc} | Crypto Analyzer Pro</i>`);
+
+  const replyMarkup = {
+    inline_keyboard: [
+      [
+        { text: '🚀 Cabina de Mando', url: APP_LIVE_URL },
+        { text: `🟡 Binance ${symbol}/USDT`, url: `https://www.binance.com/es/trade/${symbol}_USDT` },
+      ],
+    ],
+  };
+
+  return sendTelegramMessage(lines.join('\n'), replyMarkup);
+}
+
+export interface TelegramPeriodicDigestParams {
+  status: string;
+  activePosition: any | null;
+  closedTradesToday: number;
+  winningTradesToday: number;
+  sessionPnlUsd: number;
+  sessionPnlPct: number;
+  totalEquityUsd: number;
+  intervalLabel: string;
+  penRate?: number;
+}
+
+export async function sendTelegramPeriodicDigest(
+  params: TelegramPeriodicDigestParams
+): Promise<{ success: boolean; error?: string }> {
+  const {
+    status,
+    activePosition,
+    closedTradesToday,
+    winningTradesToday,
+    sessionPnlUsd,
+    sessionPnlPct,
+    totalEquityUsd,
+    intervalLabel,
+    penRate = 3.75,
+  } = params;
+
+  const nowUtc = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+  const dualTotal = formatDualCurrency(totalEquityUsd, penRate);
+  const isGain = sessionPnlUsd >= 0;
+  const sign = isGain ? '+' : '';
+  const pnlPen = sessionPnlUsd * penRate;
+  const winRate = closedTradesToday > 0 ? ((winningTradesToday / closedTradesToday) * 100).toFixed(1) : '0.0';
+
+  const lines = [
+    `━━━━━━━━━━━━━━━━━━━━━━`,
+    `⏱️📊 <b>REPORTE PERIÓDICO AUTO TRADER (${intervalLabel.toUpperCase()})</b>`,
+    `━━━━━━━━━━━━━━━━━━━━━━`,
+    `🟢 <b>Estado del Motor:</b> ${status}`,
+    `💼 <b>Equity Total Portafolio:</b> ${dualTotal}`,
+    `📈 <b>PnL Sesión:</b> ${isGain ? '🟢' : '🔴'} ${sign}$${sessionPnlUsd.toFixed(2)} USDT (~${sign}S/ ${pnlPen.toFixed(2)} PEN) [${sign}${sessionPnlPct.toFixed(2)}%]`,
+    `🏆 <b>Operaciones Hoy:</b> ${closedTradesToday} ejecutadas (${winningTradesToday} ganadoras · ${winRate}% Win Rate)`,
+  ];
+
+  if (activePosition) {
+    const posSign = activePosition.unrealizedPnlUsd >= 0 ? '+' : '';
+    lines.push(``);
+    lines.push(`🪙 <b>Posición Abierta:</b> ${activePosition.symbol}/USDT`);
+    lines.push(`  • Entrada: $${activePosition.entryPrice?.toFixed(activePosition.entryPrice >= 1 ? 2 : 4)} USDT`);
+    lines.push(`  • PnL Flotante: ${posSign}$${(activePosition.unrealizedPnlUsd || 0).toFixed(2)} USDT (${posSign}${(activePosition.unrealizedPnlPct || 0).toFixed(2)}%)`);
+    if (activePosition.breakEvenArmed) {
+      lines.push(`  • Break-Even: Activado (Riesgo Cero)`);
+    }
+  } else {
+    lines.push(`🔍 <b>Posición:</b> Sin posición abierta. Monitoreando oportunidades.`);
+  }
+
+  lines.push(`━━━━━━━━━━━━━━━━━━━━━━`);
+  lines.push(`<i>⏰ ${nowUtc} | Crypto Analyzer Pro</i>`);
+
+  const replyMarkup = {
+    inline_keyboard: [
+      [
+        { text: '💼 Ver Portafolio', url: APP_LIVE_URL },
         { text: '📢 Canal de Alertas', url: TELEGRAM_CHANNEL_URL },
       ],
     ],

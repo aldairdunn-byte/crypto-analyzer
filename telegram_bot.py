@@ -382,6 +382,72 @@ class TelegramNotifier:
 
         return self._send_message("\n".join(lines), reply_markup=reply_markup)
 
+    def send_auto_trader_alert(
+        self,
+        event_type: str,
+        coin_id: str,
+        pair: str,
+        price: float,
+        amount_usd: float,
+        units: float,
+        pnl_usd: Optional[float] = None,
+        pnl_pct: Optional[float] = None,
+        user_name: Optional[str] = None,
+        exit_reason: Optional[str] = None
+    ) -> bool:
+        """
+        Envía alertas del motor Auto Trader Pro 24/7 en la nube con atribución de usuario.
+        """
+        timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        operator_label = user_name or "Operador Cuantitativo"
+
+        title_map = {
+            "ENTRY": ("🚀", "AUTO TRADER 24/7 · ENTRADA"),
+            "ARM_BREAK_EVEN": ("🛡️", "PROTECCIÓN BREAK-EVEN ACTIVADA (+0.8%)"),
+            "EXIT_TP": ("🎯", "TAKE PROFIT EJECUTADO (+2.0%)"),
+            "EXIT_SL": ("🛑", "STOP LOSS EJECUTADO"),
+            "SESSION_PAUSED": ("⏸️", "SESIÓN AUTO TRADER PAUSADA"),
+            "SESSION_STOPPED": ("⏹️", "SESIÓN AUTO TRADER FINALIZADA")
+        }
+        emoji, action_title = title_map.get(event_type, ("🤖", f"AUTO TRADER · {event_type}"))
+
+        lines = [
+            "━━━━━━━━━━━━━━━━━━━━━━",
+            f"<b>{emoji} {action_title}</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━",
+            f"👤 <b>Operador:</b> <code>{operator_label}</code>",
+            f"📌 <b>Par:</b> {pair}",
+            f"💰 <b>Precio:</b> ${price:,.4f}",
+            f"🔢 <b>Unidades:</b> {units:.6f} {coin_id.upper()[:4]}",
+            f"💵 <b>Capital:</b> ${amount_usd:,.2f} USDT",
+        ]
+
+        if event_type == "ARM_BREAK_EVEN":
+            lines.append("🔒 <i>Stop Loss movido al precio de entrada (Riesgo Cero).</i>")
+
+        if pnl_usd is not None:
+            pnl_sign = "+" if pnl_usd >= 0 else ""
+            pct_val = pnl_pct if pnl_pct is not None else 0.0
+            lines.append(f"📈 <b>PnL Neto:</b> <code>{pnl_sign}${pnl_usd:,.2f} ({pnl_sign}{pct_val:,.2f}%)</code>")
+
+        if exit_reason:
+            lines.append(f"ℹ️ <b>Motivo:</b> {exit_reason}")
+
+        lines.extend([
+            "━━━━━━━━━━━━━━━━━━━━━━",
+            f"<i>⏱️ {timestamp_utc} | Render Cloud Worker 24/7</i>"
+        ])
+
+        reply_markup = {
+            "inline_keyboard": [
+                [
+                    {"text": "📈 Ver Terminal Cuantitativo", "url": self.app_url}
+                ]
+            ]
+        }
+
+        return self._send_message("\n".join(lines), reply_markup=reply_markup)
+
     def send_portfolio_summary(
         self,
         portfolio_list: List[Dict[str, Any]],
@@ -638,6 +704,391 @@ def get_telegram_notifier() -> TelegramNotifier:
     return _telegram_notifier_instance
 
 
+# Mapeo de símbolos Binance estándar
+BINANCE_SYMBOLS = {
+    "solana": "SOLUSDT",
+    "bitcoin": "BTCUSDT",
+    "ethereum": "ETHUSDT",
+    "polkadot": "DOTUSDT",
+    "binancecoin": "BNBUSDT",
+    "cardano": "ADAUSDT",
+    "avalanche-2": "AVAXUSDT",
+    "avalanche": "AVAXUSDT",
+    "sui": "SUIUSDT",
+    "render-token": "RENDERUSDT",
+    "render": "RENDERUSDT",
+    "near": "NEARUSDT",
+    "bittensor": "TAOUSDT",
+    "dogecoin": "DOGEUSDT",
+    "pepe": "PEPEUSDT",
+    "fetch-ai": "FETUSDT",
+    "shiba-inu": "SHIBUSDT"
+}
+
+def _format_pair(symbol: str) -> str:
+    if symbol.endswith("USDT"):
+        return f"{symbol[:-4]}/USDT"
+    return symbol
+
+def _format_price(price: float) -> str:
+    if price >= 1000:
+        return f"${price:,.2f}"
+    if price >= 1:
+        return f"${price:,.4f}"
+    return f"${price:,.8f}"
+
+def _format_usd(amount: float) -> str:
+    return f"${amount:,.2f}"
+
+
+def run_cloud_auto_trader_cycle(
+    sb: Any,
+    notifier: TelegramNotifier,
+    web_push: Optional[Any] = None,
+    active_sessions: Optional[List[Dict[str, Any]]] = None,
+    binance_map: Optional[Dict[str, float]] = None,
+    binance_24h: Optional[List[Dict[str, Any]]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Ejecuta un ciclo autónomo 24/7 de Auto Trader en la nube.
+    Monitorea sesiones activas (SCANNING / IN_POSITION), detecta breakouts,
+    ejecuta entradas de momentum, arma Break-Even (+0.8%), gestiona Trailing Stop,
+    aplica Take Profit (+2.0%) / Stop Loss (-2.0%) y despacha notificaciones con
+    atribución de usuario.
+    """
+    if active_sessions is None:
+        try:
+            active_sessions = sb.get_active_auto_trader_sessions()
+        except Exception as err:
+            logger.warning(f"Error obteniendo sesiones activas de Auto Trader: {err}")
+            return []
+
+    if not active_sessions:
+        return []
+
+    if binance_map is None:
+        try:
+            resp = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=4)
+            if resp.status_code == 200:
+                price_list = resp.json()
+                binance_map = {item["symbol"]: float(item["price"]) for item in price_list if "symbol" in item and "price" in item}
+            else:
+                binance_map = {}
+        except Exception as e:
+            logger.warning(f"Error consultando precios Binance: {e}")
+            binance_map = {}
+
+    if not binance_map:
+        return []
+
+    if binance_24h is None:
+        try:
+            resp24 = requests.get("https://api.binance.com/api/v3/ticker/24hr", timeout=4)
+            binance_24h = resp24.json() if resp24.status_code == 200 else []
+        except Exception:
+            binance_24h = []
+
+    CANDIDATE_PAIRS = [
+        ("solana", "SOLUSDT"),
+        ("bitcoin", "BTCUSDT"),
+        ("ethereum", "ETHUSDT"),
+        ("avalanche", "AVAXUSDT"),
+        ("sui", "SUIUSDT"),
+        ("near", "NEARUSDT"),
+        ("dogecoin", "DOGEUSDT"),
+        ("render", "RENDERUSDT")
+    ]
+
+    # Mapeo de momentum 24h
+    change_map: Dict[str, float] = {}
+    if binance_24h:
+        for item in binance_24h:
+            sym = item.get("symbol")
+            if sym:
+                try:
+                    change_map[sym] = float(item.get("priceChangePercent") or 0.0)
+                except (ValueError, TypeError):
+                    pass
+
+    actions = []
+
+    for session in active_sessions:
+        try:
+            session_id = session.get("id")
+            if not session_id:
+                continue
+
+            status = session.get("status", "STOPPED")
+            user_id = session.get("user_id")
+            capital = float(session.get("selected_capital") or 50.0)
+            daily_target_pct = float(session.get("daily_target_pct") or 3.0)
+            daily_max_loss_pct = float(session.get("daily_max_loss_pct") or 2.0)
+            max_trades = int(session.get("max_trades_per_day") or 5)
+            closed_trades = int(session.get("closed_trades_today") or 0)
+            realized_pnl = float(session.get("session_realized_pnl_usd") or 0.0)
+
+            target_usd = capital * (daily_target_pct / 100.0)
+            max_loss_usd = -1 * abs(capital * (daily_max_loss_pct / 100.0))
+
+            # Obtener perfil de usuario para atribución
+            user_name = None
+            if user_id:
+                try:
+                    profile = sb.get_user_profile(user_id)
+                    if profile:
+                        user_name = profile.get("full_name") or profile.get("email")
+                except Exception:
+                    pass
+
+            # =================================================================
+            # 1. EVALUAR ENTRADA EN MODO SCANNING
+            # =================================================================
+            if status == "SCANNING":
+                # Verificar guardrails diarios
+                if closed_trades >= max_trades or realized_pnl >= target_usd or realized_pnl <= max_loss_usd:
+                    sb.update_auto_trader_session(session_id, {"status": "PAUSED"})
+                    notifier.send_auto_trader_alert(
+                        event_type="SESSION_PAUSED",
+                        coin_id="GLOBAL",
+                        pair="TODOS",
+                        price=0.0,
+                        amount_usd=capital,
+                        units=0.0,
+                        pnl_usd=realized_pnl,
+                        user_name=user_name,
+                        exit_reason="Guardrail diario activado (Max Trades o PnL Objetivo/Pérdida alcanzado)"
+                    )
+                    continue
+
+                # Seleccionar candidato con mayor momentum disponible en binance_map
+                best_coin_id = None
+                best_symbol = None
+                best_score = -999.0
+
+                for cid, sym in CANDIDATE_PAIRS:
+                    if sym in binance_map and binance_map[sym] > 0:
+                        score = change_map.get(sym, 0.0)
+                        if score > best_score:
+                            best_score = score
+                            best_coin_id = cid
+                            best_symbol = sym
+
+                if not best_symbol and CANDIDATE_PAIRS:
+                    for cid, sym in CANDIDATE_PAIRS:
+                        if sym in binance_map and binance_map[sym] > 0:
+                            best_coin_id = cid
+                            best_symbol = sym
+                            break
+
+                if best_symbol and best_symbol in binance_map:
+                    cur_p = binance_map[best_symbol]
+                    units = round(capital / cur_p, 6) if cur_p > 0 else 0.0
+                    sl_price = round(cur_p * (1.0 - (daily_max_loss_pct / 100.0)), 4)
+                    tp_price = round(cur_p * 1.02, 4)  # +2.0% Take Profit
+
+                    active_pos = {
+                        "coin_id": best_coin_id,
+                        "symbol": best_symbol,
+                        "entry_price": cur_p,
+                        "units": units,
+                        "amount_usd": capital,
+                        "highest_price": cur_p,
+                        "be_armed": False,
+                        "stop_loss": sl_price,
+                        "take_profit": tp_price,
+                        "entry_time": datetime.now(timezone.utc).isoformat()
+                    }
+
+                    sb.update_auto_trader_session(session_id, {
+                        "status": "IN_POSITION",
+                        "active_position": active_pos,
+                        "session_start_time": session.get("session_start_time") or datetime.now(timezone.utc).isoformat()
+                    })
+
+                    try:
+                        sb.record_trade(
+                            bot_id=None,
+                            coin_id=best_coin_id,
+                            side="BUY",
+                            entry_price=cur_p,
+                            units=units,
+                            amount_usd=capital,
+                            entry_reason=f"Cloud Auto Trader Pro Breakout ({best_symbol})"
+                        )
+                    except Exception as tr_err:
+                        logger.debug(f"Aviso registrando trade en Supabase: {tr_err}")
+
+                    notifier.send_auto_trader_alert(
+                        event_type="ENTRY",
+                        coin_id=best_coin_id,
+                        pair=_format_pair(best_symbol),
+                        price=cur_p,
+                        amount_usd=capital,
+                        units=units,
+                        user_name=user_name
+                    )
+
+                    if web_push and user_id:
+                        try:
+                            web_push.send_to_user(
+                                user_id=user_id,
+                                title=f"AUTO TRADER · Entrada en {_format_pair(best_symbol)}",
+                                body=f"Compra a {_format_price(cur_p)} · Monto: ${_format_usd(capital)}",
+                                data={
+                                    "sessionId": session_id,
+                                    "eventType": "AUTO_TRADER_ENTRY",
+                                    "symbol": best_symbol,
+                                    "coinId": best_coin_id
+                                }
+                            )
+                        except Exception as wp_err:
+                            logger.debug(f"Aviso enviando Web Push: {wp_err}")
+
+                    actions.append({
+                        "action": "ENTER_POSITION",
+                        "session_id": session_id,
+                        "coin_id": best_coin_id,
+                        "symbol": best_symbol,
+                        "entry_price": cur_p,
+                        "amount_usd": capital,
+                        "units": units
+                    })
+
+            # =================================================================
+            # 2. EVALUAR GESTIÓN Y SALIDA EN MODO IN_POSITION
+            # =================================================================
+            elif status == "IN_POSITION":
+                pos = session.get("active_position")
+                if not pos or not isinstance(pos, dict):
+                    continue
+
+                sym = pos.get("symbol")
+                cur_p = binance_map.get(sym)
+                if not cur_p or cur_p <= 0:
+                    continue
+
+                entry_p = float(pos.get("entry_price") or cur_p)
+                units = float(pos.get("units") or 0.0)
+                cost = float(pos.get("amount_usd") or capital)
+                highest_p = max(float(pos.get("highest_price") or entry_p), cur_p)
+                pos["highest_price"] = highest_p
+
+                pnl_pct = ((cur_p - entry_p) / entry_p) * 100.0 if entry_p > 0 else 0.0
+                be_armed = bool(pos.get("be_armed", False))
+                sl_p = float(pos.get("stop_loss", entry_p * (1.0 - (daily_max_loss_pct / 100.0))))
+                tp_p = float(pos.get("take_profit", entry_p * 1.02))
+
+                # A. Armar Break-Even cuando la ganancia alcanza >= +0.8%
+                if not be_armed and pnl_pct >= 0.8:
+                    pos["be_armed"] = True
+                    pos["stop_loss"] = entry_p  # Elevar Stop Loss al precio de entrada (Riesgo Cero)
+                    sb.update_auto_trader_session(session_id, {"active_position": pos})
+
+                    notifier.send_auto_trader_alert(
+                        event_type="ARM_BREAK_EVEN",
+                        coin_id=pos.get("coin_id", "coin"),
+                        pair=_format_pair(sym),
+                        price=cur_p,
+                        amount_usd=cost,
+                        units=units,
+                        pnl_pct=pnl_pct,
+                        user_name=user_name
+                    )
+
+                    if web_push and user_id:
+                        try:
+                            web_push.send_to_user(
+                                user_id=user_id,
+                                title=f"AUTO TRADER · Break-Even Armado ({_format_pair(sym)})",
+                                body=f"Ganancia +{pnl_pct:.2f}%. Stop Loss elevado a entrada.",
+                                data={"sessionId": session_id, "eventType": "BREAK_EVEN_ARMED"}
+                            )
+                        except Exception:
+                            pass
+
+                    actions.append({
+                        "action": "ARM_BREAK_EVEN",
+                        "session_id": session_id,
+                        "coin_id": pos.get("coin_id"),
+                        "symbol": sym,
+                        "current_price": cur_p,
+                        "pnl_pct": pnl_pct
+                    })
+                    continue
+
+                # B. Salida por Take Profit o Stop Loss
+                is_tp = cur_p >= tp_p
+                is_sl = cur_p <= sl_p
+
+                if is_tp or is_sl:
+                    exit_reason = "TAKE_PROFIT" if is_tp else "STOP_LOSS"
+                    proceeds = units * cur_p
+                    pnl_usd = proceeds - cost
+                    realized_pct = (pnl_usd / cost * 100.0) if cost > 0 else 0.0
+
+                    if user_id:
+                        try:
+                            sb.credit_user_balance(user_id, proceeds)
+                        except Exception as cr_err:
+                            logger.warning(f"Error acreditando balance demo: {cr_err}")
+
+                    new_closed_trades = closed_trades + 1
+                    new_realized_pnl = realized_pnl + pnl_usd
+
+                    # Evaluar si el cierre alcanza un guardrail para pasar a PAUSED
+                    next_status = "SCANNING"
+                    if new_closed_trades >= max_trades or new_realized_pnl >= target_usd or new_realized_pnl <= max_loss_usd:
+                        next_status = "PAUSED"
+
+                    sb.update_auto_trader_session(session_id, {
+                        "status": next_status,
+                        "active_position": None,
+                        "closed_trades_today": new_closed_trades,
+                        "session_realized_pnl_usd": round(new_realized_pnl, 2),
+                        "session_realized_pnl_pct": round((new_realized_pnl / capital * 100.0) if capital > 0 else 0.0, 2)
+                    })
+
+                    notifier.send_auto_trader_alert(
+                        event_type="EXIT_TP" if is_tp else "EXIT_SL",
+                        coin_id=pos.get("coin_id", "coin"),
+                        pair=_format_pair(sym),
+                        price=cur_p,
+                        amount_usd=cost,
+                        units=units,
+                        pnl_usd=round(pnl_usd, 2),
+                        pnl_pct=round(realized_pct, 2),
+                        user_name=user_name,
+                        exit_reason=f"Objetivo {'Take Profit (+2%)' if is_tp else 'Stop Loss'} ejecutado"
+                    )
+
+                    if web_push and user_id:
+                        try:
+                            web_push.send_to_user(
+                                user_id=user_id,
+                                title=f"AUTO TRADER · {'Take Profit' if is_tp else 'Stop Loss'} ({_format_pair(sym)})",
+                                body=f"PnL {pnl_usd:+.2f} USD ({realized_pct:+.2f}%) · Salida: {_format_price(cur_p)}",
+                                data={"sessionId": session_id, "eventType": "AUTO_TRADER_EXIT", "exitReason": exit_reason}
+                            )
+                        except Exception:
+                            pass
+
+                    actions.append({
+                        "action": "EXIT_POSITION",
+                        "session_id": session_id,
+                        "exit_reason": exit_reason,
+                        "coin_id": pos.get("coin_id"),
+                        "symbol": sym,
+                        "exit_price": cur_p,
+                        "pnl_usd": round(pnl_usd, 2),
+                        "pnl_pct": round(realized_pct, 2)
+                    })
+
+        except Exception as sess_err:
+            logger.error(f"Error procesando sesión de Auto Trader {session.get('id')}: {sess_err}")
+
+    return actions
+
+
 if __name__ == "__main__":
     import threading
     from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -674,53 +1125,32 @@ if __name__ == "__main__":
         web_push_notifier = get_web_push_notifier()
         logger.info("Worker 24/7 iniciado: evaluando bots activos cada 15 segundos...")
 
-        BINANCE_SYMBOLS = {
-            "solana": "SOLUSDT",
-            "bitcoin": "BTCUSDT",
-            "ethereum": "ETHUSDT",
-            "polkadot": "DOTUSDT",
-            "binancecoin": "BNBUSDT",
-            "cardano": "ADAUSDT",
-            "avalanche-2": "AVAXUSDT",
-            "avalanche": "AVAXUSDT",
-            "sui": "SUIUSDT",
-            "render-token": "RENDERUSDT",
-            "render": "RENDERUSDT",
-            "near": "NEARUSDT",
-            "bittensor": "TAOUSDT",
-            "dogecoin": "DOGEUSDT",
-            "pepe": "PEPEUSDT",
-            "fetch-ai": "FETUSDT",
-            "shiba-inu": "SHIBUSDT"
-        }
-
-        def _format_pair(symbol: str) -> str:
-            if symbol.endswith("USDT"):
-                return f"{symbol[:-4]}/USDT"
-            return symbol
-
-        def _format_price(price: float) -> str:
-            if price >= 1000:
-                return f"${price:,.2f}"
-            if price >= 1:
-                return f"${price:,.4f}"
-            return f"${price:,.8f}"
-
-        def _format_usd(amount: float) -> str:
-            return f"${amount:,.2f}"
-
         while True:
             try:
                 if sb.is_configured:
                     active_bots = sb.get_active_bots()
                     open_trades = sb.get_open_trades()
+                    active_sessions = sb.get_active_auto_trader_sessions()
 
-                    if active_bots or open_trades:
+                    if active_bots or open_trades or active_sessions:
                         try:
                             resp = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=4)
                             if resp.status_code == 200:
                                 price_list = resp.json()
                                 binance_map = {item["symbol"]: float(item["price"]) for item in price_list if "symbol" in item and "price" in item}
+
+                                # 0. Evaluar Cloud Auto Trader Pro 24/7
+                                if active_sessions:
+                                    try:
+                                        run_cloud_auto_trader_cycle(
+                                            sb=sb,
+                                            notifier=notifier,
+                                            web_push=web_push_notifier,
+                                            active_sessions=active_sessions,
+                                            binance_map=binance_map
+                                        )
+                                    except Exception as at_err:
+                                        logger.error(f"Error en ciclo Cloud Auto Trader: {at_err}")
 
                                 # 1. Evaluar Grid Bots activos
                                 for bot in (active_bots or []):

@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateRealisticPortfolioPerformance } from '../lib/portfolioMath.ts';
+import {
+  calculateRealisticPortfolioPerformance,
+  calculateMarkToMarketTotalEquity,
+} from '../lib/portfolioMath.ts';
 
 test('PnL Invariant 1: Fresh holdings at current price must yield 0.00 PnL across 24H and All-Time', () => {
   const trades = [];
@@ -115,3 +118,21 @@ test('PnL Invariant 3: Floating profit/loss from real price movement reflects co
   assert.equal(result.pnl24hUsd, 10.00, '24H PnL must reflect real position movement, not synthetic ticker formula');
   assert.equal(result.allTimePnlUsd, 10.00, 'All-Time PnL matches real position movement');
 });
+
+test('PnL Invariant 4: Binance Parity Mark-to-Market Total Equity Invariant (Free Cash + Live Bot Valuation)', () => {
+  const freeUsdtCash = 950.00;
+  const botAxsLiveValuation = 49.93; // started with $50.00, current mark-to-market is $49.93
+  const spotMarketValue = 0.00;
+
+  const totalEquity = calculateMarkToMarketTotalEquity({
+    usdtCash: freeUsdtCash,
+    botsMarketValueUsd: botAxsLiveValuation,
+    spotMarketValueUsd: spotMarketValue,
+  });
+
+  // Strict Binance Parity Invariant:
+  // Must be exactly $999.93, NEVER rounded to $1,000.00!
+  assert.equal(totalEquity, 999.93, 'Total equity must equal live cash + live bot valuation ($999.93)');
+  assert.notEqual(totalEquity, 1000.00, 'Total equity must not remain frozen at nominal 1000.00 when bot has moved');
+});
+

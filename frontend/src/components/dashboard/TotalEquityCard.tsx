@@ -1,10 +1,16 @@
 import React, { useState } from 'react';
-import { Wallet, Bot, PieChart, TrendingUp, TrendingDown } from 'lucide-react';
+import { Wallet, Bot, PieChart, TrendingUp, TrendingDown, Cpu } from 'lucide-react';
 
 interface TotalEquityCardProps {
   virtualUsdt: number;
   availableUsdt: number;
   capitalInBots: number;
+  capitalInAutoTrader?: number;
+  autoTraderAllocated?: number;
+  autoTraderUnrealizedPnl?: number;
+  autoTraderPct?: number;
+  capitalInGridBots?: number;
+  gridBotsPct?: number;
   spotValue: number;
   freePct: number;
   botsPct: number;
@@ -24,6 +30,12 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
   virtualUsdt,
   availableUsdt,
   capitalInBots,
+  capitalInAutoTrader = 0,
+  autoTraderAllocated,
+  autoTraderUnrealizedPnl,
+  autoTraderPct,
+  capitalInGridBots,
+  gridBotsPct,
   spotValue,
   freePct,
   botsPct,
@@ -39,6 +51,17 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
   penRate,
 }) => {
   const [pnlPeriod, setPnlPeriod] = useState<'24H' | '7D' | 'TOTAL'>('24H');
+
+  const effectiveAutoTrader = capitalInAutoTrader;
+  const effectiveGridBots = capitalInGridBots !== undefined ? capitalInGridBots : Math.max(0, capitalInBots - effectiveAutoTrader);
+  const effectiveAutoTraderPct = autoTraderPct !== undefined
+    ? autoTraderPct
+    : virtualUsdt > 0 ? Math.round((effectiveAutoTrader / virtualUsdt) * 100) : 0;
+  const effectiveGridPct = gridBotsPct !== undefined
+    ? gridBotsPct
+    : botsPct !== undefined
+      ? botsPct
+      : virtualUsdt > 0 ? Math.round((effectiveGridBots / virtualUsdt) * 100) : 0;
 
   const activePnlUsd =
     pnlPeriod === '7D'
@@ -61,9 +84,19 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
     ? 'border-emerald-500/25 bg-emerald-500/10'
     : 'border-rose-500/25 bg-rose-500/10';
 
+  const cLen = 238.7;
+  const dashFree = Math.max(freePct > 0 ? 3 : 0, (freePct / 100) * cLen);
+  const dashAuto = Math.max(effectiveAutoTraderPct > 0 ? 3 : 0, (effectiveAutoTraderPct / 100) * cLen);
+  const dashGrid = Math.max(effectiveGridPct > 0 ? 3 : 0, (effectiveGridPct / 100) * cLen);
+  const dashSpot = Math.max(spotPct > 0 ? 3 : 0, (spotPct / 100) * cLen);
+
+  const offsetAuto = -((freePct / 100) * cLen);
+  const offsetGrid = -(((freePct + effectiveAutoTraderPct) / 100) * cLen);
+  const offsetSpot = -(((freePct + effectiveAutoTraderPct + effectiveGridPct) / 100) * cLen);
+
   return (
     <div className="bg-[#0D1117] border border-white/[0.08] rounded-2xl p-3.5 sm:p-4 shadow-xl select-none">
-      {/* Top Half: Patrimono + PnL + Donut Ring */}
+      {/* Top Half: Patrimonio + PnL + Donut Ring */}
       <div className="flex items-center justify-between pb-3.5 border-b border-white/[0.06] gap-2">
         {/* Left Side: Balance & PnL Box */}
         <div className="space-y-1 min-w-0">
@@ -132,9 +165,13 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
                   <stop offset="0%" stopColor="#0ECB81" />
                   <stop offset="100%" stopColor="#10B981" />
                 </linearGradient>
-                <linearGradient id="grad-donut-amber" x1="0%" y1="0%" x2="100%" y2="100%">
+                <linearGradient id="grad-donut-autotrader" x1="0%" y1="0%" x2="100%" y2="100%">
                   <stop offset="0%" stopColor="#F59E0B" />
                   <stop offset="100%" stopColor="#D97706" />
+                </linearGradient>
+                <linearGradient id="grad-donut-grid" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#38BDF8" />
+                  <stop offset="100%" stopColor="#0284C7" />
                 </linearGradient>
                 <linearGradient id="grad-donut-purple" x1="0%" y1="0%" x2="100%" y2="100%">
                   <stop offset="0%" stopColor="#8B5CF6" />
@@ -152,47 +189,69 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
                 strokeWidth="10"
               />
               {/* Green Arc (Libre) */}
-              <circle
-                cx="50"
-                cy="50"
-                r="38"
-                fill="transparent"
-                stroke="url(#grad-donut-green)"
-                strokeWidth="10"
-                strokeDasharray={`${Math.max(4, freePct * 2.387)} 238.7`}
-                strokeDashoffset="0"
-                strokeLinecap="round"
-                style={{ transition: 'stroke-dasharray 0.7s cubic-bezier(0.4, 0, 0.2, 1), stroke-dashoffset 0.7s cubic-bezier(0.4, 0, 0.2, 1)' }}
-                className="hover:stroke-[11] transition-all cursor-pointer drop-shadow-[0_0_4px_rgba(14,203,129,0.3)]"
-              />
-              {/* Amber Arc (Bots) */}
-              <circle
-                cx="50"
-                cy="50"
-                r="38"
-                fill="transparent"
-                stroke="url(#grad-donut-amber)"
-                strokeWidth="10"
-                strokeDasharray={`${Math.max(4, botsPct * 2.387)} 238.7`}
-                strokeDashoffset={`-${freePct * 2.387}`}
-                strokeLinecap="round"
-                style={{ transition: 'stroke-dasharray 0.7s cubic-bezier(0.4, 0, 0.2, 1), stroke-dashoffset 0.7s cubic-bezier(0.4, 0, 0.2, 1)' }}
-                className="hover:stroke-[11] transition-all cursor-pointer drop-shadow-[0_0_4px_rgba(245,158,11,0.3)]"
-              />
+              {freePct > 0 && (
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  fill="transparent"
+                  stroke="url(#grad-donut-green)"
+                  strokeWidth="10"
+                  strokeDasharray={`${dashFree} ${cLen}`}
+                  strokeDashoffset="0"
+                  strokeLinecap="round"
+                  style={{ transition: 'stroke-dasharray 0.7s cubic-bezier(0.4, 0, 0.2, 1), stroke-dashoffset 0.7s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                  className="hover:stroke-[11] transition-all cursor-pointer drop-shadow-[0_0_4px_rgba(14,203,129,0.3)]"
+                />
+              )}
+              {/* Amber Arc (Auto Trader IA) */}
+              {effectiveAutoTraderPct > 0 && (
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  fill="transparent"
+                  stroke="url(#grad-donut-autotrader)"
+                  strokeWidth="10"
+                  strokeDasharray={`${dashAuto} ${cLen}`}
+                  strokeDashoffset={`${offsetAuto}`}
+                  strokeLinecap="round"
+                  style={{ transition: 'stroke-dasharray 0.7s cubic-bezier(0.4, 0, 0.2, 1), stroke-dashoffset 0.7s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                  className="hover:stroke-[11] transition-all cursor-pointer drop-shadow-[0_0_4px_rgba(245,158,11,0.3)]"
+                />
+              )}
+              {/* Cyan Arc (Bots Grid) */}
+              {effectiveGridPct > 0 && (
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  fill="transparent"
+                  stroke="url(#grad-donut-grid)"
+                  strokeWidth="10"
+                  strokeDasharray={`${dashGrid} ${cLen}`}
+                  strokeDashoffset={`${offsetGrid}`}
+                  strokeLinecap="round"
+                  style={{ transition: 'stroke-dasharray 0.7s cubic-bezier(0.4, 0, 0.2, 1), stroke-dashoffset 0.7s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                  className="hover:stroke-[11] transition-all cursor-pointer drop-shadow-[0_0_4px_rgba(56,189,248,0.3)]"
+                />
+              )}
               {/* Purple Arc (Spot) */}
-              <circle
-                cx="50"
-                cy="50"
-                r="38"
-                fill="transparent"
-                stroke="url(#grad-donut-purple)"
-                strokeWidth="10"
-                strokeDasharray={`${Math.max(4, spotPct * 2.387)} 238.7`}
-                strokeDashoffset={`-${(freePct + botsPct) * 2.387}`}
-                strokeLinecap="round"
-                style={{ transition: 'stroke-dasharray 0.7s cubic-bezier(0.4, 0, 0.2, 1), stroke-dashoffset 0.7s cubic-bezier(0.4, 0, 0.2, 1)' }}
-                className="hover:stroke-[11] transition-all cursor-pointer drop-shadow-[0_0_4px_rgba(139,92,246,0.3)]"
-              />
+              {spotPct > 0 && (
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  fill="transparent"
+                  stroke="url(#grad-donut-purple)"
+                  strokeWidth="10"
+                  strokeDasharray={`${dashSpot} ${cLen}`}
+                  strokeDashoffset={`${offsetSpot}`}
+                  strokeLinecap="round"
+                  style={{ transition: 'stroke-dasharray 0.7s cubic-bezier(0.4, 0, 0.2, 1), stroke-dashoffset 0.7s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                  className="hover:stroke-[11] transition-all cursor-pointer drop-shadow-[0_0_4px_rgba(139,92,246,0.3)]"
+                />
+              )}
             </svg>
             {/* Center Text */}
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-1 pointer-events-none">
@@ -204,10 +263,10 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
         </div>
       </div>
 
-      {/* Bottom 3 Columns SIDE-BY-SIDE */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3 pt-3">
+      {/* Bottom 4 Columns Responsive Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 pt-3">
         {/* Col 1: Capital Libre */}
-        <div className="space-y-1 min-w-0">
+        <div className="space-y-1 min-w-0 bg-[#08090C]/60 p-2 sm:p-2.5 rounded-xl border border-white/[0.04]">
           <div className="flex items-start justify-between">
             <div className="leading-tight">
               <span className="text-[10px] sm:text-[11px] text-slate-300 font-semibold block truncate">Capital Libre</span>
@@ -224,36 +283,69 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
           <div className="flex items-center space-x-1.5 pt-0.5">
             <span className="text-[9px] font-mono font-bold text-slate-400">{freePct}%</span>
             <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full bg-[#0ECB81] rounded-full shadow-[0_0_6px_#0ECB81]" style={{ width: `${freePct}%` }} />
+              <div className="h-full bg-[#0ECB81] rounded-full shadow-[0_0_6px_#0ECB81]" style={{ width: `${Math.min(100, freePct)}%` }} />
             </div>
           </div>
         </div>
 
-        {/* Col 2: Capital en Bots */}
-        <div className="space-y-1 min-w-0">
+        {/* Col 2: Auto Trader IA */}
+        <div
+          title={autoTraderAllocated ? `Capital Asignado: $${autoTraderAllocated.toFixed(2)}` : undefined}
+          className="space-y-1 min-w-0 bg-[#08090C]/60 p-2 sm:p-2.5 rounded-xl border border-amber-500/20"
+        >
           <div className="flex items-start justify-between">
             <div className="leading-tight">
-              <span className="text-[10px] sm:text-[11px] text-slate-300 font-semibold block truncate">Capital en Bots</span>
-              <span className="text-[9px] text-slate-500 font-mono">(Grid 24/7)</span>
+              <span className="text-[10px] sm:text-[11px] text-amber-300 font-semibold block truncate">Auto Trader</span>
+              <span className="text-[9px] text-slate-500 font-mono">(IA Quant)</span>
             </div>
-            <Bot className="w-3.5 h-3.5 text-[#F59E0B] shrink-0 mt-0.5" />
+            <Cpu className="w-3.5 h-3.5 text-[#F59E0B] shrink-0 mt-0.5" />
           </div>
-          <div className="font-mono font-bold text-white text-xs sm:text-sm truncate">
-            {hideBalances ? '••••••' : `$ ${capitalInBots.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          <div className="flex items-baseline justify-between gap-1">
+            <div className="font-mono font-bold text-white text-xs sm:text-sm truncate">
+              {hideBalances ? '••••••' : `$ ${effectiveAutoTrader.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            </div>
+            {!hideBalances && autoTraderUnrealizedPnl !== undefined && Math.abs(autoTraderUnrealizedPnl) >= 0.01 && (
+              <span className={`text-[8.5px] font-mono font-bold shrink-0 ${autoTraderUnrealizedPnl >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                {autoTraderUnrealizedPnl >= 0 ? '+' : ''}${autoTraderUnrealizedPnl.toFixed(2)}
+              </span>
+            )}
           </div>
           <div className="text-[9px] sm:text-[10px] font-mono text-[#F59E0B] font-medium truncate">
-            {hideBalances ? '' : `≈ S/ ${(capitalInBots * penRate).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            {hideBalances ? '' : `≈ S/ ${(effectiveAutoTrader * penRate).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           </div>
           <div className="flex items-center space-x-1.5 pt-0.5">
-            <span className="text-[9px] font-mono font-bold text-slate-400">{botsPct}%</span>
+            <span className="text-[9px] font-mono font-bold text-slate-400">{effectiveAutoTraderPct}%</span>
             <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full bg-[#F59E0B] rounded-full shadow-[0_0_6px_#F59E0B]" style={{ width: `${botsPct}%` }} />
+              <div className="h-full bg-[#F59E0B] rounded-full shadow-[0_0_6px_#F59E0B]" style={{ width: `${Math.min(100, effectiveAutoTraderPct)}%` }} />
             </div>
           </div>
         </div>
 
-        {/* Col 3: Tenencias Spot */}
-        <div className="space-y-1 min-w-0">
+        {/* Col 3: Bots Grid */}
+        <div className="space-y-1 min-w-0 bg-[#08090C]/60 p-2 sm:p-2.5 rounded-xl border border-white/[0.04]">
+          <div className="flex items-start justify-between">
+            <div className="leading-tight">
+              <span className="text-[10px] sm:text-[11px] text-slate-300 font-semibold block truncate">Bots Grid</span>
+              <span className="text-[9px] text-slate-500 font-mono">(24/7)</span>
+            </div>
+            <Bot className="w-3.5 h-3.5 text-[#38BDF8] shrink-0 mt-0.5" />
+          </div>
+          <div className="font-mono font-bold text-white text-xs sm:text-sm truncate">
+            {hideBalances ? '••••••' : `$ ${effectiveGridBots.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          </div>
+          <div className="text-[9px] sm:text-[10px] font-mono text-[#38BDF8] font-medium truncate">
+            {hideBalances ? '' : `≈ S/ ${(effectiveGridBots * penRate).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          </div>
+          <div className="flex items-center space-x-1.5 pt-0.5">
+            <span className="text-[9px] font-mono font-bold text-slate-400">{effectiveGridPct}%</span>
+            <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full bg-[#38BDF8] rounded-full shadow-[0_0_6px_#38BDF8]" style={{ width: `${Math.min(100, effectiveGridPct)}%` }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Col 4: Tenencias Spot */}
+        <div className="space-y-1 min-w-0 bg-[#08090C]/60 p-2 sm:p-2.5 rounded-xl border border-white/[0.04]">
           <div className="flex items-start justify-between">
             <div className="leading-tight">
               <span className="text-[10px] sm:text-[11px] text-slate-300 font-semibold block truncate">Tenencias Spot</span>
@@ -270,7 +362,7 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
           <div className="flex items-center space-x-1.5 pt-0.5">
             <span className="text-[9px] font-mono font-bold text-slate-400">{spotPct}%</span>
             <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full bg-[#8B5CF6] rounded-full shadow-[0_0_6px_#8B5CF6]" style={{ width: `${spotPct}%` }} />
+              <div className="h-full bg-[#8B5CF6] rounded-full shadow-[0_0_6px_#8B5CF6]" style={{ width: `${Math.min(100, spotPct)}%` }} />
             </div>
           </div>
         </div>
@@ -278,3 +370,4 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
     </div>
   );
 };
+

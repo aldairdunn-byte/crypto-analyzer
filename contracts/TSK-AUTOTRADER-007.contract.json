@@ -1,0 +1,72 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-AUTOTRADER-007",
+  "epic_id": "EPC-AUTOTRADER",
+  "goal": "Implement micro-momentum and immediate volume surge gatekeeper with candidate cascading in Auto Trader BETA to eliminate buying dormant coins",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/autoTraderRunner.ts",
+      "scripts/run_live_paper_test.js"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": ["TSK-AUTOTRADER-006"],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/autoTraderRunner.ts",
+    "interfaces": "export interface AutoTraderRunnerConfig { assignedCapital: number; requireMicroMomentum?: boolean; minVolumeSurgeRatio?: number; maxDistanceToLocalHighPct?: number; microKlineInterval?: string; }",
+    "function_signatures": [
+      "createAutoTraderRunner(config: any): any"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write comprehensive unit test suite in frontend/src/__tests__/auto_trader_micro_momentum.test.js covering volume surge ratio checks, proximity to 15m high, and candidate cascading",
+    "Run node --test to verify red phase",
+    "Implement evaluateMicroMomentum and cascading candidate selection in frontend/src/lib/autoTraderRunner.ts",
+    "Run node --test to verify green phase",
+    "Run npm run build and npx oxlint",
+    "Update scripts/run_live_paper_test.js to display micro-momentum metrics in live logs",
+    "Run Live Paper Trading Session #4 with Binance Spot data keeping 15-min stagnation window to measure isolated impact"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/auto_trader_micro_momentum.test.js",
+    "lint": "npx oxlint frontend/src/lib/autoTraderRunner.ts",
+    "typecheck": "npm run build --prefix frontend"
+  },
+
+  "acceptance_criteria": [
+    "requireMicroMomentum is configurable (default true)",
+    "evaluateMicroMomentum validates volume surge ratio >= minVolumeSurgeRatio (default 1.25) against 10-bar SMA",
+    "evaluateMicroMomentum verifies price proximity to 15-bar local high within maxDistanceToLocalHighPct (default 0.8%)",
+    "Candidate cascading tries candidate #2 or #3 if candidate #1 lacks immediate momentum, avoiding dead money",
+    "If no candidate has micro-momentum surge, NO_TRADE is issued with reason LACKS_IMMEDIATE_IMPULSE",
+    "maxStagnationSeconds is maintained at 900s (15m) for this stage",
+    "All unit tests pass with exit code 0"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "Zero private Binance API or real money endpoints are used",
+    "Live Paper Trading Session #4 demonstrates entry into an actively surging coin"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/autoTraderRunner.ts scripts/run_live_paper_test.js; rm -f frontend/src/__tests__/auto_trader_micro_momentum.test.js contracts/TSK-AUTOTRADER-007.contract.json"
+  }
+}

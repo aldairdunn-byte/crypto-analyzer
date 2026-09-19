@@ -1,0 +1,71 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-AUTOTRADER-010",
+  "epic_id": "EPC-AUTOTRADER",
+  "goal": "Implement MOMENTUM_INTRADAY Execution Profile: 1.80x Volume Surge Gatekeeper, 20m Stagnation Cutoff, +2.20% TP, -1.00% SL, +0.50% Break-Even Lock, and MFE/MAE Telemetry",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/quantitativeEngine.ts",
+      "frontend/src/lib/autoTraderRunner.ts"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": ["TSK-AUTOTRADER-009"],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/autoTraderRunner.ts",
+    "interfaces": "export interface AutoTraderRunnerConfig { tradingProfile?: 'SCALP' | 'SWING' | 'FAST_SCALP' | 'MOMENTUM_INTRADAY'; minVolumeSurgeRatio?: number; maxStagnationSeconds?: number; scalpTpPct?: number; breakEvenTriggerPct?: number; }",
+    "function_signatures": [
+      "calculateDynamicLevels(currentPrice: number, rsi: number, change24h: number, atr?: number | null, profile?: 'SWING' | 'SCALP' | 'FAST_SCALP' | 'MOMENTUM_INTRADAY'): DynamicLevels",
+      "createAutoTraderRunner(config: any): any"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit test suite frontend/src/__tests__/auto_trader_momentum_intraday.test.js covering MOMENTUM_INTRADAY profile, 1.8x volume surge gate, 20m stagnation cutoff, +2.2% TP, -1.0% SL, +0.5% BE, and MFE/MAE tracking",
+    "Run node --test to verify red phase",
+    "Implement MOMENTUM_INTRADAY and MFE/MAE tracking in quantitativeEngine.ts and autoTraderRunner.ts",
+    "Run node --test to verify green phase",
+    "Run full regression test suites across auto trader modules",
+    "Run npm run build and npx oxlint to guarantee zero errors",
+    "Update scripts/run_live_paper_test.js to support --profile=MOMENTUM_INTRADAY"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/auto_trader_momentum_intraday.test.js",
+    "lint": "npx oxlint frontend/src/lib/autoTraderRunner.ts frontend/src/lib/quantitativeEngine.ts",
+    "typecheck": "npm run build --prefix frontend"
+  },
+
+  "acceptance_criteria": [
+    "MOMENTUM_INTRADAY profile produces dynamic levels with TP1 at +2.20% and SL at -1.00% establishing R:R >= 2.2",
+    "breakEvenTriggerPct = 0.50% arms Break-Even moving SL to entry + 0.25% to cover fees",
+    "trailingStopTriggerPct = 1.20% arms Trailing Stop trailing 0.40% behind highest seen",
+    "maxStagnationSeconds = 1200 (20.0 minutes) enforces stagnation cutoff for non-performing trades",
+    "Position state records maxFavorableExcursionPct (MFE) and maxAdverseExcursionPct (MAE) on every price tick",
+    "All unit tests pass with exit code 0"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "Zero private Binance API or real money endpoints are used"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/autoTraderRunner.ts frontend/src/lib/quantitativeEngine.ts; rm -f frontend/src/__tests__/auto_trader_momentum_intraday.test.js contracts/TSK-AUTOTRADER-010.contract.json"
+  }
+}

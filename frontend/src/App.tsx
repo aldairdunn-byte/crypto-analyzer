@@ -3,9 +3,11 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { MarketDataProvider, useMarketData } from './contexts/MarketDataContext';
 import { PortfolioProvider, usePortfolio } from './contexts/PortfolioContext';
 import { BotEngineProvider, useBotEngine } from './contexts/BotEngineContext';
+import { AutoTraderProvider, useAutoTrader } from './contexts/AutoTraderContext';
 import { calculateRealisticPortfolioPerformance } from './lib/portfolioMath';
 
 import { DashboardView } from './components/DashboardView';
+import { AutoTraderView } from './components/AutoTraderView';
 import { HeaderTickerBar } from './components/HeaderTickerBar';
 import { TradingViewChart } from './components/TradingViewChart';
 import { OrderBook } from './components/OrderBook';
@@ -55,8 +57,10 @@ const MainContent: React.FC = () => {
   const {
     currencyMode,
     toggleCurrency,
-    virtualUsdt,
+    virtualUsdt: _virtualUsdt,
     capitalInBots,
+    capitalInAutoTrader,
+    capitalInGridBots,
     availableUsdt,
     setUsdtCash,
     isLiveMode,
@@ -89,6 +93,8 @@ const MainContent: React.FC = () => {
     resetAllBotEngine,
     clearTradeHistory,
   } = useBotEngine();
+
+  const autoTrader = useAutoTrader();
 
   // Navigation State (5 Master Views)
   const [activeView, setActiveView] = useState<MasterViewType>('DASHBOARD');
@@ -146,6 +152,16 @@ const MainContent: React.FC = () => {
   const activeLow24h = activeCoinStats?.low24h ?? currentPrice * 0.97;
   const activeVol24h = activeCoinStats?.vol24h ?? 15000000;
 
+  // Real-time Valuation for Auto Trader (cost basis + floating unrealized PnL)
+  const autoTraderActivePos = autoTrader.activePosition;
+  const autoTraderUnrealizedPnl = autoTraderActivePos ? (autoTraderActivePos.unrealizedPnlUsd || 0) : 0;
+  const autoTraderMarketValue = capitalInAutoTrader > 0
+    ? Number((capitalInAutoTrader + autoTraderUnrealizedPnl).toFixed(2))
+    : 0;
+
+  // Single Source of Truth for Unified Mark-to-Market Portfolio Equity
+  const totalMarkToMarketEquity = Number((availableUsdt + capitalInGridBots + autoTraderMarketValue + totalSpotValue).toFixed(2));
+
   // Single Source of Truth for Realistic Portfolio Performance (24H, 7D, All-Time)
   const portfolioPerf = useMemo(() => {
     return calculateRealisticPortfolioPerformance(
@@ -153,9 +169,10 @@ const MainContent: React.FC = () => {
       holdings,
       livePrices,
       allCoinsStats,
-      virtualUsdt
+      totalMarkToMarketEquity,
+      autoTraderUnrealizedPnl
     );
-  }, [trades, holdings, livePrices, allCoinsStats, virtualUsdt]);
+  }, [trades, holdings, livePrices, allCoinsStats, totalMarkToMarketEquity, autoTraderUnrealizedPnl]);
 
   return (
     <div className="h-screen w-screen bg-[#08090C] text-[#F8FAFC] flex flex-col font-sans overflow-hidden select-none">
@@ -174,8 +191,13 @@ const MainContent: React.FC = () => {
         onSelectView={setActiveView}
         isPaperMode={!isLiveMode}
         onTogglePaperMode={() => setIsLiveMode(!isLiveMode)}
-        virtualUsdt={virtualUsdt}
+        virtualUsdt={totalMarkToMarketEquity}
         capitalInBots={capitalInBots}
+        capitalInAutoTrader={autoTraderMarketValue}
+        autoTraderAllocated={capitalInAutoTrader}
+        autoTraderUnrealizedPnl={autoTraderUnrealizedPnl}
+        capitalInGridBots={capitalInGridBots}
+        totalSpotValue={totalSpotValue}
         availableUsdt={availableUsdt}
         onResetBalance={resetAllBotEngine}
         onStopAllBots={handleStopAllBots}
@@ -195,7 +217,7 @@ const MainContent: React.FC = () => {
         {activeView === 'DASHBOARD' && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <DashboardView
-              virtualUsdt={virtualUsdt}
+              virtualUsdt={totalMarkToMarketEquity}
               capitalInBots={capitalInBots}
               availableUsdt={availableUsdt}
               totalSpotValue={totalSpotValue}
@@ -216,6 +238,13 @@ const MainContent: React.FC = () => {
               onOpenNotifications={() => setIsNotificationsDrawerOpen(true)}
               allCoinsStats={allCoinsStats}
             />
+          </div>
+        )}
+
+        {/* VIEW: AUTO TRADER PRO (Autonomous Algorithmic Trading) */}
+        {activeView === 'AUTOTRADER' && (
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <AutoTraderView onBackToDashboard={() => setActiveView('DASHBOARD')} />
           </div>
         )}
 
@@ -407,6 +436,7 @@ const MainContent: React.FC = () => {
               onOpenCoinInTerminal={handleOpenCoinInTerminal}
               onUpdateBotStatus={handleUpdateBotStatus}
               onExecuteSpotTrade={handleExecuteSpotTrade}
+              onNavigateToAutoTrader={() => setActiveView('AUTOTRADER')}
             />
           </div>
         )}
@@ -489,7 +519,9 @@ export function App() {
       <MarketDataProvider>
         <PortfolioProvider>
           <BotEngineProvider>
-            <MainContent />
+            <AutoTraderProvider>
+              <MainContent />
+            </AutoTraderProvider>
           </BotEngineProvider>
         </PortfolioProvider>
       </MarketDataProvider>

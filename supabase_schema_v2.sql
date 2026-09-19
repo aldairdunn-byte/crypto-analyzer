@@ -121,3 +121,32 @@ CREATE POLICY "Public market signals read" ON public.market_signals
     FOR SELECT USING (true);
 CREATE POLICY "Service role market signals write" ON public.market_signals
     FOR ALL USING (auth.jwt() ->> 'role' = 'service_role' OR auth.role() = 'anon');
+
+-- 7. Tabla de Sesiones Cloud de Auto Trader Pro (Coordinación 24/7 Nube-Cliente)
+CREATE TABLE IF NOT EXISTS public.auto_trader_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'STOPPED', -- 'STOPPED' | 'SCANNING' | 'IN_POSITION' | 'PAUSED'
+    selected_capital NUMERIC(18, 2) NOT NULL DEFAULT 50.00,
+    duration_minutes INTEGER NOT NULL DEFAULT 240,
+    daily_target_pct NUMERIC(6, 2) NOT NULL DEFAULT 3.00,
+    daily_max_loss_pct NUMERIC(6, 2) NOT NULL DEFAULT 2.00,
+    max_trades_per_day INTEGER NOT NULL DEFAULT 5,
+    trading_profile TEXT NOT NULL DEFAULT 'MOMENTUM_INTRADAY',
+    digest_interval TEXT NOT NULL DEFAULT '30m',
+    active_position JSONB,
+    session_start_time TIMESTAMPTZ,
+    session_realized_pnl_usd NUMERIC(18, 2) DEFAULT 0.00,
+    session_realized_pnl_pct NUMERIC(8, 2) DEFAULT 0.00,
+    closed_trades_today INTEGER DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auto_trader_sessions_status ON public.auto_trader_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_auto_trader_sessions_user_id ON public.auto_trader_sessions(user_id);
+
+ALTER TABLE public.auto_trader_sessions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "User auto trader sessions self access" ON public.auto_trader_sessions
+    FOR ALL USING (auth.uid() = user_id OR user_id IS NULL);
+

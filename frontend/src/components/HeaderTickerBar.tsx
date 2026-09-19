@@ -11,10 +11,12 @@ import {
   ChevronDown,
   Bell,
   ShieldAlert,
+  Bot,
 } from 'lucide-react';
 import { COINS, getDynamicCoinInfo, formatDynamicPrice, type CoinInfo } from '../lib/marketData';
 import { CryptoIcon } from './CryptoIcon';
 import { SparklineChart } from './SparklineChart';
+import type { MasterViewType } from './BottomNavMobile';
 
 interface HeaderTickerBarProps {
   activeCoin: string;
@@ -24,12 +26,17 @@ interface HeaderTickerBarProps {
   high24h?: number;
   low24h?: number;
   vol24h?: number;
-  activeView: 'DASHBOARD' | 'TERMINAL' | 'RADAR' | 'ASSETS' | 'SETTINGS';
-  onSelectView: (view: 'DASHBOARD' | 'TERMINAL' | 'RADAR' | 'ASSETS' | 'SETTINGS') => void;
+  activeView: MasterViewType;
+  onSelectView: (view: MasterViewType) => void;
   isPaperMode: boolean;
   onTogglePaperMode: () => void;
   virtualUsdt: number;
   capitalInBots: number;
+  capitalInAutoTrader?: number;
+  autoTraderAllocated?: number;
+  autoTraderUnrealizedPnl?: number;
+  capitalInGridBots?: number;
+  totalSpotValue?: number;
   availableUsdt: number;
   onResetBalance: () => void;
   onStopAllBots?: () => void;
@@ -61,6 +68,11 @@ export const HeaderTickerBar = ({
   onTogglePaperMode,
   virtualUsdt,
   capitalInBots,
+  capitalInAutoTrader = 0,
+  autoTraderAllocated,
+  autoTraderUnrealizedPnl,
+  capitalInGridBots,
+  totalSpotValue = 0,
   availableUsdt,
   onResetBalance,
   onStopAllBots,
@@ -149,6 +161,7 @@ export const HeaderTickerBar = ({
         <div className="hidden md:flex items-center bg-[#0E1118] rounded-xl p-0.5 border border-white/10 space-x-0.5 shadow-inner">
           {[
             { id: 'DASHBOARD', label: 'Inicio', icon: Home, color: 'text-amber-400' },
+            { id: 'AUTOTRADER', label: 'Auto Trader', icon: Bot, color: 'text-amber-400' },
             { id: 'TERMINAL', label: 'Terminal', icon: Zap, color: 'text-[#F59E0B]' },
             { id: 'RADAR', label: 'Radar', icon: BarChart2, color: 'text-[#0ECB81]' },
             { id: 'ASSETS', label: 'Portafolio', icon: Wallet, color: 'text-blue-400' },
@@ -369,12 +382,36 @@ export const HeaderTickerBar = ({
                   <span className="font-bold text-white tabular-nums">{formatDynamicPrice(virtualUsdt, 2, currencyMode, penRate)}</span>
                 </div>
                 <div className="flex justify-between p-2 rounded-xl bg-[#08090C] border border-white/5">
-                  <span className="text-[#F59E0B] text-[11px]">En Bots Grid:</span>
-                  <span className="font-bold text-[#F59E0B] tabular-nums">{formatDynamicPrice(capitalInBots, 2, currencyMode, penRate)}</span>
-                </div>
-                <div className="flex justify-between p-2 rounded-xl bg-[#08090C] border border-white/5">
                   <span className="text-[#0ECB81] text-[11px]">Disponible:</span>
                   <span className="font-bold text-[#0ECB81] tabular-nums">{formatDynamicPrice(availableUsdt, 2, currencyMode, penRate)}</span>
+                </div>
+                {capitalInAutoTrader > 0 && (
+                  <div
+                    title={autoTraderAllocated ? `Capital Asignado: $${autoTraderAllocated.toFixed(2)}` : undefined}
+                    className="flex justify-between items-center p-2 rounded-xl bg-[#08090C] border border-amber-500/25"
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-[#F59E0B] text-[11px] font-semibold">Auto Trader IA:</span>
+                      {autoTraderUnrealizedPnl !== undefined && Math.abs(autoTraderUnrealizedPnl) >= 0.01 && (
+                        <span className={`text-[9px] font-mono tabular-nums font-bold ${autoTraderUnrealizedPnl >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                          {autoTraderUnrealizedPnl >= 0 ? '+' : ''}${autoTraderUnrealizedPnl.toFixed(2)} flotante
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-bold text-[#F59E0B] tabular-nums">{formatDynamicPrice(capitalInAutoTrader, 2, currencyMode, penRate)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between p-2 rounded-xl bg-[#08090C] border border-white/5">
+                  <span className="text-[#38BDF8] text-[11px]">En Bots Grid:</span>
+                  <span className="font-bold text-[#38BDF8] tabular-nums">
+                    {formatDynamicPrice(capitalInGridBots !== undefined ? capitalInGridBots : Math.max(0, capitalInBots - capitalInAutoTrader), 2, currencyMode, penRate)}
+                  </span>
+                </div>
+                <div className="flex justify-between p-2 rounded-xl bg-[#08090C] border border-white/5">
+                  <span className="text-[#8B5CF6] text-[11px]">Tenencias Spot:</span>
+                  <span className="font-bold text-[#8B5CF6] tabular-nums">
+                    {formatDynamicPrice(totalSpotValue, 2, currencyMode, penRate)}
+                  </span>
                 </div>
               </div>
 

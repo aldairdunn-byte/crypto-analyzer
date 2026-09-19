@@ -4,7 +4,7 @@
  * Puerto 100% fiel de engine.py a TypeScript.
  */
 
-import { type CoinInfo, COINS, isValidSpotCrypto } from './marketData';
+import { type CoinInfo, COINS, isValidSpotCrypto } from './marketData.ts';
 
 export interface DynamicLevelItem {
   price: number;
@@ -521,7 +521,8 @@ export function calculateDynamicLevels(
   currentPrice: number,
   rsi: number,
   change24h: number,
-  atr?: number | null
+  atr?: number | null,
+  profile: 'SWING' | 'SCALP' | 'FAST_SCALP' | 'MOMENTUM_INTRADAY' = 'SWING'
 ): DynamicLevels {
   if (currentPrice <= 0) {
     return {
@@ -546,7 +547,52 @@ export function calculateDynamicLevels(
   let tp1Pct: number;
   let tp2Pct: number;
 
-  if (atr && atr > 0) {
+  if (profile === 'MOMENTUM_INTRADAY') {
+    // Momentum Intraday: Asymmetric risk:reward (~2.20% TP, ~1.00% SL, R:R >= 2.20)
+    let intraTp = 2.20;
+    let intraSl = 1.00;
+    if (atr && atr > 0) {
+      const atrPct = (atr / currentPrice) * 100;
+      intraTp = Number(Math.min(Math.max(atrPct * 0.28, 2.05), 2.45).toFixed(2));
+      intraSl = Number(Math.min(Math.max(atrPct * 0.12, 0.90), 1.15).toFixed(2));
+    }
+    stopPct = -intraSl;
+    tp1Pct = intraTp;
+    tp2Pct = Number((intraTp * 1.5).toFixed(2));
+    stopLossPrice = currentPrice * (1.0 + stopPct / 100.0);
+    tp1Price = currentPrice * (1.0 + tp1Pct / 100.0);
+    tp2Price = currentPrice * (1.0 + tp2Pct / 100.0);
+  } else if (profile === 'FAST_SCALP') {
+    // Fast Scalp: Agile micro-intraday targets for rapid resolution (~1.2% TP, ~1.0% SL)
+    let fastTp = 1.20;
+    let fastSl = 1.00;
+    if (atr && atr > 0) {
+      const atrPct = (atr / currentPrice) * 100;
+      fastTp = Number(Math.min(Math.max(atrPct * 0.16, 1.05), 1.35).toFixed(2));
+      fastSl = Number(Math.min(Math.max(atrPct * 0.12, 0.85), 1.10).toFixed(2));
+    }
+    stopPct = -fastSl;
+    tp1Pct = fastTp;
+    tp2Pct = Number((fastTp * 1.5).toFixed(2));
+    stopLossPrice = currentPrice * (1.0 + stopPct / 100.0);
+    tp1Price = currentPrice * (1.0 + tp1Pct / 100.0);
+    tp2Price = currentPrice * (1.0 + tp2Pct / 100.0);
+  } else if (profile === 'SCALP') {
+    // Scalp profile: Intraday bounded levels with high execution probability
+    let scalpTp = 2.0;
+    let scalpSl = 1.5;
+    if (atr && atr > 0) {
+      const atrPct = (atr / currentPrice) * 100;
+      scalpTp = Number(Math.min(Math.max(atrPct * 0.25, 1.8), 2.8).toFixed(2));
+      scalpSl = Number(Math.min(Math.max(atrPct * 0.18, 1.3), 2.0).toFixed(2));
+    }
+    stopPct = -scalpSl;
+    tp1Pct = scalpTp;
+    tp2Pct = Number((scalpTp * 1.5).toFixed(2));
+    stopLossPrice = currentPrice * (1.0 + stopPct / 100.0);
+    tp1Price = currentPrice * (1.0 + tp1Pct / 100.0);
+    tp2Price = currentPrice * (1.0 + tp2Pct / 100.0);
+  } else if (atr && atr > 0) {
     stopLossPrice = Math.max(currentPrice - 1.5 * atr, currentPrice * 0.7);
     tp1Price = currentPrice + 2.0 * atr;
     tp2Price = currentPrice + 3.5 * atr;
@@ -643,7 +689,20 @@ export function evaluateTradingVerdict(
 
   // 3. Impulso Saludable / Entrada Óptima
   if (momentumScore >= 65.0 && rsi >= 45.0 && rsi <= 65.0 && change7d < 18.0 && change24h >= 0.5) {
-    if (ema20 !== null && price < ema20) {
+    if (ema20 === null || ema20 === undefined || ema20 <= 0 || price === null || price === undefined || price <= 0) {
+      return {
+        status: 'WAIT',
+        color: '#F0B90B',
+        badge: 'ESPERAR DATOS EMA',
+        simpleTitle: 'Datos Incompletos: Esperar EMA-20',
+        plainExplanation: `Momentum alto (${momentumScore.toFixed(1)}) pero faltan datos de la media móvil EMA-20 para confirmar la tendencia.`,
+        whatToDo: 'Paciencia; espera que se calculen los datos de tendencia antes de operar.',
+        riskLevel: 'Riesgo Medio (Falta Confirmación)',
+        riskScore: 3,
+        canBuyNow: false,
+      };
+    }
+    if (price < ema20) {
       return {
         status: 'WAIT',
         color: '#F59E0B',
@@ -767,7 +826,7 @@ export function evaluateCoinQuantitative(
     momentum?: number;
   },
   candlesClose: number[] = [],
-  capitalUsd: number = 7.35,
+  capitalUsd: number = 100,
   penRate: number = 3.75
 ): QuantitativeEvaluation {
   const price = stats.price || coin.basePrice;

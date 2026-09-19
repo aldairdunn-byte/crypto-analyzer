@@ -1,0 +1,73 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-AUTOTRADER-008",
+  "epic_id": "EPC-AUTOTRADER",
+  "goal": "Implement Macro BTC Shield, Daily Circuit Breakers, Liquidity Spread Guard, Crash Recovery Hook and Multi-Capital Validation ($10, $100, $1,000 USD) in Auto Trader BETA",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/autoTraderRunner.ts",
+      "scripts/run_live_paper_test.js"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": ["TSK-AUTOTRADER-007"],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/autoTraderRunner.ts",
+    "interfaces": "export interface AutoTraderRunnerConfig { assignedCapital: number; enableBtcMacroShield?: boolean; btcDropThreshold15mPct?: number; btcRsiPanicThreshold?: number; maxDailyLossPct?: number; dailyProfitTargetPct?: number; maxAllowedSpreadPct?: number; autoRestore?: boolean; }",
+    "function_signatures": [
+      "createAutoTraderRunner(config: any): any"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write comprehensive unit test suite in frontend/src/__tests__/auto_trader_macro_shield.test.js covering BTC panic defense, daily loss circuit breaker, daily profit lock, spread filter, crash recovery, and multi-capital tiers ($10, $100, $1,000)",
+    "Run node --test to verify red phase",
+    "Implement evaluateBtcMacroRegime, daily risk tracking, spread safety gate, autoRestore, and multi-capital precision in frontend/src/lib/autoTraderRunner.ts",
+    "Run node --test to verify green phase",
+    "Run regression test suites (TSK-005, TSK-006, TSK-007, TSK-008)",
+    "Run npm run build and npx oxlint to guarantee zero errors and zero warnings",
+    "Update scripts/run_live_paper_test.js with --capital=10|100|1000 and live BTC shield / circuit breaker logging",
+    "Execute live paper benchmark tests across $10, $100, and $1,000 tiers"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/auto_trader_macro_shield.test.js",
+    "lint": "npx oxlint frontend/src/lib/autoTraderRunner.ts",
+    "typecheck": "npm run build --prefix frontend"
+  },
+
+  "acceptance_criteria": [
+    "enableBtcMacroShield is configurable (default true)",
+    "evaluateBtcMacroRegime triggers BTC_PANIC_DEFENSE when BTC drops >= btcDropThreshold15mPct (default 1.2%) or BTC 15m RSI < btcRsiPanicThreshold (default 35.0)",
+    "maxDailyLossPct halts new entries when realized daily loss reaches or exceeds -2.0%",
+    "dailyProfitTargetPct preserves gains when realized daily profit reaches or exceeds +3.0%",
+    "maxAllowedSpreadPct rejects candidates with bid/ask spread > 0.15%",
+    "autoRestore resumes existing open position and Break-Even / Trailing Stop state from persistence file",
+    "Multi-capital validation confirms identical percentage performance across $10, $100, and $1,000 tiers",
+    "All unit tests pass with exit code 0"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "Zero private Binance API or real money endpoints are used"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/autoTraderRunner.ts scripts/run_live_paper_test.js; rm -f frontend/src/__tests__/auto_trader_macro_shield.test.js contracts/TSK-AUTOTRADER-008.contract.json"
+  }
+}

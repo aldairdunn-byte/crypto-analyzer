@@ -34,6 +34,7 @@ export interface PortfolioPerformanceMetrics {
   spotDelta24h: number;
   spotDelta7d: number;
   totalSpotUnrealizedPnl: number;
+  botUnrealizedPnl?: number;
 }
 
 export function calculateRealisticPortfolioPerformance(
@@ -41,7 +42,8 @@ export function calculateRealisticPortfolioPerformance(
   holdings: Record<string, CryptoHolding> = {},
   livePrices: Record<string, number> = {},
   _allCoinsStats: Record<string, any> = {},
-  virtualUsdt: number = 0
+  virtualUsdt: number = 0,
+  activeBotUnrealizedPnlUsd: number = 0
 ): PortfolioPerformanceMetrics {
   const now = Date.now();
   const cutoff24h = now - 24 * 60 * 60 * 1000;
@@ -103,16 +105,16 @@ export function calculateRealisticPortfolioPerformance(
   const spotDelta24h = totalSpotUnrealizedPnl;
   const spotDelta7d = totalSpotUnrealizedPnl;
 
-  // 3. Combined PnL Totals
-  const pnl24hUsd = Number((realizedProfit24h + spotDelta24h).toFixed(2));
+  // 3. Combined PnL Totals (incorporates real-time active bot floating PnL)
+  const pnl24hUsd = Number((realizedProfit24h + spotDelta24h + activeBotUnrealizedPnlUsd).toFixed(2));
   const base24h = Math.max(1, virtualUsdt - pnl24hUsd);
   const pnl24hPct = virtualUsdt > 0 ? Number(((pnl24hUsd / base24h) * 100).toFixed(2)) : 0;
 
-  const pnl7dUsd = Number((realizedProfit7d + spotDelta7d).toFixed(2));
+  const pnl7dUsd = Number((realizedProfit7d + spotDelta7d + activeBotUnrealizedPnlUsd).toFixed(2));
   const base7d = Math.max(1, virtualUsdt - pnl7dUsd);
   const pnl7dPct = virtualUsdt > 0 ? Number(((pnl7dUsd / base7d) * 100).toFixed(2)) : 0;
 
-  const allTimePnlUsd = Number((realizedProfitAllTime + totalSpotUnrealizedPnl).toFixed(2));
+  const allTimePnlUsd = Number((realizedProfitAllTime + totalSpotUnrealizedPnl + activeBotUnrealizedPnlUsd).toFixed(2));
   const baseAll = Math.max(1, virtualUsdt - allTimePnlUsd);
   const allTimePnlPct = virtualUsdt > 0 ? Number(((allTimePnlUsd / baseAll) * 100).toFixed(2)) : 0;
 
@@ -131,6 +133,7 @@ export function calculateRealisticPortfolioPerformance(
     spotDelta24h: Number(spotDelta24h.toFixed(2)),
     spotDelta7d: Number(spotDelta7d.toFixed(2)),
     totalSpotUnrealizedPnl: Number(totalSpotUnrealizedPnl.toFixed(2)),
+    botUnrealizedPnl: Number(activeBotUnrealizedPnlUsd.toFixed(2)),
   };
 }
 
@@ -160,15 +163,37 @@ export interface GridLiquidationResult {
 export interface DemoFreeCashInput {
   bankrollUsd?: number;
   reservedBotCapitalUsd?: number;
+  reservedAutoTraderCapitalUsd?: number;
   spotCostBasisUsd?: number;
 }
 
 export function reconcileDemoFreeCash({
   bankrollUsd = 1000,
   reservedBotCapitalUsd = 0,
+  reservedAutoTraderCapitalUsd = 0,
   spotCostBasisUsd = 0,
 }: DemoFreeCashInput): number {
-  return Number(Math.max(0, bankrollUsd - reservedBotCapitalUsd - spotCostBasisUsd).toFixed(2));
+  return Number(
+    Math.max(0, bankrollUsd - reservedBotCapitalUsd - reservedAutoTraderCapitalUsd - spotCostBasisUsd).toFixed(2)
+  );
+}
+
+/**
+ * Calculates total portfolio equity using strict Mark-to-Market (MTM) parity (Binance standard).
+ * Invariant: Total Equity = Free USDT Cash + Live Valuation of all Active/Paused Bots + Live Valuation of Spot Holdings + Live Valuation of Auto Trader
+ */
+export function calculateMarkToMarketTotalEquity({
+  usdtCash = 0,
+  botsMarketValueUsd = 0,
+  spotMarketValueUsd = 0,
+  autoTraderMarketValueUsd = 0,
+}: {
+  usdtCash: number;
+  botsMarketValueUsd?: number;
+  spotMarketValueUsd?: number;
+  autoTraderMarketValueUsd?: number;
+}): number {
+  return Number((usdtCash + botsMarketValueUsd + spotMarketValueUsd + autoTraderMarketValueUsd).toFixed(2));
 }
 
 export interface MinimalGridOrder {

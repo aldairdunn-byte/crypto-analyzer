@@ -96,7 +96,7 @@ const BotEngineContext = createContext<BotEngineContextType | undefined>(undefin
 export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const { activeCoin, currentPrice, livePrices, allCoinsStats } = useMarketData();
-  const { availableUsdt, currencyMode, penRate, setUsdtCash, setCapitalInBots, capitalInBots, holdings, updateHoldingFromTrade } = usePortfolio();
+  const { availableUsdt, currencyMode, penRate, setUsdtCash, setCapitalInGridBots, setCapitalInAutoTrader, setCapitalInBots, capitalInBots, holdings, updateHoldingFromTrade } = usePortfolio();
   const storageOwnerId = user?.id ?? null;
   const storageReadyOwnerRef = useRef<string>(storageOwnerId || 'guest');
 
@@ -366,10 +366,12 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Sync capital allocated in bots to PortfolioContext.
   // ACTIVE and PAUSED both reserve capital; only STOPPED releases it.
   useEffect(() => {
-    const reservedBots = bots.filter((b) => b.status === 'ACTIVE' || b.status === 'PAUSED');
+    const reservedBots = bots.filter(
+      (b) => b.id !== 'autotrader-quant-pro' && (b.status === 'ACTIVE' || b.status === 'PAUSED')
+    );
     const totalAllocated = reservedBots.reduce((sum, b) => sum + (b.capital_allocated_usd || 0), 0);
-    setCapitalInBots(totalAllocated);
-  }, [bots, setCapitalInBots]);
+    setCapitalInGridBots(totalAllocated);
+  }, [bots, setCapitalInGridBots]);
 
   // 2.A Real-time Stop Loss Execution & Capital Protection
   useEffect(() => {
@@ -1871,15 +1873,26 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     autoClosedTradesRef.current.clear();
     proximityAlertedRef.current.clear();
     setUsdtCash(1000.0);
+    setCapitalInGridBots(0);
     setCapitalInBots(0);
+    setCapitalInAutoTrader(0);
+    removeScopedItem('capital_in_autotrader', storageOwnerId);
+    removeScopedItem('autotrader_capital_allocated');
+    removeScopedItem('autotrader_is_running');
+    removeScopedItem('autotrader_session_start_time');
+    removeScopedItem('autotrader_is_paused');
+    removeScopedItem('autotrader_active_position');
     setScopedItem('demo_usdt_cash', '1000', storageOwnerId);
     setScopedItem('usdtCash', '1000', storageOwnerId);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('crypto_analyzer_reset'));
+    }
     addToast({
       type: 'INFO',
       title: 'Cuenta Limpia y Reiniciada',
       message: 'Saldo restaurado a $1,000.00 USDT. Todos los bots y operaciones de prueba han sido eliminados tanto en la nube como en local.',
     });
-  }, [user, storageOwnerId, setUsdtCash, setCapitalInBots, addToast]);
+  }, [user, storageOwnerId, setUsdtCash, setCapitalInGridBots, setCapitalInAutoTrader, setCapitalInBots, addToast]);
 
   const clearTradeHistory = useCallback(async () => {
     if (user?.id) {

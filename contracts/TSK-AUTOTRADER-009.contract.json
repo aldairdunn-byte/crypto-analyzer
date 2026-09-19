@@ -1,0 +1,73 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-AUTOTRADER-009",
+  "epic_id": "EPC-AUTOTRADER",
+  "goal": "Implement FAST_SCALP Execution Profile: 1.80x Volume Surge Gatekeeper, 7.5m Stagnation Cutoff, +1.20% TP, +0.50% Break-Even Lock to prevent infinite waiting and capture rapid P&L",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/quantitativeEngine.ts",
+      "frontend/src/lib/autoTraderRunner.ts",
+      "scripts/run_live_paper_test.js",
+      "frontend/src/__tests__/auto_trader_fast_scalp.test.js"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": ["TSK-AUTOTRADER-008"],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/autoTraderRunner.ts",
+    "interfaces": "export interface AutoTraderRunnerConfig { tradingProfile?: 'SCALP' | 'SWING' | 'FAST_SCALP'; minVolumeSurgeRatio?: number; maxStagnationSeconds?: number; scalpTpPct?: number; breakEvenTriggerPct?: number; }",
+    "function_signatures": [
+      "calculateDynamicLevels(currentPrice: number, rsi: number, change24h: number, atr?: number | null, profile?: 'SWING' | 'SCALP' | 'FAST_SCALP'): DynamicLevels",
+      "createAutoTraderRunner(config: any): any"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit test suite frontend/src/__tests__/auto_trader_fast_scalp.test.js covering FAST_SCALP profile, 1.8x volume surge hurdle, 7.5m (450s) stagnation cutoff, and +1.2% TP / +0.5% BE execution",
+    "Run node --test to verify red phase",
+    "Implement FAST_SCALP in quantitativeEngine.ts and autoTraderRunner.ts",
+    "Run node --test to verify green phase",
+    "Run regression test suites (TSK-005, TSK-006, TSK-007, TSK-008, TSK-009)",
+    "Run npm run build and npx oxlint to guarantee zero errors",
+    "Update scripts/run_live_paper_test.js to support --profile=FAST_SCALP and default 7.5m stagnation",
+    "Execute live paper session test with FAST_SCALP"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/auto_trader_fast_scalp.test.js",
+    "lint": "npx oxlint frontend/src/lib/autoTraderRunner.ts frontend/src/lib/quantitativeEngine.ts",
+    "typecheck": "npm run build --prefix frontend"
+  },
+
+  "acceptance_criteria": [
+    "FAST_SCALP profile generates tight levels with TP1 around +1.20% and SL around -1.00%",
+    "minVolumeSurgeRatio >= 1.80x rejects moderate volume candidates and only approves explosive breakout candles",
+    "maxStagnationSeconds = 450 (7.5 minutes) cuts stagnant trades automatically and prevents infinite waiting",
+    "breakEvenTriggerPct = 0.50% arms Break-Even as soon as +0.50% gain is reached, raising SL to +0.25% above entry",
+    "All unit tests pass with exit code 0"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "Zero private Binance API or real money endpoints are used"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/autoTraderRunner.ts frontend/src/lib/quantitativeEngine.ts scripts/run_live_paper_test.js; rm -f frontend/src/__tests__/auto_trader_fast_scalp.test.js contracts/TSK-AUTOTRADER-009.contract.json"
+  }
+}

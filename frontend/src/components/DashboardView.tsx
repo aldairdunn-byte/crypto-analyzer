@@ -16,6 +16,9 @@ import { TotalEquityCard } from './dashboard/TotalEquityCard';
 import { DecisionHeroCard } from './dashboard/DecisionHeroCard';
 import { MarketOverview24h } from './dashboard/MarketOverview24h';
 import { RecentSignalsFeed, type DashboardSignalItem } from './dashboard/RecentSignalsFeed';
+import { AutoTraderDashboardWidget } from './dashboard/AutoTraderDashboardWidget';
+import { useAutoTrader } from '../contexts/AutoTraderContext';
+import { usePortfolio } from '../contexts/PortfolioContext';
 import { Activity, Globe, DollarSign } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -36,7 +39,7 @@ interface DashboardViewProps {
   onTogglePaperMode: () => void;
   onOpenCoinInTerminal: (coinId: string) => void;
   onOpenCoinWithStrategy?: (intent: any) => void;
-  onNavigateView: (view: 'DASHBOARD' | 'TERMINAL' | 'RADAR' | 'ASSETS' | 'SETTINGS') => void;
+  onNavigateView: (view: 'DASHBOARD' | 'TERMINAL' | 'AUTOTRADER' | 'RADAR' | 'ASSETS' | 'SETTINGS') => void;
   onOpenNotifications?: () => void;
   allCoinsStats?: Record<string, any>;
 }
@@ -82,6 +85,8 @@ export const DashboardView = ({
     }
   });
   const [hideBalances, setHideBalances] = useState<boolean>(false);
+  const autoTrader = useAutoTrader();
+  const { capitalInAutoTrader, capitalInGridBots } = usePortfolio();
 
   useEffect(() => {
     if (externalStats && Object.keys(externalStats).length > 0) {
@@ -113,12 +118,16 @@ export const DashboardView = ({
     return () => clearInterval(interval);
   }, [loadMarketStats, externalStats]);
 
-  // Derived Calculations
+  // Derived Calculations (Binance Mark-to-Market Parity)
   const spotValue = totalSpotValue;
   const totalEquity = virtualUsdt;
+  const autoTraderUnrealizedPnl = autoTrader.activePosition ? (autoTrader.activePosition.unrealizedPnlUsd || 0) : 0;
+  const effectiveAutoTraderVal = capitalInAutoTrader > 0 ? Number((capitalInAutoTrader + autoTraderUnrealizedPnl).toFixed(2)) : 0;
   const freePct = totalEquity > 0 ? Math.min(100, Math.max(0, Math.round((availableUsdt / totalEquity) * 100))) : 0;
-  const botsPct = totalEquity > 0 ? Math.min(100, Math.max(0, Math.round((capitalInBots / totalEquity) * 100))) : 0;
-  const spotPct = totalEquity > 0 ? Math.max(0, 100 - freePct - botsPct) : 0;
+  const autoTraderPct = totalEquity > 0 ? Math.min(100, Math.max(0, Math.round((effectiveAutoTraderVal / totalEquity) * 100))) : 0;
+  const gridBotsPct = totalEquity > 0 ? Math.min(100, Math.max(0, Math.round((capitalInGridBots / totalEquity) * 100))) : 0;
+  const botsPct = autoTraderPct + gridBotsPct;
+  const spotPct = totalEquity > 0 ? Math.max(0, 100 - freePct - autoTraderPct - gridBotsPct) : 0;
 
   // ─── QUANTITATIVE EVALUATION FOR ALL 36 COINS ───
   const evaluations = useMemo<QuantitativeEvaluation[]>(() => {
@@ -273,11 +282,33 @@ export const DashboardView = ({
         onTogglePaperMode={onTogglePaperMode}
       />
 
+      {/* Auto Trader PRO Hero Widget (Live & Synchronized) */}
+      <AutoTraderDashboardWidget
+        status={autoTrader.status}
+        activeSymbol={autoTrader.activePosition ? autoTrader.activePosition.symbol : null}
+        currentPnlPct={autoTrader.activePosition ? autoTrader.activePosition.unrealizedPnlPct : 0}
+        currentPnlUsd={autoTrader.activePosition ? autoTrader.activePosition.unrealizedPnlUsd : 0}
+        dailyPnlPct={autoTrader.sessionRealizedPnlPct}
+        dailyPnlUsd={autoTrader.sessionRealizedPnlUsd}
+        dailyTargetPct={autoTrader.dailyTargetPct}
+        isBreakEvenArmed={autoTrader.activePosition ? autoTrader.activePosition.breakEvenArmed : false}
+        isTrailingArmed={autoTrader.activePosition ? autoTrader.activePosition.trailingArmed : false}
+        elapsedMinutes={Math.floor(autoTrader.elapsedSeconds / 60)}
+        sessionDurationMinutes={autoTrader.sessionDurationMinutes}
+        onNavigateToAutoTrader={() => onNavigateView('AUTOTRADER')}
+      />
+
       {/* 2. Total Equity & Capital Distribution Card */}
       <TotalEquityCard
         virtualUsdt={virtualUsdt}
         availableUsdt={availableUsdt}
         capitalInBots={capitalInBots}
+        capitalInAutoTrader={effectiveAutoTraderVal}
+        autoTraderAllocated={capitalInAutoTrader}
+        autoTraderUnrealizedPnl={autoTraderUnrealizedPnl}
+        autoTraderPct={autoTraderPct}
+        capitalInGridBots={capitalInGridBots}
+        gridBotsPct={gridBotsPct}
         spotValue={spotValue}
         freePct={freePct}
         botsPct={botsPct}

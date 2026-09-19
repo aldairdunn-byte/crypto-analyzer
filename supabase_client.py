@@ -33,6 +33,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SupabaseClient")
 
 
+class AutoTraderSessionDict(dict):
+    """Estructura tipada de sesión de Auto Trader Cloud."""
+    pass
+
+
 class SupabaseClient:
     """
     Cliente de integración con Supabase PostgreSQL via PostgREST API.
@@ -579,6 +584,103 @@ class SupabaseClient:
             return resp.json() or []
 
         return self._execute_with_retry(f"table_select({table_name})", _op)
+
+    # =========================================================================
+    # 9. GESTIÓN DE SESIONES AUTO TRADER 24/7 (auto_trader_sessions)
+    # =========================================================================
+
+    def upsert_auto_trader_session(self, session_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Crea o actualiza una sesión de Auto Trader en la nube."""
+        def _op():
+            headers = self._get_headers(prefer="resolution=merge-duplicates,return=representation")
+            endpoint = f"{self.url}/rest/v1/auto_trader_sessions"
+            payload = {
+                **session_data,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            resp = requests.post(endpoint, headers=headers, json=payload, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            return data[0] if isinstance(data, list) and data else payload
+
+        return self._execute_with_retry("upsert_auto_trader_session", _op)
+
+    def get_active_auto_trader_sessions(self) -> List[Dict[str, Any]]:
+        """Obtiene todas las sesiones de Auto Trader activas ('SCANNING', 'IN_POSITION')."""
+        def _op():
+            endpoint = f"{self.url}/rest/v1/auto_trader_sessions?status=in.(SCANNING,IN_POSITION)&select=*"
+            resp = requests.get(endpoint, headers=self._get_headers(), timeout=self.timeout)
+            resp.raise_for_status()
+            return resp.json() or []
+
+        return self._execute_with_retry("get_active_auto_trader_sessions", _op)
+
+    def update_auto_trader_session(self, session_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Actualiza el estado o posición de una sesión de Auto Trader."""
+        def _op():
+            endpoint = f"{self.url}/rest/v1/auto_trader_sessions?id=eq.{session_id}"
+            payload = {
+                **updates,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            resp = requests.patch(endpoint, headers=self._get_headers(), json=payload, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            return data[0] if isinstance(data, list) and data else {"id": session_id, **payload}
+
+        return self._execute_with_retry("update_auto_trader_session", _op)
+
+    def get_auto_trader_session(
+        self,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Recupera la sesión de un usuario o por su ID."""
+        def _op():
+            endpoint = f"{self.url}/rest/v1/auto_trader_sessions?select=*"
+            if session_id:
+                endpoint += f"&id=eq.{session_id}"
+            elif user_id:
+                endpoint += f"&user_id=eq.{user_id}&order=updated_at.desc&limit=1"
+            else:
+                return None
+
+            resp = requests.get(endpoint, headers=self._get_headers(), timeout=self.timeout)
+            if resp.status_code == 200 and resp.json():
+                return resp.json()[0]
+            return None
+
+        return self._execute_with_retry("get_auto_trader_session", _op)
+
+    def get_user_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Obtiene el perfil de usuario registrado en Supabase."""
+        def _op():
+            endpoint = f"{self.url}/rest/v1/user_profiles?id=eq.{user_id}&select=*"
+            resp = requests.get(endpoint, headers=self._get_headers(), timeout=self.timeout)
+            if resp.status_code == 200 and resp.json():
+                return resp.json()[0]
+            return None
+
+        return self._execute_with_retry("get_user_profile", _op)
+
+    def credit_user_balance(self, user_id: str, amount_usd: float) -> bool:
+        """Acredita o debita fondos al balance demo_usdt_balance del usuario."""
+        def _op():
+            profile = self.get_user_profile(user_id)
+            if not profile:
+                return False
+            current_bal = float(profile.get("demo_usdt_balance", 1000.0))
+            new_bal = round(current_bal + amount_usd, 2)
+            endpoint = f"{self.url}/rest/v1/user_profiles?id=eq.{user_id}"
+            resp = requests.patch(
+                endpoint,
+                headers=self._get_headers(),
+                json={"demo_usdt_balance": new_bal, "updated_at": datetime.now(timezone.utc).isoformat()},
+                timeout=self.timeout
+            )
+            return resp.status_code in (200, 204)
+
+        return self._execute_with_retry("credit_user_balance", _op)
 
 
 # Instancia singleton accesible globalmente

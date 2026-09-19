@@ -97,6 +97,25 @@ export interface MarketCacheRow {
   cached_at?: string;
 }
 
+export interface AutoTraderSessionRow {
+  id: string;
+  user_id?: string;
+  status: 'STOPPED' | 'SCANNING' | 'IN_POSITION' | 'PAUSED';
+  selected_capital: number;
+  duration_minutes: number;
+  daily_target_pct: number;
+  daily_max_loss_pct: number;
+  max_trades_per_day: number;
+  trading_profile: string;
+  digest_interval: string;
+  active_position?: any;
+  session_start_time?: string;
+  session_realized_pnl_usd: number;
+  session_realized_pnl_pct: number;
+  closed_trades_today: number;
+  updated_at?: string;
+}
+
 // ─── DIRECT SUPABASE QUERY HELPERS (POSTGREST API) ───
 
 export async function fetchPortfolioFromSupabase(userId?: string): Promise<PortfolioRow[]> {
@@ -395,3 +414,112 @@ export async function updateTradeStatusInSupabase(
     return false;
   }
 }
+
+export async function fetchAutoTraderSessionFromSupabase(userId?: string): Promise<AutoTraderSessionRow | null> {
+  try {
+    if (!userId) return null;
+    const { data, error } = await supabase
+      .from('auto_trader_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (error || !data || data.length === 0) {
+      return null;
+    }
+    const row = data[0];
+    return {
+      id: row.id,
+      user_id: row.user_id,
+      status: row.status,
+      selected_capital: Number(row.selected_capital || 50),
+      duration_minutes: Number(row.duration_minutes || 240),
+      daily_target_pct: Number(row.daily_target_pct || 3.0),
+      daily_max_loss_pct: Number(row.daily_max_loss_pct || 2.0),
+      max_trades_per_day: Number(row.max_trades_per_day || 5),
+      trading_profile: row.trading_profile || 'MOMENTUM_INTRADAY',
+      digest_interval: row.digest_interval || '30m',
+      active_position: row.active_position || null,
+      session_start_time: row.session_start_time,
+      session_realized_pnl_usd: Number(row.session_realized_pnl_usd || 0),
+      session_realized_pnl_pct: Number(row.session_realized_pnl_pct || 0),
+      closed_trades_today: Number(row.closed_trades_today || 0),
+      updated_at: row.updated_at,
+    };
+  } catch (err) {
+    console.warn('Exception in fetchAutoTraderSessionFromSupabase:', err);
+    return null;
+  }
+}
+
+export async function upsertAutoTraderSessionInSupabase(
+  session: Partial<AutoTraderSessionRow>
+): Promise<boolean> {
+  try {
+    const payload: any = {
+      ...session,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('auto_trader_sessions').upsert(payload);
+    if (error) {
+      console.warn('Error upserting auto_trader_sessions in Supabase:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Exception in upsertAutoTraderSessionInSupabase:', err);
+    return false;
+  }
+}
+
+export function subscribeToAutoTraderSession(
+  userId: string,
+  callback: (session: AutoTraderSessionRow) => void
+): () => void {
+  try {
+    const channel = supabase
+      .channel(`auto_trader_session_${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'auto_trader_sessions',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (payload.new) {
+            const row = payload.new as any;
+            callback({
+              id: row.id,
+              user_id: row.user_id,
+              status: row.status,
+              selected_capital: Number(row.selected_capital || 50),
+              duration_minutes: Number(row.duration_minutes || 240),
+              daily_target_pct: Number(row.daily_target_pct || 3.0),
+              daily_max_loss_pct: Number(row.daily_max_loss_pct || 2.0),
+              max_trades_per_day: Number(row.max_trades_per_day || 5),
+              trading_profile: row.trading_profile || 'MOMENTUM_INTRADAY',
+              digest_interval: row.digest_interval || '30m',
+              active_position: row.active_position || null,
+              session_start_time: row.session_start_time,
+              session_realized_pnl_usd: Number(row.session_realized_pnl_usd || 0),
+              session_realized_pnl_pct: Number(row.session_realized_pnl_pct || 0),
+              closed_trades_today: Number(row.closed_trades_today || 0),
+              updated_at: row.updated_at,
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  } catch (err) {
+    console.warn('Error subscribing to auto_trader_sessions:', err);
+    return () => {};
+  }
+}
+

@@ -1,0 +1,77 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-AUTOTRADER-013",
+  "epic_id": "EPC-AUTOTRADER",
+  "goal": "Connect React Frontend Auto Trader with Supabase Cloud Session Bus: 24/7 Cloud State Synchronization, Realtime Subscription, Remote Session Recovery, and Cloud Status Indicator",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/supabase.ts",
+      "frontend/src/contexts/AutoTraderContext.tsx"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": [
+      "frontend/src/components/AutoTraderView.tsx",
+      "frontend/src/lib/autoTraderRunner.ts",
+      "supabase_schema_v2.sql"
+    ]
+  },
+
+  "depends_on": ["TSK-AUTOTRADER-012"],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/supabase.ts",
+    "interfaces": "export interface AutoTraderSessionRow { id: string; user_id?: string; status: 'STOPPED' | 'SCANNING' | 'IN_POSITION' | 'PAUSED'; selected_capital: number; duration_minutes: number; daily_target_pct: number; daily_max_loss_pct: number; max_trades_per_day: number; trading_profile: string; digest_interval: string; active_position?: any; session_start_time?: string; session_realized_pnl_usd: number; session_realized_pnl_pct: number; closed_trades_today: number; updated_at?: string; }",
+    "function_signatures": [
+      "fetchAutoTraderSessionFromSupabase(userId: string): Promise<AutoTraderSessionRow | null>",
+      "upsertAutoTraderSessionInSupabase(session: Partial<AutoTraderSessionRow>): Promise<boolean>",
+      "subscribeToAutoTraderSession(userId: string, callback: (session: AutoTraderSessionRow) => void): () => void"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit test in frontend/src/__tests__/cloud_auto_trader_sync.test.js for session persistence and remote state hydration",
+    "Run node --test frontend/src/__tests__/cloud_auto_trader_sync.test.js to verify red phase",
+    "Add AutoTraderSessionRow interface and session CRUD/subscription functions to frontend/src/lib/supabase.ts",
+    "Integrate cloud session persistence and realtime sync into AutoTraderContext.tsx (startSession, pauseSession, stopSession, and mount hydration)",
+    "Expose isCloudConnected and cloudSessionState in AutoTraderContext",
+    "Update AutoTraderView.tsx to display 24/7 Cloud Worker status badge and live synchronization indicators",
+    "Run node --test frontend/src/__tests__/cloud_auto_trader_sync.test.js to verify green phase",
+    "Validate contract using validate_contract.py"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/cloud_auto_trader_sync.test.js",
+    "lint": "npm --prefix frontend run build",
+    "typecheck": "npm --prefix frontend run build"
+  },
+
+  "acceptance_criteria": [
+    "frontend/src/lib/supabase.ts provides typed functions to fetch, upsert, and subscribe to auto_trader_sessions",
+    "When startSession() is invoked, session is upserted to Supabase with status SCANNING",
+    "When pauseSession() or stopSession() is invoked, Supabase status reflects PAUSED or STOPPED",
+    "When component mounts, active cloud session in Supabase automatically hydratates the UI",
+    "Realtime changes from the 24/7 Render worker update active_position, PnL, and trades count without page reload",
+    "All tests in cloud_auto_trader_sync.test.js pass with exit code 0",
+    "Frontend build completes without TypeScript or Vite errors"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/supabase.ts frontend/src/contexts/AutoTraderContext.tsx frontend/src/components/AutoTraderView.tsx; rm -f frontend/src/__tests__/cloud_auto_trader_sync.test.js contracts/TSK-AUTOTRADER-013.contract.json"
+  }
+}

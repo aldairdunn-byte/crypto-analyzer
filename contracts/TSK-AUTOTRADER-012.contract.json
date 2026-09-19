@@ -1,0 +1,80 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-AUTOTRADER-012",
+  "epic_id": "EPC-AUTOTRADER",
+  "goal": "Implement Cloud Auto Trader Pro 24/7 Engine in Render Worker: Autonomous Loop, Supabase Session Bus, Market Breakout Entry, Dynamic Risk Management (Break-Even, Trailing Stop, TP/SL), and Telegram Attribution Pipeline",
+
+  "scope": {
+    "target_files": [
+      "supabase_client.py",
+      "telegram_bot.py"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": [
+      "supabase_schema_v2.sql",
+      "web_push.py",
+      "render.yaml",
+      "engine.py"
+    ]
+  },
+
+  "depends_on": ["TSK-AUTOTRADER-011"],
+
+  "contracts": {
+    "types_file": "supabase_client.py",
+    "interfaces": "class AutoTraderSessionDict(dict): pass",
+    "function_signatures": [
+      "upsert_auto_trader_session(session_data: dict) -> dict",
+      "get_active_auto_trader_sessions() -> list",
+      "update_auto_trader_session(session_id: str, updates: dict) -> dict"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write test in test_auto_trader_cloud.py verifying session CRUD and breakout evaluation loop",
+    "Run pytest test_auto_trader_cloud.py to verify red phase",
+    "Update supabase_schema_v2.sql to define auto_trader_sessions table with status index and RLS",
+    "Implement session persistence methods in supabase_client.py: upsert_auto_trader_session, get_active_auto_trader_sessions, update_auto_trader_session",
+    "Implement autonomous cloud trading cycle inside telegram_bot.py under the Render worker thread",
+    "Integrate breakout signal detection, paper trade execution, break-even (+0.8%), trailing stop, take profit (+2.0%), and stop loss (-2.0%)",
+    "Connect Telegram alerts and Web Push notifications upon cloud trade entry and exit with user attribution",
+    "Run pytest test_auto_trader_cloud.py to verify green phase",
+    "Validate contract using validate_contract.py"
+  ],
+
+  "commands": {
+    "test": "python test_auto_trader_cloud.py",
+    "lint": "python -m py_compile supabase_client.py telegram_bot.py",
+    "typecheck": "python -m py_compile supabase_client.py telegram_bot.py"
+  },
+
+  "acceptance_criteria": [
+    "auto_trader_sessions DDL is defined in supabase_schema_v2.sql with user_id, status, capital, and position JSON",
+    "supabase_client.py provides deterministic CRUD methods for auto_trader_sessions with automatic retry",
+    "telegram_bot.py runs the cloud auto trader cycle every 10 seconds in the background worker thread",
+    "Worker detects breakouts on Binance live tickers and executes paper entry, updating session in Supabase",
+    "Worker tracks open position and triggers Break-Even, Trailing Stop, Take Profit (+2%), and Stop Loss (-2%)",
+    "Closing position credits user balance and sends Telegram alert with user display name attribution",
+    "All tests in test_auto_trader_cloud.py pass with exit code 0"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "No pre-existing bot_engine or telegram alerts are broken or regressed"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- supabase_schema_v2.sql supabase_client.py telegram_bot.py; rm -f test_auto_trader_cloud.py contracts/TSK-AUTOTRADER-012.contract.json"
+  }
+}
