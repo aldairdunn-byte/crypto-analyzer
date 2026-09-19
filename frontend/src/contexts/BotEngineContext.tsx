@@ -29,7 +29,7 @@ import {
   persistTradeToSupabase,
   updateTradeStatusInSupabase,
 } from '../lib/supabase';
-import { getScopedItem, removeScopedItem, setScopedItem } from '../lib/accountStorage';
+import { getScopedItem, removeScopedItem, setScopedItem, migrateGuestDataToUser } from '../lib/accountStorage';
 import {
   sendTelegramGridBotCreated,
   sendTelegramGridOrderFilled,
@@ -254,13 +254,14 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       storageReadyOwnerRef.current = 'loading';
       try {
         if (user?.id) {
+          migrateGuestDataToUser(user.id);
           const [botsRes, tradesRes, signalsRes] = await Promise.all([
             supabase.from('bots').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
             supabase.from('bot_trades').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
             supabase.from('signals').select('*').order('created_at', { ascending: false }).limit(20),
           ]);
 
-          if (botsRes.data) {
+          if (botsRes.data && botsRes.data.length > 0) {
             const loadedBots = botsRes.data as BotRow[];
             setBots(loadedBots);
             setScopedItem('crypto_analyzer_bots', JSON.stringify(loadedBots), user.id);
@@ -301,18 +302,63 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               setActiveGridOrders([]);
             }
           } else {
-            setBots([]);
-            setActiveGridOrders([]);
-            setScopedItem('crypto_analyzer_bots', '[]', user.id);
+            // Adopt migrated guest bots if any exist
+            const localSavedBots = getScopedItem('crypto_analyzer_bots', user.id);
+            if (localSavedBots) {
+              try {
+                const parsedBots: BotRow[] = JSON.parse(localSavedBots);
+                if (Array.isArray(parsedBots) && parsedBots.length > 0) {
+                  setBots(parsedBots);
+                  parsedBots.forEach((b) => {
+                    void supabase.from('bots').insert({
+                      ...b,
+                      user_id: user.id,
+                    });
+                  });
+                } else {
+                  setBots([]);
+                  setActiveGridOrders([]);
+                  setScopedItem('crypto_analyzer_bots', '[]', user.id);
+                }
+              } catch {
+                setBots([]);
+                setActiveGridOrders([]);
+              }
+            } else {
+              setBots([]);
+              setActiveGridOrders([]);
+              setScopedItem('crypto_analyzer_bots', '[]', user.id);
+            }
           }
-          if (tradesRes.data) {
+          if (tradesRes.data && tradesRes.data.length > 0) {
             // Deserialise all rows from Supabase, parsing metadata from entry_reason / exit_reason
             const cloudTrades: TradeRow[] = (tradesRes.data as any[]).map(parseSupabaseTradeRow);
             setTrades(cloudTrades);
             setScopedItem('crypto_analyzer_trades', JSON.stringify(cloudTrades), user.id);
           } else {
-            setTrades([]);
-            setScopedItem('crypto_analyzer_trades', '[]', user.id);
+            const localSavedTrades = getScopedItem('crypto_analyzer_trades', user.id);
+            if (localSavedTrades) {
+              try {
+                const parsedTrades: TradeRow[] = JSON.parse(localSavedTrades);
+                if (Array.isArray(parsedTrades) && parsedTrades.length > 0) {
+                  setTrades(parsedTrades);
+                  parsedTrades.forEach((t) => {
+                    void supabase.from('bot_trades').insert({
+                      ...t,
+                      user_id: user.id,
+                    });
+                  });
+                } else {
+                  setTrades([]);
+                  setScopedItem('crypto_analyzer_trades', '[]', user.id);
+                }
+              } catch {
+                setTrades([]);
+              }
+            } else {
+              setTrades([]);
+              setScopedItem('crypto_analyzer_trades', '[]', user.id);
+            }
           }
           if (signalsRes.data && signalsRes.data.length > 0) {
             setSignals(signalsRes.data as SignalRow[]);

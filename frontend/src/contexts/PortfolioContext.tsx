@@ -8,7 +8,7 @@ import {
   upsertPortfolioHoldingToSupabase,
   type PortfolioRow,
 } from '../lib/supabase';
-import { getScopedItem, removeScopedItem, setScopedItem } from '../lib/accountStorage';
+import { getScopedItem, removeScopedItem, setScopedItem, migrateGuestDataToUser } from '../lib/accountStorage';
 import { reconcileDemoFreeCash, calculateMarkToMarketTotalEquity } from '../lib/portfolioMath';
 import { type CryptoHolding } from '../components/AssetsView';
 
@@ -44,7 +44,13 @@ const PortfolioContext = createContext<PortfolioContextType | undefined>(undefin
 
 const loadLocalHoldingsForUser = (userId?: string | null): Record<string, { units: number; avgEntryPrice: number }> => {
   try {
-    const saved = getScopedItem('crypto_analyzer_demo_holdings', userId, { legacyFallback: true });
+    let saved = getScopedItem('crypto_analyzer_demo_holdings', userId, { legacyFallback: true });
+    if ((!saved || saved === '{}') && userId) {
+      const { migratedHoldings } = migrateGuestDataToUser(userId);
+      if (migratedHoldings && migratedHoldings !== '{}') {
+        saved = migratedHoldings;
+      }
+    }
     if (!saved || saved === '{}') {
       return {};
     }
@@ -238,6 +244,32 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
   useEffect(() => {
+    if (user?.id) {
+      const { migratedHoldings, migratedCash } = migrateGuestDataToUser(user.id);
+      if (migratedHoldings && migratedHoldings !== '{}') {
+        try {
+          const parsed = JSON.parse(migratedHoldings);
+          Object.entries(parsed).forEach(([coinId, h]: [string, any]) => {
+            if (h && h.units > 0.000001) {
+              const coin = getDynamicCoinInfo(coinId);
+              void upsertPortfolioHoldingToSupabase(user.id, {
+                asset: coin.id,
+                symbol: coin.symbol,
+                amount: h.units,
+                avgBuyPrice: h.avgEntryPrice,
+              });
+            }
+          });
+        } catch {}
+      }
+      if (migratedCash) {
+        const amt = parseFloat(migratedCash);
+        if (!isNaN(amt) && amt > 0) {
+          void updateDemoBalance(amt);
+        }
+      }
+    }
+
     setCurrencyModeState((getScopedItem('currencyMode', user?.id, { legacyFallback: true }) as 'USD' | 'PEN') || 'USD');
     const nextIsLiveMode = getScopedItem('isLiveMode', user?.id, { legacyFallback: true }) === 'true';
     setIsLiveModeState(nextIsLiveMode);
@@ -251,7 +283,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const fallbackCash = (profile?.demo_usdt_balance !== undefined && profile.demo_usdt_balance > 0) ? profile.demo_usdt_balance : 1000.0;
       setUsdtCashState(savedDemoCash !== null ? parseFloat(savedDemoCash) : fallbackCash);
     }
-  }, [user?.id]);
+  }, [user?.id, profile?.demo_usdt_balance, updateDemoBalance]);
 
   useEffect(() => {
     try {

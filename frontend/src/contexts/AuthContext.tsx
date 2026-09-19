@@ -54,7 +54,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           preferred_currency: (getScopedItem('currencyMode', userId, { legacyFallback: true }) as 'USD' | 'PEN') || 'USD',
           demo_usdt_balance: 1000.0,
         };
-        await supabase.from('user_profiles').insert(newProfile);
+        try {
+          await supabase.from('user_profiles').insert(newProfile);
+        } catch (insertErr) {
+          console.warn('Error inserting initial profile into Supabase:', insertErr);
+        }
         setProfile(newProfile);
       } else if (data) {
         const loadedProfile = data as UserProfile;
@@ -62,9 +66,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           loadedProfile.demo_usdt_balance = 1000.0;
         }
         setProfile(loadedProfile);
+      } else if (error) {
+        // Fallback: if error occurred (e.g. RLS or network), ensure user has a working $1000 profile
+        const fallbackProfile: UserProfile = {
+          id: userId,
+          email: email || '',
+          preferred_currency: 'USD',
+          demo_usdt_balance: 1000.0,
+        };
+        setProfile(fallbackProfile);
       }
     } catch (err) {
       console.warn('Error loading user profile:', err);
+      setProfile({
+        id: userId,
+        email: email || '',
+        preferred_currency: 'USD',
+        demo_usdt_balance: 1000.0,
+      });
     }
   }, []);
 
