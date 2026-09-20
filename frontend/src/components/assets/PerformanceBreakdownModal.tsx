@@ -4,6 +4,7 @@ import { ModalPortal } from '../ui/ModalPortal';
 import { useModalKeyboard, formatMicroPnl } from '../../lib/formatters';
 import { CryptoIcon } from '../CryptoIcon';
 import { type TradeRow } from '../../lib/supabase';
+import { formatTradeTime } from '../../lib/marketData';
 
 export interface PerformanceBreakdownModalProps {
   isOpen: boolean;
@@ -348,16 +349,24 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
                         const grossPnl = typeof t.gross_pnl_usd === 'number'
                           ? t.gross_pnl_usd
                           : (netPnl + feeUsd);
+                        const timeInfo = formatTradeTime((t as any).closed_at || t.created_at);
 
                         return (
                           <div key={t.id} className="p-3 space-y-2 hover:bg-white/[0.02] transition-colors">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <CryptoIcon symbol={t.coin_id.toUpperCase()} size={20} />
-                                <span className="font-bold text-white text-xs">{t.coin_id.toUpperCase()}</span>
-                                <span className="text-[9px] bg-emerald-500/10 text-[#0ECB81] px-1.5 py-0.5 rounded border border-emerald-500/20">
-                                  {t.side === 'SELL' ? 'VENTA SPOT' : 'GRID ARBITRAJE'}
-                                </span>
+                                <div>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold text-white text-xs">{t.coin_id.toUpperCase()}</span>
+                                    <span className="text-[9px] bg-emerald-500/10 text-[#0ECB81] px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                      {t.side === 'SELL' ? 'VENTA SPOT' : 'GRID ARBITRAJE'}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] text-amber-300/90 block font-mono font-bold">
+                                    {timeInfo.dayMonth} · {timeInfo.shortTime} <span className="text-slate-400 font-normal">({timeInfo.relative})</span>
+                                  </span>
+                                </div>
                               </div>
                               <div className="text-right">
                                 <span className="text-[#0ECB81] font-black tabular-nums text-xs">
@@ -417,6 +426,7 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
                             const grossPnl = typeof t.gross_pnl_usd === 'number'
                               ? t.gross_pnl_usd
                               : (netPnl + feeUsd);
+                            const timeInfo = formatTradeTime((t as any).closed_at || t.created_at);
 
                             return (
                               <tr key={t.id} className="hover:bg-white/[0.03] transition-colors h-10">
@@ -425,8 +435,8 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
                                     <CryptoIcon symbol={t.coin_id.toUpperCase()} size={18} />
                                     <div>
                                       <span className="font-bold text-white block">{t.coin_id.toUpperCase()}/USDT</span>
-                                      <span className="text-[9px] text-[#0ECB81] block">
-                                        {t.side === 'SELL' ? 'VENTA SPOT' : 'GRID FILL'}
+                                      <span className="text-[9.5px] text-amber-300/90 block font-mono font-bold">
+                                        {timeInfo.dayMonth} · {timeInfo.shortTime}
                                       </span>
                                     </div>
                                   </div>

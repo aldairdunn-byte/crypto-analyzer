@@ -513,35 +513,43 @@ export const resolveBotCoin = (bot: { coin_id?: string; name?: string }): CoinIn
 };
 
 /**
- * Precise timestamp formatter for trade history and order fills
+ * Precise timestamp formatter for trade history and order fills with Day, Month, Hour, Minute
  */
-export function formatTradeTime(timestamp?: string | number): { time: string; date: string; full: string; relative: string } {
-  if (!timestamp) {
-    const now = new Date();
-    const time = now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-    const date = now.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' });
-    return { time, date, full: `${date} ${time}`, relative: 'Ahora' };
-  }
+export function formatTradeTime(timestamp?: string | number): {
+  time: string;
+  shortTime: string;
+  date: string;
+  dayMonth: string;
+  dayTime: string;
+  full: string;
+  relative: string;
+} {
+  const dateObj = timestamp ? new Date(timestamp) : new Date();
+  const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj;
 
-  const dateObj = new Date(timestamp);
-  if (isNaN(dateObj.getTime())) {
-    const now = new Date();
-    const time = now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-    const date = now.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' });
-    return { time, date, full: `${date} ${time}`, relative: 'Ahora' };
-  }
+  const time = validDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const shortTime = validDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const date = validDate.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const rawDayMonth = validDate.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
+  const dayMonth = rawDayMonth.replace('.', '').replace(/\b\w/g, (c) => c.toUpperCase());
+  const dayTime = `${dayMonth} · ${shortTime}`;
 
-  const time = dateObj.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  const date = dateObj.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' });
-
-  const diffSec = Math.floor((Date.now() - dateObj.getTime()) / 1000);
+  const diffSec = Math.floor((Date.now() - validDate.getTime()) / 1000);
   let relative = 'Ahora';
   if (diffSec >= 0 && diffSec < 60) relative = `hace ${diffSec}s`;
   else if (diffSec >= 60 && diffSec < 3600) relative = `hace ${Math.floor(diffSec / 60)}m`;
   else if (diffSec >= 3600 && diffSec < 86400) relative = `hace ${Math.floor(diffSec / 3600)}h`;
-  else relative = `${date}`;
+  else relative = dayMonth;
 
-  return { time, date, full: `${date} ${time}`, relative };
+  return {
+    time,
+    shortTime,
+    date,
+    dayMonth,
+    dayTime,
+    full: `${dayMonth} · ${time}`,
+    relative,
+  };
 }
 
 export interface CandleData {

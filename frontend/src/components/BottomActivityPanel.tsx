@@ -653,8 +653,8 @@ export const BottomActivityPanel = ({
                             <CryptoIcon symbol={coinInfo?.symbol || tr.coin_id} size={20} />
                             <div>
                               <span className="font-extrabold text-white text-xs">{coinInfo?.symbol || tr.coin_id.toUpperCase()}/USDT</span>
-                              <span className="text-[9.5px] text-slate-400 block font-mono">
-                                {timeInfo.time} · {timeInfo.relative}
+                              <span className="text-[10px] text-amber-300/90 block font-mono font-bold">
+                                {timeInfo.dayMonth} · {timeInfo.shortTime} <span className="text-slate-400 font-normal">({timeInfo.relative})</span>
                               </span>
                             </div>
                           </div>
@@ -753,8 +753,12 @@ export const BottomActivityPanel = ({
                           <tr key={tr.id} className="hover:bg-white/[0.04] transition-colors h-11">
                             <td className="pl-3 py-1.5 text-slate-300 font-mono text-[11px] font-semibold whitespace-nowrap">
                               <div className="flex flex-col leading-tight">
-                                <span className="text-white font-mono font-bold text-[11px]">{timeInfo.time}</span>
-                                <span className="text-[9.5px] text-slate-400 font-mono">{timeInfo.date} • {timeInfo.relative}</span>
+                                <div className="flex items-center gap-1 text-white font-bold text-[11px]">
+                                  <span className="text-amber-300 font-bold">{timeInfo.dayMonth}</span>
+                                  <span className="text-slate-500">·</span>
+                                  <span className="text-white font-bold">{timeInfo.shortTime}</span>
+                                </div>
+                                <span className="text-[9.5px] text-slate-400 font-mono">{timeInfo.time} • {timeInfo.relative}</span>
                               </div>
                             </td>
                             <td className="font-bold text-white font-sans flex items-center space-x-1.5 py-2.5">

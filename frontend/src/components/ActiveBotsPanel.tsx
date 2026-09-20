@@ -372,8 +372,8 @@ export const ActiveBotsPanel: React.FC<ActiveBotsPanelProps> = ({
                             <CryptoIcon symbol={tr.coin_id} size={20} />
                             <div>
                               <span className="font-extrabold text-white text-xs">{tr.coin_id.toUpperCase()}/USDT</span>
-                              <span className="text-[9.5px] text-slate-400 block font-mono">
-                                {timeInfo.time} · {timeInfo.relative}
+                              <span className="text-[10px] text-amber-300/90 block font-mono font-bold">
+                                {timeInfo.dayMonth} · {timeInfo.shortTime} <span className="text-slate-400 font-normal">({timeInfo.relative})</span>
                               </span>
                             </div>
                           </div>
@@ -452,8 +452,12 @@ export const ActiveBotsPanel: React.FC<ActiveBotsPanelProps> = ({
                           <tr key={tr.id} className="hover:bg-white/5 transition-colors">
                             <td className="p-2.5 text-slate-300">
                               <div className="flex flex-col leading-tight">
-                                <span className="text-white font-bold">{timeInfo.time}</span>
-                                <span className="text-[9.5px] text-slate-400">{timeInfo.date} • {timeInfo.relative}</span>
+                                <div className="flex items-center gap-1 text-white font-bold text-[11px]">
+                                  <span className="text-amber-300 font-bold">{timeInfo.dayMonth}</span>
+                                  <span className="text-slate-500">·</span>
+                                  <span className="text-white font-bold">{timeInfo.shortTime}</span>
+                                </div>
+                                <span className="text-[9.5px] text-slate-400">{timeInfo.time} • {timeInfo.relative}</span>
                               </div>
                             </td>
                             <td className="p-2.5 font-bold text-white flex items-center gap-1.5 py-3">

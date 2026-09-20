@@ -3,7 +3,7 @@ import { useModalKeyboard, formatMicroPnl } from '../lib/formatters';
 import { ModalPortal } from './ui/ModalPortal';
 import { type BotRow, type TradeRow } from '../lib/supabase';
 import { CryptoIcon } from './CryptoIcon';
-import { formatDynamicPrice, resolveBotCoin } from '../lib/marketData';
+import { formatDynamicPrice, resolveBotCoin, formatTradeTime } from '../lib/marketData';
 import {
   X,
   Bot,
@@ -483,6 +483,7 @@ export const BotDetailModal = ({
                       {closedTrades.map((t, idx) => {
                         const pnl = t.pnl_usd || 0;
                         const fee = typeof t.fee_usd === 'number' ? t.fee_usd : (t.amount_usd || 0) * 0.001;
+                        const timeInfo = formatTradeTime((t as any).closed_at || t.created_at);
                         return (
                           <div key={t.id || idx} className="p-3 space-y-2 hover:bg-white/[0.02] transition-colors">
                             <div className="flex items-center justify-between">
@@ -505,9 +506,11 @@ export const BotDetailModal = ({
                                 </span>
                               </div>
                             </div>
-                            <div className="flex justify-between items-center text-[10px] text-slate-500">
+                            <div className="flex justify-between items-center text-[10px] text-slate-400">
                               <span>Vol: ${Number(t.amount_usd || capPerGrid).toFixed(2)} USDT</span>
-                              <span>{((t as any).closed_at || t.created_at) ? new Date((t as any).closed_at || t.created_at).toLocaleTimeString() : 'Ejecutado'}</span>
+                              <span className="text-amber-300 font-mono font-bold">
+                                {timeInfo.dayMonth} · {timeInfo.shortTime}
+                              </span>
                             </div>
                           </div>
                         );
@@ -530,12 +533,13 @@ export const BotDetailModal = ({
                           {closedTrades.map((t, idx) => {
                             const pnl = t.pnl_usd || 0;
                             const fee = typeof t.fee_usd === 'number' ? t.fee_usd : (t.amount_usd || 0) * 0.001;
+                            const timeInfo = formatTradeTime((t as any).closed_at || t.created_at);
                             return (
                               <tr key={t.id || idx} className="hover:bg-white/[0.03] transition-colors h-10">
                                 <td className="pl-3">
                                   <span className="font-bold text-white block">{coinInfo.symbol}/USDT</span>
-                                  <span className="text-[9px] text-slate-500 block">
-                                    {((t as any).closed_at || t.created_at) ? new Date((t as any).closed_at || t.created_at).toLocaleTimeString() : 'Ejecutado'}
+                                  <span className="text-[10px] text-amber-300 font-mono block">
+                                    {timeInfo.dayMonth} · {timeInfo.shortTime}
                                   </span>
                                 </td>
                                 <td>

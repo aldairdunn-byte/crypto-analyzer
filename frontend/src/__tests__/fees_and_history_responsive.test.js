@@ -65,3 +65,26 @@ test('TSK-HIST-001: ActiveBotsPanel integrates fees and responsive trade history
   );
   assert.ok(content.includes('sm:hidden') || content.includes('flex-col'), 'Must support mobile friendly view');
 });
+
+test('TSK-HIST-002: Trade history panels and modals display Day, Month, Hour, and Minute', () => {
+  const bottomContent = fs.readFileSync(BOTTOM_PANEL_PATH, 'utf-8');
+  const activeBotsContent = fs.readFileSync(ACTIVE_BOTS_PATH, 'utf-8');
+  const perfModalContent = fs.readFileSync(PERFORMANCE_MODAL_PATH, 'utf-8');
+  const botDetailContent = fs.readFileSync(BOT_DETAIL_MODAL_PATH, 'utf-8');
+
+  // BottomActivityPanel must render dayMonth and shortTime
+  assert.ok(bottomContent.includes('timeInfo.dayMonth'), 'BottomActivityPanel renders dayMonth');
+  assert.ok(bottomContent.includes('timeInfo.shortTime'), 'BottomActivityPanel renders shortTime');
+
+  // ActiveBotsPanel must render dayMonth and shortTime
+  assert.ok(activeBotsContent.includes('timeInfo.dayMonth'), 'ActiveBotsPanel renders dayMonth');
+  assert.ok(activeBotsContent.includes('timeInfo.shortTime'), 'ActiveBotsPanel renders shortTime');
+
+  // PerformanceBreakdownModal must render dayMonth and shortTime
+  assert.ok(perfModalContent.includes('timeInfo.dayMonth'), 'PerformanceBreakdownModal renders dayMonth');
+  assert.ok(perfModalContent.includes('timeInfo.shortTime'), 'PerformanceBreakdownModal renders shortTime');
+
+  // BotDetailModal must render dayMonth and shortTime
+  assert.ok(botDetailContent.includes('timeInfo.dayMonth'), 'BotDetailModal renders dayMonth');
+  assert.ok(botDetailContent.includes('timeInfo.shortTime'), 'BotDetailModal renders shortTime');
+});
