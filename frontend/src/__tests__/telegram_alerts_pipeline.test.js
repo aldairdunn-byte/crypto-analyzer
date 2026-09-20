@@ -1,5 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert';
+
+// Mock globalThis.fetch during test execution to prevent dispatching dummy alerts to live Telegram channel
+const originalFetch = globalThis.fetch;
+test.before(() => {
+  globalThis.fetch = async (url, options) => {
+    return {
+      ok: true,
+      json: async () => ({ ok: true, result: { message_id: 99999 } }),
+    };
+  };
+});
+
+test.after(() => {
+  globalThis.fetch = originalFetch;
+});
+
 import {
   sendTelegramAutoTraderSessionStart,
   sendTelegramAutoTraderTokenEntry,
