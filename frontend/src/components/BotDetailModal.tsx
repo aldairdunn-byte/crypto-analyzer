@@ -41,6 +41,9 @@ export const BotDetailModal = ({
   onUpdateBotStatus = async () => {},
   onSelectCoin,
 }: BotDetailModalProps) => {
+  const [modalTab, setModalTab] = useState<'OVERVIEW' | 'ORDERS' | 'FILLS'>('OVERVIEW');
+  useModalKeyboard(Boolean(bot), onClose);
+
   if (!bot) return null;
 
   const isActive = bot.status === 'ACTIVE';
@@ -100,9 +103,6 @@ export const BotDetailModal = ({
   }
   const gridOrders = gridOrdersList.reverse(); // highest price first
 
-  // Modal Tab
-  const [modalTab, setModalTab] = useState<'OVERVIEW' | 'ORDERS' | 'FILLS'>('OVERVIEW');
-
   // Initial Entry Price
   const initialP = config.initial_price ?? (botTrades.length > 0 ? botTrades[botTrades.length - 1].entry_price : currentP);
 
@@ -111,8 +111,6 @@ export const BotDetailModal = ({
   const dailyProfitEst = profitPerCycle * cyclesPerDayEst;
   const monthlyProfitEst = dailyProfitEst * 30;
   const projectedApyPct = bot.capital_allocated_usd > 0 ? ((dailyProfitEst * 365) / bot.capital_allocated_usd) * 100 : 0;
-
-  useModalKeyboard(Boolean(bot), onClose);
 
   return (
     <ModalPortal>
@@ -480,55 +478,94 @@ export const BotDetailModal = ({
               {closedTrades.length > 0 ? (
                 <div className="bg-[#08090C] border border-white/10 rounded-xl overflow-hidden">
                   <div className="max-h-80 overflow-y-auto">
-                    <table className="w-full text-left text-xs font-mono">
-                      <thead>
-                        <tr className="h-8 text-[10px] text-slate-400 uppercase font-bold border-b border-white/10 bg-[#0E1118]/80 sticky top-0">
-                          <th className="pl-3">Par / Ciclo</th>
-                          <th>Entrada → Salida</th>
-                          <th className="text-right">Volumen</th>
-                          <th className="text-right">Comisión</th>
-                          <th className="pr-3 text-right">Ganancia Neta</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {closedTrades.map((t, idx) => {
-                          const pnl = t.pnl_usd || 0;
-                          const fee = typeof t.fee_usd === 'number' ? t.fee_usd : (t.amount_usd || 0) * 0.001;
-                          return (
-                            <tr key={t.id || idx} className="hover:bg-white/[0.03] transition-colors h-10">
-                              <td className="pl-3">
-                                <span className="font-bold text-white block">{coinInfo.symbol}/USDT</span>
-                                <span className="text-[9px] text-slate-500 block">
-                                  {((t as any).closed_at || t.created_at) ? new Date((t as any).closed_at || t.created_at).toLocaleTimeString() : 'Ejecutado'}
+                    {/* Mobile Card Layout (sm:hidden) */}
+                    <div className="divide-y divide-white/5 sm:hidden font-mono text-xs">
+                      {closedTrades.map((t, idx) => {
+                        const pnl = t.pnl_usd || 0;
+                        const fee = typeof t.fee_usd === 'number' ? t.fee_usd : (t.amount_usd || 0) * 0.001;
+                        return (
+                          <div key={t.id || idx} className="p-3 space-y-2 hover:bg-white/[0.02] transition-colors">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-white text-xs">{coinInfo.symbol}/USDT</span>
+                              <span className={`font-black tabular-nums ${pnl >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                                {formatMicroPnl(pnl, currencyMode, penRate)}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-400 bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                              <div>
+                                <span className="text-slate-500 block">Entrada → Salida:</span>
+                                <span className="text-slate-200 tabular-nums">
+                                  {formatDynamicPrice(t.entry_price || 0, coinInfo.decimals, currencyMode, penRate)} → {formatDynamicPrice(t.exit_price || currentP, coinInfo.decimals, currencyMode, penRate)}
                                 </span>
-                              </td>
-                              <td>
-                                <div className="text-[11px] tabular-nums">
-                                  <span className="text-emerald-400">
-                                    {formatDynamicPrice(t.entry_price || 0, coinInfo.decimals, currencyMode, penRate)}
-                                  </span>
-                                  <span className="text-slate-500 mx-1">→</span>
-                                  <span className="text-amber-400 font-bold">
-                                    {formatDynamicPrice(t.exit_price || currentP, coinInfo.decimals, currencyMode, penRate)}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="text-right text-slate-300 tabular-nums">
-                                ${Number(t.amount_usd || capPerGrid).toFixed(2)}
-                              </td>
-                              <td className="text-right text-slate-400 tabular-nums text-[10px]">
-                                -${fee.toFixed(3)}
-                              </td>
-                              <td className="pr-3 text-right">
-                                <span className={`font-extrabold tabular-nums ${pnl >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
-                                  {formatMicroPnl(pnl, currencyMode, penRate)}
+                              </div>
+                              <div className="text-right">
+                                <span className="text-slate-500 block">Comisión:</span>
+                                <span className="text-amber-400 font-bold tabular-nums">
+                                  -${fee.toFixed(3)}
                                 </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                              </div>
+                            </div>
+                            <div className="flex justify-between items-center text-[10px] text-slate-500">
+                              <span>Vol: ${Number(t.amount_usd || capPerGrid).toFixed(2)} USDT</span>
+                              <span>{((t as any).closed_at || t.created_at) ? new Date((t as any).closed_at || t.created_at).toLocaleTimeString() : 'Ejecutado'}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Desktop Table (hidden sm:block) */}
+                    <div className="hidden sm:block">
+                      <table className="w-full text-left text-xs font-mono whitespace-nowrap">
+                        <thead>
+                          <tr className="h-8 text-[10px] text-slate-400 uppercase font-bold border-b border-white/10 bg-[#0E1118]/80 sticky top-0">
+                            <th className="pl-3">Par / Ciclo</th>
+                            <th>Entrada → Salida</th>
+                            <th className="text-right">Volumen</th>
+                            <th className="text-right">Comisión</th>
+                            <th className="pr-3 text-right">Ganancia Neta</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {closedTrades.map((t, idx) => {
+                            const pnl = t.pnl_usd || 0;
+                            const fee = typeof t.fee_usd === 'number' ? t.fee_usd : (t.amount_usd || 0) * 0.001;
+                            return (
+                              <tr key={t.id || idx} className="hover:bg-white/[0.03] transition-colors h-10">
+                                <td className="pl-3">
+                                  <span className="font-bold text-white block">{coinInfo.symbol}/USDT</span>
+                                  <span className="text-[9px] text-slate-500 block">
+                                    {((t as any).closed_at || t.created_at) ? new Date((t as any).closed_at || t.created_at).toLocaleTimeString() : 'Ejecutado'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div className="text-[11px] tabular-nums">
+                                    <span className="text-emerald-400">
+                                      {formatDynamicPrice(t.entry_price || 0, coinInfo.decimals, currencyMode, penRate)}
+                                    </span>
+                                    <span className="text-slate-500 mx-1">→</span>
+                                    <span className="text-amber-400 font-bold">
+                                      {formatDynamicPrice(t.exit_price || currentP, coinInfo.decimals, currencyMode, penRate)}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="text-right text-slate-300 tabular-nums">
+                                  ${Number(t.amount_usd || capPerGrid).toFixed(2)}
+                                </td>
+                                <td className="text-right text-slate-400 tabular-nums text-[10px]">
+                                  -${fee.toFixed(3)}
+                                </td>
+                                <td className="pr-3 text-right">
+                                  <span className={`font-extrabold tabular-nums ${pnl >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                                    {formatMicroPnl(pnl, currencyMode, penRate)}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               ) : (

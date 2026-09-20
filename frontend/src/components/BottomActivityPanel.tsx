@@ -625,110 +625,214 @@ export const BottomActivityPanel = ({
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left min-w-[760px] whitespace-nowrap">
-                  <thead>
-                    <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8 sticky top-0 bg-[#08090C] z-10">
-                      <th className="pl-3">Hora</th>
-                      <th>Activo</th>
-                      <th>Lado</th>
-                      <th>Precio Entrada</th>
-                      <th>Precio Salida</th>
-                      <th>Monto</th>
-                      <th>Estado</th>
-                      <th className="text-right pr-2">Comisión (Fee)</th>
-                      <th className="text-right pr-4">PnL Realizado</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5 font-mono text-xs">
-                    {trades.map((tr) => {
-                      const coinInfo = getDynamicCoinInfo(tr.coin_id);
-                      const decimals = coinInfo ? coinInfo.decimals : 2;
-                      const isClosed = tr.status === 'CLOSED';
-                      const isWin = (tr.pnl_usd ?? 0) >= 0;
-                      const feeUsd = typeof tr.fee_usd === 'number'
-                        ? tr.fee_usd
-                        : ((tr.amount_usd || 0) * (tr.side === 'SELL' ? 0.002 : 0.001));
-                      const feeRatePct = typeof tr.fee_rate === 'number'
-                        ? (tr.fee_rate * 100)
-                        : (tr.side === 'SELL' ? 0.20 : 0.10);
-                      const grossPnl = typeof tr.gross_pnl_usd === 'number'
-                        ? tr.gross_pnl_usd
-                        : ((tr.pnl_usd ?? 0) + feeUsd);
+              <div>
+                {/* ─── Mobile View: Touch Cards (sm:hidden) ─── */}
+                <div className="space-y-2 sm:hidden font-mono text-xs">
+                  {trades.map((tr) => {
+                    const coinInfo = getDynamicCoinInfo(tr.coin_id);
+                    const decimals = coinInfo ? coinInfo.decimals : 2;
+                    const isClosed = tr.status === 'CLOSED';
+                    const isBuy = tr.side === 'BUY';
+                    const isWin = (tr.pnl_usd ?? 0) >= 0;
+                    const feeUsd = typeof tr.fee_usd === 'number'
+                      ? tr.fee_usd
+                      : ((tr.amount_usd || 0) * (tr.side === 'SELL' ? 0.002 : 0.001));
+                    const feeRatePct = typeof tr.fee_rate === 'number'
+                      ? (tr.fee_rate * 100)
+                      : (tr.side === 'SELL' ? 0.20 : 0.10);
+                    const grossPnl = typeof tr.gross_pnl_usd === 'number'
+                      ? tr.gross_pnl_usd
+                      : ((tr.pnl_usd ?? 0) + feeUsd);
+                    const timeInfo = formatTradeTime(tr.created_at || (tr as any).entry_time);
 
-                      const timeInfo = formatTradeTime(tr.created_at || (tr as any).entry_time);
-                      return (
-                        <tr key={tr.id} className="hover:bg-white/[0.04] transition-colors h-11">
-                          <td className="pl-3 py-1.5 text-slate-300 font-mono text-[11px] font-semibold whitespace-nowrap">
-                            <div className="flex flex-col leading-tight">
-                              <span className="text-white font-mono font-bold text-[11px]">{timeInfo.time}</span>
-                              <span className="text-[9.5px] text-slate-400 font-mono">{timeInfo.date} • {timeInfo.relative}</span>
-                            </div>
-                          </td>
-                          <td className="font-bold text-white font-sans flex items-center space-x-1.5 py-2.5">
-                            <CryptoIcon symbol={coinInfo?.symbol || tr.coin_id} size={16} />
-                            <span className="text-white font-extrabold">{coinInfo?.name || tr.coin_id.toUpperCase()}</span>
-                            <span className="text-[10px] font-mono text-slate-400 font-bold">({coinInfo?.symbol || tr.coin_id.toUpperCase()})</span>
-                          </td>
-                          <td>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
-                                tr.side === 'BUY'
-                                  ? 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
-                                  : 'bg-rose-500/15 text-[#F6465D] border-rose-500/30'
-                              }`}
-                            >
-                              {tr.side}
-                            </span>
-                          </td>
-                          <td className="text-white tabular-nums font-bold">
-                            {formatDynamicPrice(tr.entry_price, decimals, currencyMode, penRate)}
-                          </td>
-                          <td className="text-slate-200 tabular-nums">
-                            {tr.exit_price ? formatDynamicPrice(tr.exit_price, decimals, currencyMode, penRate) : '-'}
-                          </td>
-                          <td className="text-slate-300 tabular-nums">
-                            {formatDynamicPrice(tr.amount_usd, 2, currencyMode, penRate)}
-                          </td>
-                          <td>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${isClosed ? 'bg-white/5 text-slate-400 border-white/10' : 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'}`}>
-                              {tr.status}
-                            </span>
-                          </td>
-                          <td className="text-right pr-2 tabular-nums">
-                            <div className="flex flex-col items-end leading-tight">
-                              <span className="text-amber-400/90 font-bold text-[11px]">
-                                -{formatDynamicPrice(feeUsd, 2, currencyMode, penRate)}
-                              </span>
-                              <span className="text-[9px] text-slate-500 font-mono">
-                                {feeRatePct.toFixed(2)}% {tr.side === 'SELL' ? 'RT' : ''}
+                    return (
+                      <div key={tr.id} className="p-3 rounded-xl bg-[#0E1118] border border-white/10 space-y-2 hover:border-white/20 transition-all">
+                        {/* Card Header: Coin + Side + Time */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <CryptoIcon symbol={coinInfo?.symbol || tr.coin_id} size={20} />
+                            <div>
+                              <span className="font-extrabold text-white text-xs">{coinInfo?.symbol || tr.coin_id.toUpperCase()}/USDT</span>
+                              <span className="text-[9.5px] text-slate-400 block font-mono">
+                                {timeInfo.time} · {timeInfo.relative}
                               </span>
                             </div>
-                          </td>
-                          <td
-                            className={`text-right pr-3 font-extrabold tabular-nums ${
-                              !isClosed ? 'text-slate-500' : isWin ? 'text-[#0ECB81]' : 'text-[#F6465D]'
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
+                              isBuy
+                                ? 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
+                                : 'bg-rose-500/15 text-[#F6465D] border-rose-500/30'
                             }`}
                           >
-                            {isClosed ? (
-                              <div className="flex flex-col items-end leading-tight">
-                                <span className={`px-2 py-0.5 rounded-lg font-black ${isWin ? 'bg-emerald-500/15 text-[#0ECB81]' : 'bg-rose-500/15 text-[#F6465D]'}`}>
+                            {isBuy ? 'COMPRA' : 'VENTA'}
+                          </span>
+                        </div>
+
+                        {/* Prices & Fee Matrix */}
+                        <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-400 bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                          <div>
+                            <span className="text-slate-500 block">Entrada → Salida:</span>
+                            <span className="text-slate-200 tabular-nums font-bold">
+                              {formatDynamicPrice(tr.entry_price, decimals, currencyMode, penRate)} → {tr.exit_price ? formatDynamicPrice(tr.exit_price, decimals, currencyMode, penRate) : (isBuy ? 'En Cartera' : '-')}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-slate-500 block">Comisión ({feeRatePct.toFixed(2)}%):</span>
+                            <span className="text-amber-400 font-bold tabular-nums">
+                              -{formatDynamicPrice(feeUsd, 2, currencyMode, penRate)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Bottom Row: Volume + Realized Status */}
+                        <div className="flex items-center justify-between pt-0.5 text-[11px]">
+                          <span className="text-slate-400 text-[10px]">
+                            Monto: <strong className="text-white">{formatDynamicPrice(tr.amount_usd, 2, currencyMode, penRate)}</strong>
+                          </span>
+                          <div>
+                            {isBuy ? (
+                              <span className="px-2 py-0.5 rounded-lg bg-white/5 text-slate-300 border border-white/10 text-[10px] font-bold">
+                                EN INVENTARIO
+                              </span>
+                            ) : isClosed ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9.5px] text-slate-400 font-mono">
+                                  Bruto: {grossPnl >= 0 ? '+' : ''}{formatDynamicPrice(grossPnl, 2, currencyMode, penRate)}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-lg font-black tabular-nums ${isWin ? 'bg-emerald-500/15 text-[#0ECB81]' : 'bg-rose-500/15 text-[#F6465D]'}`}>
                                   {isWin ? '+' : ''}
                                   {formatDynamicPrice(tr.pnl_usd ?? 0, 2, currencyMode, penRate)}
                                 </span>
-                                <span className="text-[9px] text-slate-400 font-mono mt-0.5">
-                                  Bruto: {grossPnl >= 0 ? '+' : ''}{formatDynamicPrice(grossPnl, 2, currencyMode, penRate)}
-                                </span>
                               </div>
                             ) : (
-                              'En Curso'
+                              <span className="text-slate-500 font-bold text-[10px]">En Curso</span>
                             )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* ─── Desktop View: Institutional Table (hidden sm:block) ─── */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full text-left min-w-[760px] whitespace-nowrap">
+                    <thead>
+                      <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-white/10 h-8 sticky top-0 bg-[#08090C] z-10">
+                        <th className="pl-3">Hora</th>
+                        <th>Activo</th>
+                        <th>Lado</th>
+                        <th>Precio Entrada</th>
+                        <th>Precio Salida</th>
+                        <th>Monto</th>
+                        <th>Estado</th>
+                        <th className="text-right pr-2">Comisión (Fee)</th>
+                        <th className="text-right pr-4">PnL Realizado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 font-mono text-xs">
+                      {trades.map((tr) => {
+                        const coinInfo = getDynamicCoinInfo(tr.coin_id);
+                        const decimals = coinInfo ? coinInfo.decimals : 2;
+                        const isClosed = tr.status === 'CLOSED';
+                        const isBuy = tr.side === 'BUY';
+                        const isWin = (tr.pnl_usd ?? 0) >= 0;
+                        const feeUsd = typeof tr.fee_usd === 'number'
+                          ? tr.fee_usd
+                          : ((tr.amount_usd || 0) * (tr.side === 'SELL' ? 0.002 : 0.001));
+                        const feeRatePct = typeof tr.fee_rate === 'number'
+                          ? (tr.fee_rate * 100)
+                          : (tr.side === 'SELL' ? 0.20 : 0.10);
+                        const grossPnl = typeof tr.gross_pnl_usd === 'number'
+                          ? tr.gross_pnl_usd
+                          : ((tr.pnl_usd ?? 0) + feeUsd);
+
+                        const timeInfo = formatTradeTime(tr.created_at || (tr as any).entry_time);
+                        return (
+                          <tr key={tr.id} className="hover:bg-white/[0.04] transition-colors h-11">
+                            <td className="pl-3 py-1.5 text-slate-300 font-mono text-[11px] font-semibold whitespace-nowrap">
+                              <div className="flex flex-col leading-tight">
+                                <span className="text-white font-mono font-bold text-[11px]">{timeInfo.time}</span>
+                                <span className="text-[9.5px] text-slate-400 font-mono">{timeInfo.date} • {timeInfo.relative}</span>
+                              </div>
+                            </td>
+                            <td className="font-bold text-white font-sans flex items-center space-x-1.5 py-2.5">
+                              <CryptoIcon symbol={coinInfo?.symbol || tr.coin_id} size={16} />
+                              <span className="text-white font-extrabold">{coinInfo?.name || tr.coin_id.toUpperCase()}</span>
+                              <span className="text-[10px] font-mono text-slate-400 font-bold">({coinInfo?.symbol || tr.coin_id.toUpperCase()})</span>
+                            </td>
+                            <td>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
+                                  isBuy
+                                    ? 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
+                                    : 'bg-rose-500/15 text-[#F6465D] border-rose-500/30'
+                                }`}
+                              >
+                                {tr.side}
+                              </span>
+                            </td>
+                            <td className="text-white tabular-nums font-bold">
+                              {formatDynamicPrice(tr.entry_price, decimals, currencyMode, penRate)}
+                            </td>
+                            <td className="text-slate-200 tabular-nums">
+                              {tr.exit_price ? formatDynamicPrice(tr.exit_price, decimals, currencyMode, penRate) : (isBuy ? <span className="text-slate-500">En Cartera</span> : '-')}
+                            </td>
+                            <td className="text-slate-300 tabular-nums">
+                              {formatDynamicPrice(tr.amount_usd, 2, currencyMode, penRate)}
+                            </td>
+                            <td>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                isBuy
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                                  : isClosed
+                                  ? 'bg-white/5 text-slate-400 border-white/10'
+                                  : 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
+                              }`}>
+                                {isBuy ? 'COMPRADO' : tr.status}
+                              </span>
+                            </td>
+                            <td className="text-right pr-2 tabular-nums">
+                              <div className="flex flex-col items-end leading-tight">
+                                <span className="text-amber-400/90 font-bold text-[11px]">
+                                  -{formatDynamicPrice(feeUsd, 2, currencyMode, penRate)}
+                                </span>
+                                <span className="text-[9px] text-slate-500 font-mono">
+                                  {feeRatePct.toFixed(2)}% {tr.side === 'SELL' ? 'RT' : ''}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="text-right pr-3 font-extrabold tabular-nums">
+                              {isBuy ? (
+                                <div className="flex flex-col items-end leading-tight">
+                                  <span className="px-2 py-0.5 rounded-lg font-bold bg-white/5 text-slate-300 border border-white/10 text-[10px]">
+                                    EN INVENTARIO
+                                  </span>
+                                  <span className="text-[9px] text-slate-500 font-mono mt-0.5">
+                                    Costo: {formatDynamicPrice(tr.amount_usd, 2, currencyMode, penRate)}
+                                  </span>
+                                </div>
+                              ) : isClosed ? (
+                                <div className="flex flex-col items-end leading-tight">
+                                  <span className={`px-2 py-0.5 rounded-lg font-black ${isWin ? 'bg-emerald-500/15 text-[#0ECB81]' : 'bg-rose-500/15 text-[#F6465D]'}`}>
+                                    {isWin ? '+' : ''}
+                                    {formatDynamicPrice(tr.pnl_usd ?? 0, 2, currencyMode, penRate)}
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 font-mono mt-0.5">
+                                    Bruto: {grossPnl >= 0 ? '+' : ''}{formatDynamicPrice(grossPnl, 2, currencyMode, penRate)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-slate-500 font-bold">En Curso</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>

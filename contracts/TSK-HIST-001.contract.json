@@ -1,0 +1,59 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+  "task_id": "TSK-HIST-001",
+  "epic_id": "EPC-HIST",
+  "goal": "Fix BUY trade information bug (+0.00 misleading PnL), audit trading fees per order, and implement mobile touch cards vs desktop tabular layout in trade history panels",
+  "scope": {
+    "target_files": [
+      "frontend/src/components/BottomActivityPanel.tsx",
+      "frontend/src/components/ActiveBotsPanel.tsx"
+    ],
+    "forbidden_files": [
+      "frontend/src/App.tsx",
+      "supabase/**/*",
+      "app.py",
+      "*.py"
+    ],
+    "authorized_global_files": []
+  },
+  "depends_on": ["TSK-FEES-001"],
+  "contracts": {
+    "types_file": "frontend/src/components/BottomActivityPanel.tsx",
+    "function_signatures": [
+      "export const BottomActivityPanel: React.FC<any>",
+      "export const ActiveBotsPanel: React.FC<any>"
+    ]
+  },
+  "env": {
+    "NODE_ENV": "test"
+  },
+  "execution_steps": [
+    "Fix information bug in BottomActivityPanel: closed BUY orders must show COMPRA EJECUTADA or EN INVENTARIO instead of misleading green +$0.00",
+    "Add responsive mobile cards (sm:hidden) in BottomActivityPanel trade history with zero overflow",
+    "Update desktop table (hidden sm:block) with fee and gross/net breakdown",
+    "Enhance ActiveBotsPanel trade history tab with mobile cards, fee column, and accurate BUY status",
+    "Execute automated test suite and oxlint"
+  ],
+  "commands": {
+    "test": "node --test frontend/src/__tests__/fees_and_history_responsive.test.js",
+    "lint": "npx oxlint frontend/src/components/BottomActivityPanel.tsx frontend/src/components/ActiveBotsPanel.tsx",
+    "typecheck": "npm run build --prefix frontend"
+  },
+  "acceptance_criteria": [
+    "assert.ok(bottomPanelContent.includes('sm:hidden'), 'BottomActivityPanel contains mobile responsive view')",
+    "assert.ok(bottomPanelContent.includes('COMPRA') || bottomPanelContent.includes('INVENTARIO'), 'BottomActivityPanel correctly differentiates BUY vs SELL in trade history')",
+    "assert.ok(activeBotsContent.includes('Comisión') || activeBotsContent.includes('Fee') || activeBotsContent.includes('fee'), 'ActiveBotsPanel displays fees in trade history')"
+  ],
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "Trade history renders without overflow on mobile devices and provides exact fee transparency",
+    "git diff --name-only shows only target_files"
+  ],
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/components/BottomActivityPanel.tsx frontend/src/components/ActiveBotsPanel.tsx"
+  }
+}

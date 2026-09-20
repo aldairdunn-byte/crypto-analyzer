@@ -88,6 +88,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    let profileChannel: ReturnType<typeof supabase.channel> | null = null;
+
+    const subscribeToProfileChanges = (userId: string) => {
+      // Unsubscribe from any previous channel before creating a new one
+      if (profileChannel) {
+        supabase.removeChannel(profileChannel);
+      }
+      // REALTIME FIX: subscribe to user_profiles so balance resets on any device
+      // propagate instantly to all other open sessions (cross-device sync)
+      profileChannel = supabase
+        .channel(`profile-changes:${userId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'user_profiles',
+            filter: `id=eq.${userId}`,
+          },
+          (payload) => {
+            setProfile((prev) => (prev ? { ...prev, ...(payload.new as UserProfile) } : null));
+          }
+        )
+        .subscribe();
+    };
+
     // 1. Check initial session
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       setSession(initialSession);
@@ -96,6 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsGuest(false);
         localStorage.setItem('crypto_auth_mode', 'authenticated');
         fetchProfile(initialSession.user.id, initialSession.user.email);
+        subscribeToProfileChanges(initialSession.user.id);
       } else {
         setIsGuest(true);
       }
@@ -110,15 +137,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsGuest(false);
         localStorage.setItem('crypto_auth_mode', 'authenticated');
         fetchProfile(currentSession.user.id, currentSession.user.email);
+        subscribeToProfileChanges(currentSession.user.id);
       } else {
         setIsGuest(true);
         setProfile(null);
+        if (profileChannel) {
+          supabase.removeChannel(profileChannel);
+          profileChannel = null;
+        }
       }
       setIsLoading(false);
     });
 
     return () => {
       subscription.unsubscribe();
+      if (profileChannel) {
+        supabase.removeChannel(profileChannel);
+      }
     };
   }, [fetchProfile]);
 

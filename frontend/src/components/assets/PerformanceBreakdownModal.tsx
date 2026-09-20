@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, TrendingUp, CheckCircle2, DollarSign, Layers, Activity, HelpCircle, ShieldCheck } from 'lucide-react';
+import { X, TrendingUp, CheckCircle2, DollarSign, Layers, Activity, HelpCircle, ShieldCheck, Receipt } from 'lucide-react';
 import { ModalPortal } from '../ui/ModalPortal';
 import { useModalKeyboard, formatMicroPnl } from '../../lib/formatters';
 import { CryptoIcon } from '../CryptoIcon';
@@ -47,7 +47,18 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
   const closedTrades = trades.filter((t) => t.status === 'CLOSED');
   const winnerTrades = closedTrades.filter((t) => (t.pnl_usd || 0) > 0);
 
-  // 2. Mathematical breakdown
+  // 2. Fee Calculation (VIP0 0.10% maker / 0.20% roundtrip)
+  const totalFeesPaidUsd = trades.reduce((acc, t) => {
+    const fee = typeof t.fee_usd === 'number'
+      ? t.fee_usd
+      : ((t.amount_usd || 0) * (t.side === 'SELL' ? 0.002 : 0.001));
+    return acc + fee;
+  }, 0);
+
+  // 3. Gross profit before fees
+  const grossProfitUsd = Number((totalRealizedProfitUsd + totalFeesPaidUsd).toFixed(2));
+
+  // 4. Mathematical breakdown
   const historicalProfitUsd = Math.max(0, Number((totalRealizedProfitUsd - gridBotsProfitUsd - autoTraderProfitUsd).toFixed(2)));
   const totalFloatingPnlUsd = Number((totalSpotPnlUsd + totalBotsFloatingPnlUsd).toFixed(2));
   const totalActiveCyclePnl = Number((gridBotsProfitUsd + autoTraderProfitUsd + totalFloatingPnlUsd).toFixed(2));
@@ -153,7 +164,55 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
                   </div>
                 </div>
 
-                {/* 2. Breakdown Matrix */}
+                {/* 2. EXACT ACCOUNTING FORMULA AUDIT (Bruto - Fees = Neto) */}
+                <div className="bg-[#08090C] rounded-xl p-3.5 border border-amber-500/20 bg-amber-500/[0.02] space-y-2.5 font-mono">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <div className="flex items-center gap-1.5 text-[#F59E0B] font-bold">
+                      <Receipt className="w-4 h-4" />
+                      <span>Auditoría Contable de Comisiones y Retorno Neto</span>
+                    </div>
+                    <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/25 px-2 py-0.5 rounded-full font-bold">
+                      Tasa VIP0 0.10% / 0.20% RT
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
+                    <div className="bg-white/[0.02] p-2.5 rounded-lg border border-white/5">
+                      <span className="text-[10px] text-slate-400 uppercase font-semibold block">Ganancia Bruta</span>
+                      <span className="font-bold text-white text-sm tabular-nums">
+                        +${grossProfitUsd.toFixed(2)} USDT
+                      </span>
+                      <span className="text-[9px] text-slate-500 block">Antes de comisiones</span>
+                    </div>
+
+                    <div className="bg-white/[0.02] p-2.5 rounded-lg border border-white/5">
+                      <span className="text-[10px] text-amber-400/90 uppercase font-semibold block">Comisiones Exchange (Fees)</span>
+                      <span className="font-bold text-amber-400 text-sm tabular-nums">
+                        -${totalFeesPaidUsd.toFixed(2)} USDT
+                      </span>
+                      <span className="text-[9px] text-slate-500 block">Deducciones exchange</span>
+                    </div>
+
+                    <div className="bg-white/[0.02] p-2.5 rounded-lg border border-white/5">
+                      <span className="text-[10px] text-emerald-400 uppercase font-semibold block">Ganancia Neta Real</span>
+                      <span className="font-black text-[#0ECB81] text-sm tabular-nums">
+                        +${totalRealizedProfitUsd.toFixed(2)} USDT
+                      </span>
+                      <span className="text-[9px] text-emerald-500/80 block">Acreditada en billetera</span>
+                    </div>
+                  </div>
+
+                  <div className="text-[10.5px] text-slate-400 pt-1 border-t border-white/5 flex flex-wrap items-center justify-between gap-1">
+                    <span>
+                      📐 <strong className="text-white">Cálculo exacto:</strong> ${grossProfitUsd.toFixed(2)} (Bruto) - ${totalFeesPaidUsd.toFixed(2)} (Comisiones) = <strong className="text-[#0ECB81]">+${totalRealizedProfitUsd.toFixed(2)} USDT Neto</strong>
+                    </span>
+                    <span className="text-slate-500 text-[10px]">
+                      Fricción de comisiones: {grossProfitUsd > 0 ? ((totalFeesPaidUsd / grossProfitUsd) * 100).toFixed(1) : '0.0'}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Breakdown Matrix */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {/* Realized Cash Gains */}
                   <div className="bg-[#08090C] rounded-xl p-3.5 border border-white/5 space-y-2.5">
@@ -218,7 +277,7 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
                   </div>
                 </div>
 
-                {/* 3. Mathematical Reconciliation Explanation */}
+                {/* 4. Mathematical Reconciliation Explanation */}
                 <div className="bg-[#08090C] rounded-xl p-3.5 border border-blue-500/20 bg-blue-500/[0.02] space-y-2 text-[11px] text-slate-300">
                   <div className="flex items-center gap-1.5 text-blue-400 font-bold">
                     <HelpCircle className="w-4 h-4" />
@@ -232,7 +291,7 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
                   </p>
                 </div>
 
-                {/* 4. Active Bots Contribution Table */}
+                {/* 5. Active Bots Contribution Table */}
                 <div className="space-y-2">
                   <div className="text-[11px] font-bold text-slate-300 font-mono uppercase tracking-wider">
                     Contribución por Asistente Grid Activo ({consolidatedBots.filter((b) => !b.isAutoTrader).length} Bots)
@@ -265,11 +324,11 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
                 </div>
               </>
             ) : (
-              /* WINNERS TAB: Detailed List of Winning Operations */
+              /* WINNERS TAB: Detailed List of Winning Operations with Responsive Mobile Cards + Desktop Table */
               <div className="space-y-2.5">
-                <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono flex-wrap gap-1">
                   <span>Operaciones Cerradas con Beneficio Positivo</span>
-                  <span className="text-[#0ECB81] font-bold">{winnerTrades.length} transacciones registradas</span>
+                  <span className="text-[#0ECB81] font-bold">{winnerTrades.length} transacciones auditadas</span>
                 </div>
 
                 {winnerTrades.length === 0 ? (
@@ -277,37 +336,128 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
                     No hay operaciones ganadoras cerradas aún. Los bots están ejecutando órdenes en la grilla.
                   </div>
                 ) : (
-                  <div className="bg-[#08090C] rounded-xl border border-white/5 divide-y divide-white/5 font-mono text-xs max-h-[50vh] overflow-y-auto">
-                    {winnerTrades.map((t) => {
-                      const netPnl = t.pnl_usd || 0;
-                      const pnlPct = t.pnl_pct || 0;
-                      return (
-                        <div key={t.id} className="p-2.5 sm:p-3 flex items-center justify-between hover:bg-white/[0.02] transition-all">
-                          <div className="flex items-center gap-2">
-                            <CryptoIcon symbol={t.coin_id.toUpperCase()} size={20} />
-                            <div>
-                              <div className="font-bold text-white flex items-center gap-1.5">
-                                <span>{t.coin_id.toUpperCase()}</span>
+                  <div className="bg-[#08090C] rounded-xl border border-white/5 max-h-[55vh] overflow-y-auto font-mono text-xs">
+                    {/* Mobile View: Touch Cards (sm:hidden) */}
+                    <div className="divide-y divide-white/5 sm:hidden">
+                      {winnerTrades.map((t) => {
+                        const netPnl = t.pnl_usd || 0;
+                        const pnlPct = t.pnl_pct || 0;
+                        const feeUsd = typeof t.fee_usd === 'number'
+                          ? t.fee_usd
+                          : ((t.amount_usd || 0) * (t.side === 'SELL' ? 0.002 : 0.001));
+                        const grossPnl = typeof t.gross_pnl_usd === 'number'
+                          ? t.gross_pnl_usd
+                          : (netPnl + feeUsd);
+
+                        return (
+                          <div key={t.id} className="p-3 space-y-2 hover:bg-white/[0.02] transition-colors">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <CryptoIcon symbol={t.coin_id.toUpperCase()} size={20} />
+                                <span className="font-bold text-white text-xs">{t.coin_id.toUpperCase()}</span>
                                 <span className="text-[9px] bg-emerald-500/10 text-[#0ECB81] px-1.5 py-0.5 rounded border border-emerald-500/20">
                                   {t.side === 'SELL' ? 'VENTA SPOT' : 'GRID ARBITRAJE'}
                                 </span>
                               </div>
-                              <div className="text-[10px] text-slate-400">
-                                Entrada: ${t.entry_price?.toFixed(4)} ➔ Salida: ${t.exit_price?.toFixed(4) || '-'}
+                              <div className="text-right">
+                                <span className="text-[#0ECB81] font-black tabular-nums text-xs">
+                                  +{formatMicroPnl(netPnl, currencyMode, penRate)}
+                                </span>
+                                <span className="text-[9px] text-emerald-400 block">
+                                  +{pnlPct.toFixed(2)}% ROI
+                                </span>
                               </div>
                             </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-[#0ECB81] font-black tabular-nums">
-                              +{formatMicroPnl(netPnl, currencyMode, penRate)}
+
+                            <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-400 bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                              <div>
+                                <span className="text-slate-500 block">Entrada ➔ Salida:</span>
+                                <span className="text-slate-300 tabular-nums">
+                                  ${t.entry_price?.toFixed(4)} ➔ ${t.exit_price?.toFixed(4) || '-'}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-slate-500 block">Comisión Exchange:</span>
+                                <span className="text-amber-400/90 font-bold tabular-nums">
+                                  -${feeUsd.toFixed(4)} USDT
+                                </span>
+                              </div>
                             </div>
-                            <div className="text-[10px] text-emerald-400">
-                              {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+
+                            <div className="flex justify-between items-center text-[10px] text-slate-400 pt-0.5">
+                              <span>Monto: ${Number(t.amount_usd || 0).toFixed(2)} USDT</span>
+                              <span className="text-slate-400 font-semibold">
+                                Bruto: +${grossPnl.toFixed(4)}
+                              </span>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
+
+                    {/* Desktop View: Institutional Table (hidden sm:block) */}
+                    <div className="hidden sm:block overflow-x-auto">
+                      <table className="w-full text-left text-xs whitespace-nowrap">
+                        <thead>
+                          <tr className="h-8 text-[10px] text-slate-400 uppercase font-bold border-b border-white/10 bg-[#0E1118]/80 sticky top-0">
+                            <th className="pl-3">Par / Tipo</th>
+                            <th>Entrada → Salida</th>
+                            <th className="text-right">Volumen</th>
+                            <th className="text-right">PnL Bruto</th>
+                            <th className="text-right">Comisión</th>
+                            <th className="pr-3 text-right">Ganancia Neta</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {winnerTrades.map((t) => {
+                            const netPnl = t.pnl_usd || 0;
+                            const feeUsd = typeof t.fee_usd === 'number'
+                              ? t.fee_usd
+                              : ((t.amount_usd || 0) * (t.side === 'SELL' ? 0.002 : 0.001));
+                            const grossPnl = typeof t.gross_pnl_usd === 'number'
+                              ? t.gross_pnl_usd
+                              : (netPnl + feeUsd);
+
+                            return (
+                              <tr key={t.id} className="hover:bg-white/[0.03] transition-colors h-10">
+                                <td className="pl-3">
+                                  <div className="flex items-center gap-2">
+                                    <CryptoIcon symbol={t.coin_id.toUpperCase()} size={18} />
+                                    <div>
+                                      <span className="font-bold text-white block">{t.coin_id.toUpperCase()}/USDT</span>
+                                      <span className="text-[9px] text-[#0ECB81] block">
+                                        {t.side === 'SELL' ? 'VENTA SPOT' : 'GRID FILL'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="text-[11px] tabular-nums">
+                                    <span className="text-emerald-400">${t.entry_price?.toFixed(4)}</span>
+                                    <span className="text-slate-500 mx-1">→</span>
+                                    <span className="text-amber-400 font-bold">${t.exit_price?.toFixed(4) || '-'}</span>
+                                  </div>
+                                </td>
+                                <td className="text-right text-slate-300 tabular-nums">
+                                  ${Number(t.amount_usd || 0).toFixed(2)}
+                                </td>
+                                <td className="text-right text-slate-200 tabular-nums">
+                                  +${grossPnl.toFixed(4)}
+                                </td>
+                                <td className="text-right text-amber-400/90 tabular-nums text-[11px] font-bold">
+                                  -${feeUsd.toFixed(4)}
+                                </td>
+                                <td className="pr-3 text-right">
+                                  <span className="font-black text-[#0ECB81] tabular-nums">
+                                    +{formatMicroPnl(netPnl, currencyMode, penRate)}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>
