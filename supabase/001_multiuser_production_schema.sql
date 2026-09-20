@@ -161,6 +161,12 @@ BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.bot_trades;
     EXCEPTION WHEN duplicate_object THEN NULL;
     END;
+    BEGIN
+        -- CRITICAL FIX: user_profiles must be in Realtime publication
+        -- so balance resets propagate instantly to all open sessions
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.user_profiles;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
 END $$;
 
 -- 9. PURGA LIMPIA DE DATOS DE PRUEBA (ARRANQUE EN BLANCO BETA)

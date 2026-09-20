@@ -1,0 +1,66 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+  "task_id": "TSK-HOME-001",
+  "epic_id": "EPC-ANTISLOP",
+  "goal": "Refactor Home Dashboard screen to remove emojis, inject loading shimmer states, implement right-aligned tabular numerals, and enforce UXPeak cognitive defaults",
+  "scope": {
+    "target_files": [
+      "frontend/src/components/DashboardView.tsx",
+      "frontend/src/components/dashboard/QuickActionSheet.tsx",
+      "frontend/src/components/ui/DashboardSkeleton.tsx"
+    ],
+    "forbidden_files": [
+      "frontend/src/lib/supabase.ts",
+      "frontend/src/App.tsx",
+      "supabase/**/*",
+      "app.py",
+      "*.py"
+    ],
+    "authorized_global_files": []
+  },
+  "depends_on": [],
+  "contracts": {
+    "types_file": "frontend/src/lib/quantitativeEngine.ts",
+    "function_signatures": [
+      "export const DashboardView: React.FC<DashboardViewProps>",
+      "export const QuickActionSheet: React.FC<QuickActionSheetProps>",
+      "export const DashboardSkeleton: React.FC"
+    ]
+  },
+  "env": {
+    "NODE_ENV": "test"
+  },
+  "execution_steps": [
+    "Verify target components against .antigravity/DESIGN.md rules",
+    "Replace all emoji literals in QuickActionSheet with Lucide vector icons",
+    "Implement DashboardSkeleton with shimmer animation matching exact layout geometry to prevent layout shifts",
+    "Apply tabular-nums and text-right alignment to financial data metrics in DashboardView",
+    "Calibrate QuickActionSheet emergency stop button with loss aversion copy quantifying protected capital",
+    "Implement unit and regression test suite verifying zero emojis, skeleton presence, and tabular alignment"
+  ],
+  "commands": {
+    "test": "node --test frontend/src/__tests__/treemap_layout.test.js",
+    "lint": "npx oxlint frontend/src/components/DashboardView.tsx frontend/src/components/dashboard/QuickActionSheet.tsx",
+    "typecheck": "npm run build --prefix frontend"
+  },
+  "acceptance_criteria": [
+    "assert.strictEqual(/[\\u{1F300}-\\u{1F9FF}]/u.test(quickActionHtml), false, 'Zero emojis present in QuickActionSheet')",
+    "assert.ok(dashboardHtml.includes('DashboardSkeleton'), 'DashboardSkeleton rendered when isLoading is true')",
+    "assert.ok(quickActionHtml.includes('OctagonAlert') || quickActionHtml.includes('Shield'), 'Emergency action uses Lucide or Phosphor vector icon')",
+    "assert.ok(container.querySelectorAll('.text-right').length >= 10, 'Numeric data columns have text-right alignment')",
+    "assert.ok(container.querySelectorAll('.tabular-nums').length >= 10, 'Numeric figures use tabular-nums font feature')"
+  ],
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "All numeric values in DashboardView and QuickActionSheet use right alignment and tabular numerals",
+    "Zero emojis detected in QuickActionSheet markup and toasts",
+    "git diff --name-only shows only target_files"
+  ],
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/components/DashboardView.tsx frontend/src/components/dashboard/QuickActionSheet.tsx"
+  }
+}

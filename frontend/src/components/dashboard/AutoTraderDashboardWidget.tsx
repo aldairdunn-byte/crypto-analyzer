@@ -48,6 +48,42 @@ export const AutoTraderDashboardWidget: React.FC<AutoTraderDashboardWidgetProps>
     return `${h}h ${m < 10 ? '0' : ''}${m}m`;
   };
 
+  if (!isOperating && status === 'IDLE') {
+    return (
+      <div className="relative overflow-hidden rounded-2xl bg-[#0B0E14] border border-white/[0.08] p-3 sm:p-3.5 shadow-lg backdrop-blur-xl transition-all duration-300 hover:border-amber-500/30 flex items-center justify-between gap-3 select-none">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 shrink-0">
+            <Robot weight="duotone" className="w-5 h-5 text-[#F59E0B]" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black text-white tracking-tight">Auto Trader Quant</span>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/15 text-[#F59E0B] border border-amber-500/30">
+                PRO BETA
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-white/[0.04] text-slate-400 border border-white/10">
+                INACTIVO
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 truncate">
+              Estrategia IA: <span className="text-slate-200 font-semibold">MOMENTUM INTRADAY (+2.20% TP)</span>
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onNavigateToAutoTrader}
+          className="flex items-center justify-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-[#F59E0B] border border-amber-500/30 font-sans text-xs font-bold transition-all cursor-pointer shrink-0 shadow-sm"
+        >
+          <ShieldCheck weight="duotone" className="w-4 h-4 text-amber-400" />
+          <span>Iniciar IA</span>
+          <ArrowRight weight="bold" className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="relative overflow-hidden rounded-2xl bg-[#0B0E14] border border-white/[0.08] p-4 shadow-xl backdrop-blur-xl transition-all duration-300 hover:border-amber-500/30">
       {/* Background Subtle Gradient Glow */}

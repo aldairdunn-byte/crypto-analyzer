@@ -64,7 +64,7 @@ export const QuickActionSheet = ({
       soundFx.warning();
       addToast({
         type: 'WARNING',
-        title: '🛑 Parada de Emergencia Activada',
+        title: 'Parada de Emergencia Activada',
         message: 'AutoTrader pausado y todos los bots activos puestos en modo seguro.',
       });
       setTimeout(() => setEmergencyTriggered(false), 3500);
@@ -169,7 +169,7 @@ export const QuickActionSheet = ({
         <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/10 text-xs">
           <div className="flex items-center gap-2">
             <span className="text-slate-400 font-medium">Disponible:</span>
-            <span className="font-mono font-black text-amber-400">
+            <span className="font-mono font-black text-amber-400 text-right tabular-nums">
               {formatDynamicPrice(availableUsdt, 2, currencyMode, penRate)}
             </span>
           </div>
@@ -210,8 +210,8 @@ export const QuickActionSheet = ({
               </>
             ) : (
               <>
-                <Shield className="w-4 h-4" />
-                <span>🛑 Parada de Emergencia (Pausar Todo)</span>
+                <Shield className="w-4 h-4 text-rose-300" />
+                <span>Parada de Emergencia — Proteger Capital</span>
               </>
             )}
           </button>
@@ -274,15 +274,16 @@ export const QuickActionSheet = ({
             </div>
             <div className="flex items-center justify-between text-xs font-mono">
               <span className="font-bold text-white">{topHero.coin?.name} ({topHero.coin?.symbol})</span>
-              <span className="text-amber-400 font-bold">${topHero.price?.toFixed(4)}</span>
+              <span className="text-amber-400 font-bold text-right tabular-nums">${topHero.price?.toFixed(4)}</span>
             </div>
             <div className="flex gap-2 pt-1">
               <button
                 onClick={handleQuickTradeHero}
                 disabled={isExecutingHeroTrade}
-                className="flex-1 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs shadow-md transition-all cursor-pointer disabled:opacity-50"
+                className="flex-1 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs shadow-md transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
-                {isExecutingHeroTrade ? 'Comprando...' : '⚡ Compra Rápida $100'}
+                <Zap className="w-3.5 h-3.5 fill-current" />
+                <span>{isExecutingHeroTrade ? 'Comprando...' : 'Compra Rápida $100'}</span>
               </button>
               <button
                 onClick={() => {

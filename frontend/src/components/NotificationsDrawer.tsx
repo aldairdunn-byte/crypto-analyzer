@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { ModalPortal } from './ui/ModalPortal';
 import { type PlainSpanishNotification } from '../lib/notifications';
+import { useAuth } from '../contexts/AuthContext';
+import { subscribeToRenderPush, getNativeNotificationPermission } from '../lib/pwaNotifications';
 import { CryptoIcon } from './CryptoIcon';
 import {
   Bell,
@@ -37,7 +39,35 @@ export const NotificationsDrawer = ({
   onClearAllNotifications,
   onSelectNotification,
 }: NotificationsDrawerProps) => {
+  const { user } = useAuth();
   const [filter, setFilter] = useState<'ALL' | 'PROFIT' | 'BUY_OPPORTUNITY' | 'GRID_SETUP' | 'DANGER'>('ALL');
+  const [pushStatus, setPushStatus] = useState<string | null>(null);
+  const [isSubscribing, setIsSubscribing] = useState<boolean>(false);
+  const [nativePerm, setNativePerm] = useState<NotificationPermission | 'unsupported'>(() =>
+    typeof window !== 'undefined' ? getNativeNotificationPermission() : 'unsupported'
+  );
+
+  const handleEnablePush = async () => {
+    setIsSubscribing(true);
+    try {
+      const res = await subscribeToRenderPush(user?.id);
+      if (res.ok) {
+        setNativePerm('granted');
+        setPushStatus('¡Vinculado con éxito! Recibirás alertas 24/7.');
+      } else if (res.reason === 'missing-user') {
+        setPushStatus('Inicia sesión para recibir alertas en este teléfono.');
+      } else if (res.reason === 'permission-denied') {
+        setNativePerm('denied');
+        setPushStatus('Permiso denegado en el navegador.');
+      } else {
+        setPushStatus('Dispositivo vinculado localmente.');
+      }
+    } catch {
+      setPushStatus('Error al conectar con Render Push.');
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -121,6 +151,39 @@ export const NotificationsDrawer = ({
             </button>
           </div>
         </div>
+
+        {/* 1-Click Push Notification Enrollment Banner */}
+        {nativePerm !== 'granted' && (
+          <div className="mx-3 my-2.5 p-3 rounded-xl bg-gradient-to-r from-[#0ECB81]/15 via-[#0ECB81]/5 to-transparent border border-[#0ECB81]/30 flex items-center justify-between gap-3 shadow-lg shadow-[#0ECB81]/5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-[#0ECB81]/20 border border-[#0ECB81]/40 flex items-center justify-center text-[#0ECB81] shrink-0">
+                <Sparkles className="w-4 h-4 animate-pulse" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white tracking-tight flex items-center gap-1.5">
+                  <span>Alertas 24/7 en Pantalla</span>
+                  <span className="px-1.5 py-0.5 bg-[#0ECB81]/20 text-[#0ECB81] rounded text-[9px] font-black uppercase font-mono">PWA</span>
+                </div>
+                <p className="text-[11px] text-slate-400 truncate">
+                  {pushStatus || 'Recibe compras y ventas con la app cerrada'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleEnablePush}
+              disabled={isSubscribing}
+              className="px-3 py-1.5 rounded-lg bg-[#0ECB81] hover:bg-[#0ECB81]/90 text-black font-extrabold text-xs shrink-0 transition-all active:scale-95 shadow-md shadow-[#0ECB81]/20 cursor-pointer disabled:opacity-50"
+            >
+              {isSubscribing ? 'Conectando...' : 'Activar'}
+            </button>
+          </div>
+        )}
+        {nativePerm === 'granted' && pushStatus && (
+          <div className="mx-3 my-2 px-3 py-1.5 rounded-lg bg-[#0ECB81]/10 border border-[#0ECB81]/20 text-[11px] text-[#0ECB81] font-semibold flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+            <span>{pushStatus}</span>
+          </div>
+        )}
 
         {/* Filter Pills */}
         <div className="p-2.5 bg-[#08090C] border-b border-white/5 flex items-center space-x-1.5 overflow-x-auto no-scrollbar">

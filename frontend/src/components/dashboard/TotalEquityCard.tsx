@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Wallet, Bot, PieChart, TrendingUp, TrendingDown, Cpu } from 'lucide-react';
+import { Wallet, Bot, PieChart, TrendingUp, TrendingDown, Cpu, Eye, EyeOff } from 'lucide-react';
 
 interface TotalEquityCardProps {
   virtualUsdt: number;
@@ -24,6 +24,9 @@ interface TotalEquityCardProps {
   hideBalances: boolean;
   currencyMode: 'USD' | 'PEN';
   penRate: number;
+  onToggleHideBalances?: () => void;
+  isLiveMode?: boolean;
+  onTogglePaperMode?: () => void;
 }
 
 export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
@@ -49,6 +52,9 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
   hideBalances,
   currencyMode,
   penRate,
+  onToggleHideBalances,
+  isLiveMode,
+  onTogglePaperMode,
 }) => {
   const [pnlPeriod, setPnlPeriod] = useState<'24H' | '7D' | 'TOTAL'>('24H');
 
@@ -96,16 +102,47 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
 
   return (
     <div className="bg-[#0D1117] border border-white/[0.08] rounded-2xl p-3.5 sm:p-4 shadow-xl select-none">
-      {/* Top Half: Patrimonio + PnL + Donut Ring */}
+      {/* Top Header of Card: Label + Controls (Hide Balances & Demo/Real toggle) */}
+      <div className="flex items-center justify-between pb-2 border-b border-white/[0.06] mb-3">
+        <div className="flex items-center space-x-2">
+          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider font-sans">
+            Patrimonio Neto Total
+          </span>
+          {onToggleHideBalances && (
+            <button
+              onClick={onToggleHideBalances}
+              type="button"
+              className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              title={hideBalances ? "Mostrar saldos" : "Ocultar saldos"}
+            >
+              {hideBalances ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+          )}
+        </div>
+
+        {onTogglePaperMode && (
+          <button
+            onClick={onTogglePaperMode}
+            type="button"
+            className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+              isLiveMode
+                ? 'bg-rose-500/15 border-rose-500/30 text-rose-300 hover:bg-rose-500/25'
+                : 'bg-amber-500/15 border-amber-500/30 text-[#F59E0B] hover:bg-amber-500/25'
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${isLiveMode ? 'bg-rose-400' : 'bg-amber-400'}`} />
+            <span>{isLiveMode ? 'Modo REAL' : 'Modo DEMO'}</span>
+          </button>
+        )}
+      </div>
+
+      {/* Top Half: Balance & PnL + Donut Ring */}
       <div className="flex items-center justify-between pb-3.5 border-b border-white/[0.06] gap-2">
         {/* Left Side: Balance & PnL Box */}
         <div className="space-y-1 min-w-0">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider font-sans block">
-            PATRIMONIO TOTAL
-          </span>
-          <div className="flex items-baseline space-x-1.5 font-mono">
-            <span className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tabular-nums tracking-tight">
-              {hideBalances ? '••••••••' : `$ ${virtualUsdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          <div className="flex items-baseline space-x-1 font-mono">
+            <span className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tabular-nums tracking-tight">
+              {hideBalances ? '••••••••' : `$${virtualUsdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </span>
           </div>
           <div className="text-[11px] font-mono text-slate-400 font-medium">
@@ -113,7 +150,7 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
               ? ''
               : currencyMode === 'USD'
                 ? `≈ S/ ${(virtualUsdt * penRate).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                : `≈ $ ${virtualUsdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
+                : `≈ $${virtualUsdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
           </div>
 
           {/* Dynamic PnL Capsule with Period Tabs (24H / 7D / Total) */}
@@ -255,9 +292,10 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
             </svg>
             {/* Center Text */}
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-1 pointer-events-none">
-              <span className="text-[9px] sm:text-[10px] font-bold text-slate-300 leading-tight font-sans">
-                Distribución<br /><span className="text-slate-400 text-[8.5px]">del Capital</span>
+              <span className="text-base font-mono font-black text-[#0ECB81] tabular-nums leading-none">
+                {freePct}%
               </span>
+              <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider mt-0.5">Libre</span>
             </div>
           </div>
         </div>
@@ -266,7 +304,7 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
       {/* Bottom 4 Columns Responsive Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 pt-3">
         {/* Col 1: Capital Libre */}
-        <div className="space-y-1 min-w-0 bg-[#08090C]/60 p-2 sm:p-2.5 rounded-xl border border-white/[0.04]">
+        <div className="space-y-1 min-w-0 bg-white/[0.02] hover:bg-white/[0.04] p-2 sm:p-2.5 rounded-xl border border-white/[0.06] transition-all">
           <div className="flex items-start justify-between">
             <div className="leading-tight">
               <span className="text-[10px] sm:text-[11px] text-slate-300 font-semibold block truncate">Capital Libre</span>
@@ -274,8 +312,8 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
             </div>
             <Wallet className="w-3.5 h-3.5 text-[#0ECB81] shrink-0 mt-0.5" />
           </div>
-          <div className="font-mono font-bold text-white text-xs sm:text-sm truncate">
-            {hideBalances ? '••••••' : `$ ${availableUsdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          <div className="font-mono font-bold text-white text-xs sm:text-sm truncate tabular-nums">
+            {hideBalances ? '••••••' : `$${availableUsdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           </div>
           <div className="text-[9px] sm:text-[10px] font-mono text-[#0ECB81] font-medium truncate">
             {hideBalances ? '' : `≈ S/ ${(availableUsdt * penRate).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -291,7 +329,7 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
         {/* Col 2: Auto Trader IA */}
         <div
           title={autoTraderAllocated ? `Capital Asignado: $${autoTraderAllocated.toFixed(2)}` : undefined}
-          className="space-y-1 min-w-0 bg-[#08090C]/60 p-2 sm:p-2.5 rounded-xl border border-amber-500/20"
+          className="space-y-1 min-w-0 bg-white/[0.02] hover:bg-white/[0.04] p-2 sm:p-2.5 rounded-xl border border-amber-500/20 transition-all"
         >
           <div className="flex items-start justify-between">
             <div className="leading-tight">
@@ -301,11 +339,11 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
             <Cpu className="w-3.5 h-3.5 text-[#F59E0B] shrink-0 mt-0.5" />
           </div>
           <div className="flex items-baseline justify-between gap-1">
-            <div className="font-mono font-bold text-white text-xs sm:text-sm truncate">
-              {hideBalances ? '••••••' : `$ ${effectiveAutoTrader.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            <div className="font-mono font-bold text-white text-xs sm:text-sm truncate tabular-nums">
+              {hideBalances ? '••••••' : `$${effectiveAutoTrader.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </div>
             {!hideBalances && autoTraderUnrealizedPnl !== undefined && Math.abs(autoTraderUnrealizedPnl) >= 0.01 && (
-              <span className={`text-[8.5px] font-mono font-bold shrink-0 ${autoTraderUnrealizedPnl >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+              <span className={`text-[8.5px] font-mono font-bold shrink-0 tabular-nums ${autoTraderUnrealizedPnl >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
                 {autoTraderUnrealizedPnl >= 0 ? '+' : ''}${autoTraderUnrealizedPnl.toFixed(2)}
               </span>
             )}
@@ -314,7 +352,7 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
             {hideBalances ? '' : `≈ S/ ${(effectiveAutoTrader * penRate).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           </div>
           <div className="flex items-center space-x-1.5 pt-0.5">
-            <span className="text-[9px] font-mono font-bold text-slate-400">{effectiveAutoTraderPct}%</span>
+            <span className="text-[9px] font-mono font-bold text-slate-400 tabular-nums">{effectiveAutoTraderPct}%</span>
             <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
               <div className="h-full bg-[#F59E0B] rounded-full shadow-[0_0_6px_#F59E0B]" style={{ width: `${Math.min(100, effectiveAutoTraderPct)}%` }} />
             </div>
@@ -322,7 +360,7 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
         </div>
 
         {/* Col 3: Bots Grid */}
-        <div className="space-y-1 min-w-0 bg-[#08090C]/60 p-2 sm:p-2.5 rounded-xl border border-white/[0.04]">
+        <div className="space-y-1 min-w-0 bg-white/[0.02] hover:bg-white/[0.04] p-2 sm:p-2.5 rounded-xl border border-white/[0.06] transition-all">
           <div className="flex items-start justify-between">
             <div className="leading-tight">
               <span className="text-[10px] sm:text-[11px] text-slate-300 font-semibold block truncate">Bots Grid</span>
@@ -330,14 +368,14 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
             </div>
             <Bot className="w-3.5 h-3.5 text-[#38BDF8] shrink-0 mt-0.5" />
           </div>
-          <div className="font-mono font-bold text-white text-xs sm:text-sm truncate">
-            {hideBalances ? '••••••' : `$ ${effectiveGridBots.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          <div className="font-mono font-bold text-white text-xs sm:text-sm truncate tabular-nums">
+            {hideBalances ? '••••••' : `$${effectiveGridBots.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           </div>
           <div className="text-[9px] sm:text-[10px] font-mono text-[#38BDF8] font-medium truncate">
             {hideBalances ? '' : `≈ S/ ${(effectiveGridBots * penRate).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           </div>
           <div className="flex items-center space-x-1.5 pt-0.5">
-            <span className="text-[9px] font-mono font-bold text-slate-400">{effectiveGridPct}%</span>
+            <span className="text-[9px] font-mono font-bold text-slate-400 tabular-nums">{effectiveGridPct}%</span>
             <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
               <div className="h-full bg-[#38BDF8] rounded-full shadow-[0_0_6px_#38BDF8]" style={{ width: `${Math.min(100, effectiveGridPct)}%` }} />
             </div>
@@ -345,7 +383,7 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
         </div>
 
         {/* Col 4: Tenencias Spot */}
-        <div className="space-y-1 min-w-0 bg-[#08090C]/60 p-2 sm:p-2.5 rounded-xl border border-white/[0.04]">
+        <div className="space-y-1 min-w-0 bg-white/[0.02] hover:bg-white/[0.04] p-2 sm:p-2.5 rounded-xl border border-white/[0.06] transition-all">
           <div className="flex items-start justify-between">
             <div className="leading-tight">
               <span className="text-[10px] sm:text-[11px] text-slate-300 font-semibold block truncate">Tenencias Spot</span>
@@ -353,14 +391,14 @@ export const TotalEquityCard: React.FC<TotalEquityCardProps> = ({
             </div>
             <PieChart className="w-3.5 h-3.5 text-[#8B5CF6] shrink-0 mt-0.5" />
           </div>
-          <div className="font-mono font-bold text-white text-xs sm:text-sm truncate">
-            {hideBalances ? '••••••' : `$ ${spotValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          <div className="font-mono font-bold text-white text-xs sm:text-sm truncate tabular-nums">
+            {hideBalances ? '••••••' : `$${spotValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           </div>
           <div className="text-[9px] sm:text-[10px] font-mono text-[#8B5CF6] font-medium truncate">
             {hideBalances ? '' : `≈ S/ ${(spotValue * penRate).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           </div>
           <div className="flex items-center space-x-1.5 pt-0.5">
-            <span className="text-[9px] font-mono font-bold text-slate-400">{spotPct}%</span>
+            <span className="text-[9px] font-mono font-bold text-slate-400 tabular-nums">{spotPct}%</span>
             <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
               <div className="h-full bg-[#8B5CF6] rounded-full shadow-[0_0_6px_#8B5CF6]" style={{ width: `${Math.min(100, spotPct)}%` }} />
             </div>

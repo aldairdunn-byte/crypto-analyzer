@@ -385,7 +385,38 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     // 1. Initial hydration from Supabase
     void fetchAutoTraderSessionFromSupabase(user.id).then((cloudSession: AutoTraderSessionRow | null) => {
-      if (!isMounted || !cloudSession) return;
+      if (!isMounted) return;
+
+      // SSOT GUARD: If cloud session does not exist or is STOPPED in Supabase,
+      // terminate any stale local runner resurrecting from local storage!
+      if (!cloudSession || cloudSession.status === 'STOPPED') {
+        if (runnerRef.current) {
+          runnerRef.current.stop();
+          runnerRef.current = null;
+        }
+        setIsRunning(false);
+        setIsPaused(false);
+        setIsGracefulStopping(false);
+        setStatus('IDLE');
+        setSessionStartTime(null);
+        setElapsedSeconds(0);
+        setActivePosition(null);
+        prevActivePositionRef.current = null;
+        setCapitalInAutoTrader(0);
+        capitalAllocatedRef.current = 0;
+
+        removeScopedItem('autotrader_is_running');
+        removeScopedItem('autotrader_session_start_time');
+        removeScopedItem('autotrader_capital_allocated');
+        removeScopedItem('autotrader_active_position');
+        removeScopedItem('autotrader_is_paused');
+        removeScopedItem('autotrader_is_running', user.id);
+        removeScopedItem('autotrader_session_start_time', user.id);
+        removeScopedItem('autotrader_capital_allocated', user.id);
+        removeScopedItem('autotrader_active_position', user.id);
+        removeScopedItem('autotrader_is_paused', user.id);
+        return;
+      }
 
       if (cloudSession.status === 'SCANNING' || cloudSession.status === 'IN_POSITION' || cloudSession.status === 'PAUSED') {
         const capital = cloudSession.selected_capital || 50;
@@ -435,15 +466,37 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (!isMounted || !cloudSession) return;
 
       if (cloudSession.status === 'STOPPED') {
+        if (runnerRef.current) {
+          runnerRef.current.stop();
+          runnerRef.current = null;
+        }
         setIsRunning(false);
         setIsPaused(false);
+        setIsGracefulStopping(false);
         setStatus('IDLE');
+        setSessionStartTime(null);
+        setElapsedSeconds(0);
         setActivePosition(null);
+        prevActivePositionRef.current = null;
         setCapitalInAutoTrader(0);
+        capitalAllocatedRef.current = 0;
+
+        removeScopedItem('autotrader_is_running');
+        removeScopedItem('autotrader_session_start_time');
+        removeScopedItem('autotrader_capital_allocated');
+        removeScopedItem('autotrader_active_position');
+        removeScopedItem('autotrader_is_paused');
+        removeScopedItem('autotrader_is_running', user.id);
+        removeScopedItem('autotrader_session_start_time', user.id);
+        removeScopedItem('autotrader_capital_allocated', user.id);
+        removeScopedItem('autotrader_active_position', user.id);
+        removeScopedItem('autotrader_is_paused', user.id);
+
         setLogs((prev) => [
-          `[${new Date().toISOString().slice(11, 19)}] [CLOUD STOPPED] Sesión finalizada en la nube.`,
+          `[${new Date().toISOString().slice(11, 19)}] [CLOUD STOPPED] Sesión finalizada en la nube por otro dispositivo. Motor local detenido.`,
           ...prev.slice(0, 40),
         ]);
+        return;
       } else if (cloudSession.status === 'PAUSED') {
         setIsPaused(true);
         setStatus('PAUSED');
@@ -925,11 +978,23 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           }
         }
 
-        // Sync closed trades and metrics (only overwrite if the runner generated trades)
+        // Sync closed trades and metrics (with strict tradeId deduplication)
         const history = runnerRef.current.tradeHistory;
         if (history && history.length > 0) {
-          setClosedTrades([...history]);
-          setClosedTradesToday(history.length);
+          setClosedTrades((prevTrades) => {
+            const seen = new Set<string>();
+            const deduped: any[] = [];
+            [...history, ...prevTrades].forEach((t) => {
+              const key = t.tradeId || t.id || `${t.symbol}-${t.entryTime}-${t.exitTime}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                deduped.push(t);
+              }
+            });
+            return deduped;
+          });
+          const dedupedCount = new Set(history.map((t: any) => t.tradeId || t.id || `${t.symbol}-${t.entryTime}`)).size;
+          setClosedTradesToday(dedupedCount);
           const wins = history.filter((t: any) => (t.netPnL || 0) > 0).length;
           setWinningTradesToday(wins);
 

@@ -99,6 +99,9 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const { availableUsdt, currencyMode, penRate, setUsdtCash, setCapitalInGridBots, setCapitalInAutoTrader, setCapitalInBots, capitalInBots, holdings, updateHoldingFromTrade } = usePortfolio();
   const storageOwnerId = user?.id ?? null;
   const storageReadyOwnerRef = useRef<string>(storageOwnerId || 'guest');
+  // TASK-01: cross-device reset broadcast refs
+  const isResettingRef = useRef<boolean>(false);
+  const resetBroadcastChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const [bots, setBots] = useState<BotRow[]>(() => {
     try {
@@ -161,7 +164,32 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return getInitialSeedNotifications();
   });
 
+  const lastWakeupTimeRef = useRef<number>(Date.now());
+
+  const isNotificationWarmupActive = useCallback(() => {
+    const now = Date.now();
+    return (now - engineMountTimeRef.current < 15_000) || (now - lastWakeupTimeRef.current < 10_000);
+  }, []);
+
+  useEffect(() => {
+    const handleWakeup = () => {
+      if (document.visibilityState === 'visible') {
+        lastWakeupTimeRef.current = Date.now();
+      }
+    };
+    document.addEventListener('visibilitychange', handleWakeup);
+    window.addEventListener('focus', handleWakeup);
+    return () => {
+      document.removeEventListener('visibilitychange', handleWakeup);
+      window.removeEventListener('focus', handleWakeup);
+    };
+  }, []);
+
   const pushNotification = useCallback((notif: PlainSpanishNotification) => {
+    // Warmup guard: Do not trigger notification burst during initial startup/wake-up (TSK-NOTIF-001)
+    if (isNotificationWarmupActive()) {
+      return;
+    }
     setNotifications((prev) => {
       // Idempotency: Prevent identical notifications from flooding within 15 seconds
       const isDuplicateRecent = prev.some(
@@ -174,7 +202,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return updated;
     });
     void showNativeNotification(notif);
-  }, [storageOwnerId]);
+  }, [storageOwnerId, isNotificationWarmupActive]);
 
   // Memory ref for previous prices per coin to ensure strict Tick-Crossing
   const prevPricesRef = useRef<Record<string, number>>({});
@@ -231,6 +259,10 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Toast Helpers with Haptic Trading Sounds
   const addToast = (toast: Omit<ToastItem, 'id'>) => {
+    // Warmup guard: Suppress audio feedback and banner popups during initial session wake-up (TSK-NOTIF-001)
+    if (isNotificationWarmupActive()) {
+      return;
+    }
     const id = crypto.randomUUID();
     setToasts((prev) => [{ id, ...toast }, ...prev.slice(0, 4)]);
 
@@ -251,6 +283,56 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // Synchronize account notifications with Supabase cloud trades across devices (TSK-NOTIFSYNC-001)
+  const syncNotificationsForUser = useCallback((userId: string, cloudTrades: TradeRow[]) => {
+    const userScopedStr = getScopedItem('crypto_analyzer_notifications', userId);
+    let currentNotifs: PlainSpanishNotification[] = [];
+    if (userScopedStr) {
+      try {
+        const parsed = JSON.parse(userScopedStr);
+        if (Array.isArray(parsed)) {
+          currentNotifs = parsed;
+        }
+      } catch {}
+    }
+
+    // Hydrate profit notifications from closed cloud trades with profit > 0
+    const profitTrades = (cloudTrades || [])
+      .filter((t) => t.status === 'CLOSED' && (t.pnl_usd ?? 0) > 0)
+      .slice(0, 15);
+
+    const reconstructedNotifs: PlainSpanishNotification[] = [];
+    for (const t of profitTrades) {
+      const profitUsd = Number(t.pnl_usd || 0);
+      const exitP = Number(t.exit_price || t.entry_price || 0);
+      const rawTime = (t as any).exit_time || t.created_at;
+      const tradeTime = rawTime ? new Date(rawTime).getTime() : Date.now();
+      const notifId = `cloud-profit-${t.id}`;
+
+      if (!currentNotifs.some((n) => n.id === notifId || Math.abs(n.timestamp - tradeTime) < 60_000)) {
+        const notif = createProfitNotification(t.coin_id, profitUsd, exitP, penRate);
+        notif.id = notifId;
+        notif.timestamp = tradeTime;
+        notif.timeAgo = formatTimeAgo(tradeTime);
+        notif.isRead = true; // Historical trades marked as read so they don't produce unread count badge
+        reconstructedNotifs.push(notif);
+      }
+    }
+
+    const merged = [...currentNotifs, ...reconstructedNotifs]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 30);
+
+    if (merged.length > 0) {
+      setNotifications(merged);
+      setScopedItem('crypto_analyzer_notifications', JSON.stringify(merged), userId);
+    } else {
+      const initial = getInitialSeedNotifications();
+      setNotifications(initial);
+      setScopedItem('crypto_analyzer_notifications', JSON.stringify(initial), userId);
+    }
+  }, [penRate]);
 
   // 1. Initial Load from Supabase with Non-Destructive Local Storage Fallback
   useEffect(() => {
@@ -339,6 +421,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const cloudTrades: TradeRow[] = (tradesRes.data as any[]).map(parseSupabaseTradeRow);
             setTrades(cloudTrades);
             setScopedItem('crypto_analyzer_trades', JSON.stringify(cloudTrades), user.id);
+            syncNotificationsForUser(user.id, cloudTrades);
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new Event('crypto_analyzer_trades_updated'));
             }
@@ -355,16 +438,20 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                       user_id: user.id,
                     });
                   });
+                  syncNotificationsForUser(user.id, parsedTrades);
                 } else {
                   setTrades([]);
                   setScopedItem('crypto_analyzer_trades', '[]', user.id);
+                  syncNotificationsForUser(user.id, []);
                 }
               } catch {
                 setTrades([]);
+                syncNotificationsForUser(user.id, []);
               }
             } else {
               setTrades([]);
               setScopedItem('crypto_analyzer_trades', '[]', user.id);
+              syncNotificationsForUser(user.id, []);
             }
           }
           if (signalsRes.data && signalsRes.data.length > 0) {
@@ -372,6 +459,17 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           }
         } else {
           // GUEST / DEMO MODE: Pure local sandbox (zero pollution from other Supabase users)
+          const savedNotifs = getScopedItem('crypto_analyzer_notifications', null, { legacyFallback: false });
+          if (savedNotifs) {
+            try {
+              const parsed = JSON.parse(savedNotifs);
+              setNotifications(Array.isArray(parsed) && parsed.length > 0 ? parsed : getInitialSeedNotifications());
+            } catch {
+              setNotifications(getInitialSeedNotifications());
+            }
+          } else {
+            setNotifications(getInitialSeedNotifications());
+          }
           const savedBots = getScopedItem('crypto_analyzer_bots', null, { legacyFallback: true });
           const savedTrades = getScopedItem('crypto_analyzer_trades', null, { legacyFallback: true });
           if (savedBots) {
@@ -415,6 +513,72 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     loadSupabaseData();
   }, [user]);
+
+  // TASK-02: Realtime subscriptions for cross-device bot and trade visibility
+  useEffect(() => {
+    if (!user?.id) return;
+    const userId = user.id;
+
+    const channel = supabase
+      .channel('bots-trades-realtime:' + userId)
+      // ── bots: INSERT ──────────────────────────────────────────────
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'bots', filter: 'user_id=eq.' + userId },
+        (payload) => {
+          setBots((prev) => {
+            if (prev.find((b) => b.id === (payload.new as BotRow).id)) return prev;
+            return [payload.new as BotRow, ...prev];
+          });
+        }
+      )
+      // ── bots: UPDATE (status changes from another device) ─────────
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'bots', filter: 'user_id=eq.' + userId },
+        (payload) => {
+          setBots((prev) =>
+            prev.map((b) => b.id === (payload.new as BotRow).id ? { ...b, ...(payload.new as BotRow) } : b)
+          );
+        }
+      )
+      // ── bots: DELETE ──────────────────────────────────────────────
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'bots', filter: 'user_id=eq.' + userId },
+        (payload) => {
+          setBots((prev) => prev.filter((b) => b.id !== (payload.old as BotRow).id));
+        }
+      )
+      // ── bot_trades: INSERT ─────────────────────────────────────────
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'bot_trades', filter: 'user_id=eq.' + userId },
+        (payload) => {
+          setTrades((prev) => {
+            const incoming = parseSupabaseTradeRow(payload.new as any);
+            if (prev.find((t) => t.id === incoming.id)) return prev;
+            return [incoming, ...prev];
+          });
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('crypto_analyzer_trades_updated'));
+          }
+        }
+      )
+      // ── bot_trades: DELETE ─────────────────────────────────────────
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'bot_trades', filter: 'user_id=eq.' + userId },
+        (payload) => {
+          setTrades((prev) => prev.filter((t) => t.id !== (payload.old as TradeRow).id));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   // Sync capital allocated in bots to PortfolioContext.
   // ACTIVE and PAUSED both reserve capital; only STOPPED releases it.
@@ -1856,6 +2020,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [bots, livePrices, currentPrice, user, updateHoldingFromTrade, setUsdtCash, addToast]);
 
   const resetAllBotEngine = useCallback(async () => {
+    isResettingRef.current = true;
     if (user?.id) {
       // 1. Try atomic PostgreSQL RPC execution first
       let rpcExecuted = false;
@@ -1878,6 +2043,8 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (deleteBots.error) {
           throw new Error(`No se pudieron borrar bots: ${deleteBots.error.message}`);
         }
+        // Also purge auto_trader_sessions so the timer/state resets cross-device
+        await supabase.from('auto_trader_sessions').delete().eq('user_id', user.id);
         const deletePortfolio = await supabase.from('user_portfolios').delete().eq('user_id', user.id).select('id');
         if (deletePortfolio.error) {
           throw new Error(`No se pudo borrar portafolio spot: ${deletePortfolio.error.message}`);
@@ -1908,6 +2075,19 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (leftoverCount > 0) {
         throw new Error(`Supabase todavía conserva ${leftoverCount} registros de la cuenta. No se aplicó el reset local.`);
       }
+      // TASK-01: Broadcast ACCOUNT_RESET to all other devices on same account
+      try {
+        if (resetBroadcastChannelRef.current) {
+          await resetBroadcastChannelRef.current.send({
+            type: 'broadcast',
+            event: 'ACCOUNT_RESET',
+            payload: { resetBy: user.id, timestamp: Date.now() },
+          });
+        }
+      } catch (broadcastErr) {
+        // Non-critical: local reset proceeds regardless
+        console.warn('[BotEngine] Could not broadcast ACCOUNT_RESET:', broadcastErr);
+      }
     }
     setBots([]);
     setTrades([]);
@@ -1937,6 +2117,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     removeScopedItem('autotrader_active_position');
     setScopedItem('demo_usdt_cash', '1000', storageOwnerId);
     setScopedItem('usdtCash', '1000', storageOwnerId);
+    isResettingRef.current = false;
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('crypto_analyzer_reset'));
     }
@@ -2180,6 +2361,55 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setNotifications([]);
     setScopedItem('crypto_analyzer_notifications', JSON.stringify([]), storageOwnerId);
   }, []);
+
+  // TASK-01: Subscribe to cross-device account reset broadcast channel
+  useEffect(() => {
+    if (!user?.id) return;
+    const ownerId = user.id;
+    const channel = supabase
+      .channel('account-actions:' + ownerId)
+      .on('broadcast', { event: 'ACCOUNT_RESET' }, () => {
+        // Guard: skip if this device triggered the reset (self-loop prevention)
+        if (isResettingRef.current) return;
+        // Apply same local state reset that resetAllBotEngine does
+        setBots([]);
+        setTrades([]);
+        setActiveGridOrders([]);
+        setGridPreviewLevels([]);
+        setSelectedBotForInspection(null);
+        setNotifications(getInitialSeedNotifications());
+        removeScopedItem('crypto_analyzer_bots', ownerId);
+        removeScopedItem('crypto_analyzer_trades', ownerId);
+        removeScopedItem('crypto_analyzer_active_orders', ownerId);
+        removeScopedItem('crypto_analyzer_notifications', ownerId);
+        removeScopedItem('crypto_analyzer_demo_holdings', ownerId);
+        localStorage.removeItem('crypto_analyzer_xrp_sl_healed_v3');
+        localStorage.removeItem('crypto_analyzer_dash_bot_healed_v2');
+        localStorage.removeItem('crypto_analyzer_last_signals_dispatched');
+        removeScopedItem('capital_in_autotrader', ownerId);
+        removeScopedItem('autotrader_capital_allocated');
+        removeScopedItem('autotrader_is_running');
+        removeScopedItem('autotrader_session_start_time');
+        removeScopedItem('autotrader_is_paused');
+        removeScopedItem('autotrader_active_position');
+        setScopedItem('demo_usdt_cash', '1000', ownerId);
+        setScopedItem('usdtCash', '1000', ownerId);
+        setUsdtCash(1000.0);
+        setCapitalInGridBots(0);
+        setCapitalInBots(0);
+        setCapitalInAutoTrader(0);
+        // Notify AutoTraderContext and PortfolioContext to reset their local state
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('crypto_analyzer_reset'));
+        }
+      })
+      .subscribe();
+    resetBroadcastChannelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+      resetBroadcastChannelRef.current = null;
+    };
+  }, [user?.id, setUsdtCash, setCapitalInGridBots, setCapitalInBots, setCapitalInAutoTrader]);
 
   return (
     <BotEngineContext.Provider

@@ -529,6 +529,28 @@ export function subscribeToAutoTraderSession(
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
+          // TASK-03 FIX: Handle DELETE — row deleted (reset) must stop AutoTrader on all devices
+          if (payload.eventType === 'DELETE') {
+            callback({
+              id: (payload.old as any)?.id ?? '',
+              user_id: userId,
+              status: 'STOPPED',
+              selected_capital: 0,
+              duration_minutes: 240,
+              daily_target_pct: 3.0,
+              daily_max_loss_pct: 2.0,
+              max_trades_per_day: 5,
+              trading_profile: 'MOMENTUM_INTRADAY',
+              digest_interval: '30m',
+              active_position: null,
+              session_start_time: undefined,
+              session_realized_pnl_usd: 0,
+              session_realized_pnl_pct: 0,
+              closed_trades_today: 0,
+              updated_at: new Date().toISOString(),
+            });
+            return;
+          }
           if (payload.new) {
             const row = payload.new as any;
             callback({

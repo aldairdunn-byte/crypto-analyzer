@@ -11,13 +11,13 @@ import {
   type QuantitativeEvaluation,
 } from '../lib/quantitativeEngine';
 import { evaluateStrategyForCoin } from '../lib/strategyAdvisor';
-import { SubheaderTotalBar } from './dashboard/SubheaderTotalBar';
 import { TotalEquityCard } from './dashboard/TotalEquityCard';
 import { DecisionHeroCard } from './dashboard/DecisionHeroCard';
 import { MarketOverview24h } from './dashboard/MarketOverview24h';
 import { RecentSignalsFeed, type DashboardSignalItem } from './dashboard/RecentSignalsFeed';
 import { AutoTraderDashboardWidget } from './dashboard/AutoTraderDashboardWidget';
 import { QuickActionSheet } from './dashboard/QuickActionSheet';
+import { DashboardSkeleton } from './ui/DashboardSkeleton';
 import { useAutoTrader } from '../contexts/AutoTraderContext';
 import { usePortfolio } from '../contexts/PortfolioContext';
 import { useModalKeyboard } from '../lib/formatters';
@@ -44,6 +44,7 @@ interface DashboardViewProps {
   onNavigateView: (view: 'DASHBOARD' | 'TERMINAL' | 'AUTOTRADER' | 'RADAR' | 'ASSETS' | 'SETTINGS') => void;
   onOpenNotifications?: () => void;
   allCoinsStats?: Record<string, any>;
+  isLoading?: boolean;
 }
 
 interface CoinStats {
@@ -76,6 +77,7 @@ export const DashboardView = ({
   onNavigateView,
   onOpenNotifications,
   allCoinsStats: externalStats,
+  isLoading = false,
 }: DashboardViewProps) => {
   const [allStats, setAllStats] = useState<Record<string, CoinStats>>(() => {
     if (externalStats && Object.keys(externalStats).length > 0) return externalStats as any;
@@ -244,26 +246,30 @@ export const DashboardView = ({
     });
   }, [evaluations, formatRelativeTime, _timeTick]);
 
+  if (isLoading) {
+    return <DashboardSkeleton />;
+  }
+
   return (
-    <div className="flex-1 bg-[#060709] p-2.5 sm:p-4 max-w-6xl mx-auto w-full overflow-y-auto select-none space-y-3.5 content-bottom-pad">
+    <div className="flex-1 bg-[#060709] p-2.5 sm:p-4 max-w-6xl mx-auto w-full overflow-y-auto select-none space-y-3.5 content-bottom-pad pb-24 md:pb-8">
       {/* ─── 0. MACRO MARKET SENTIMENT BAR (BINANCE / CMC PRO) ─── */}
       <div className="bg-[#0D1117] border border-white/10 rounded-2xl px-3 sm:px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar font-mono text-[10.5px]">
         <div className="flex items-center space-x-3 shrink-0">
           <div className="flex items-center space-x-1.5">
             <Activity className="w-3.5 h-3.5 text-[#0ECB81]" />
             <span className="text-slate-400">Fear & Greed:</span>
-            <span className="text-[#0ECB81] font-black">74 · Codicia</span>
+            <span className="text-[#0ECB81] font-black tabular-nums">74 · Codicia</span>
           </div>
           <span className="text-slate-600">|</span>
           <div className="flex items-center space-x-1.5">
             <span className="text-slate-400">BTC Dominance:</span>
-            <span className="text-white font-bold">56.8%</span>
+            <span className="text-white font-bold tabular-nums">56.8%</span>
           </div>
           <span className="text-slate-600 hidden sm:inline">|</span>
           <div className="hidden sm:flex items-center space-x-1.5">
             <Globe className="w-3.5 h-3.5 text-blue-400" />
             <span className="text-slate-400">Volumen Global:</span>
-            <span className="text-white font-bold">$72.4B</span>
+            <span className="text-white font-bold tabular-nums">$72.4B</span>
           </div>
         </div>
 
@@ -271,21 +277,10 @@ export const DashboardView = ({
           <div className="flex items-center space-x-1.5 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-lg">
             <DollarSign className="w-3 h-3 text-[#0ECB81]" />
             <span className="text-slate-300 font-semibold">USD/PEN:</span>
-            <strong className="text-[#0ECB81] font-black">S/ {penRate.toFixed(3)}</strong>
+            <strong className="text-[#0ECB81] font-black tabular-nums text-right">S/ {penRate.toFixed(3)}</strong>
           </div>
         </div>
       </div>
-
-      {/* 1. Subheader Bar */}
-      <SubheaderTotalBar
-        virtualUsdt={virtualUsdt}
-        hideBalances={hideBalances}
-        onToggleHideBalances={() => setHideBalances(!hideBalances)}
-        currencyMode={currencyMode}
-        penRate={penRate}
-        isLiveMode={isLiveMode}
-        onTogglePaperMode={onTogglePaperMode}
-      />
 
       {/* Auto Trader PRO Hero Widget (Live & Synchronized) */}
       <AutoTraderDashboardWidget
@@ -325,6 +320,9 @@ export const DashboardView = ({
         allTimePnlPct={allTimePnlPct}
         allTimePnlUsd={allTimePnlUsd}
         hideBalances={hideBalances}
+        onToggleHideBalances={() => setHideBalances(!hideBalances)}
+        isLiveMode={isLiveMode}
+        onTogglePaperMode={onTogglePaperMode}
         currencyMode={currencyMode}
         penRate={penRate}
       />
@@ -365,7 +363,7 @@ export const DashboardView = ({
       />
 
       {/* ─── PWA QUICK ACTION FLOATING TRIGGER ─── */}
-      <div className="fixed bottom-6 right-6 z-30">
+      <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-30">
         <button
           onClick={() => setQuickAction(true)}
           className="flex items-center gap-2 px-4 py-3 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs shadow-xl shadow-amber-500/25 active:scale-95 transition-all cursor-pointer border border-amber-300/30"

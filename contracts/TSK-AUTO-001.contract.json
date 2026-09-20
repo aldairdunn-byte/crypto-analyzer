@@ -1,0 +1,66 @@
+{
+  "contract_version": "4.0",
+  "status": "PENDING",
+  "language": "typescript",
+  "task_id": "TSK-AUTO-001",
+  "epic_id": "EPC-ANTISLOP",
+  "goal": "Refactor AutoTrader screen to implement loading skeleton states, mobile header hierarchy compression, loss aversion stop dialog, and right-aligned tabular numerals without altering trading bot execution logic",
+  "scope": {
+    "target_files": [
+      "frontend/src/components/AutoTraderView.tsx",
+      "frontend/src/components/autotrader/AutoTraderTelemetryPanel.tsx",
+      "frontend/src/components/ui/AutoTraderSkeleton.tsx"
+    ],
+    "forbidden_files": [
+      "frontend/src/contexts/AutoTraderContext.tsx",
+      "frontend/src/lib/supabase.ts",
+      "frontend/src/App.tsx",
+      "supabase/**/*",
+      "app.py",
+      "*.py"
+    ],
+    "authorized_global_files": []
+  },
+  "depends_on": [],
+  "contracts": {
+    "types_file": "frontend/src/contexts/AutoTraderContext.tsx",
+    "function_signatures": [
+      "export const AutoTraderView: React.FC<AutoTraderViewProps>",
+      "export const AutoTraderTelemetryPanel: React.FC<AutoTraderTelemetryPanelProps>",
+      "export const AutoTraderSkeleton: React.FC"
+    ]
+  },
+  "env": {
+    "NODE_ENV": "test"
+  },
+  "execution_steps": [
+    "Verify target components against DESIGN.md depth and typography specifications",
+    "Implement AutoTraderSkeleton shimmer matching exact desktop and mobile geometry to prevent layout shifts",
+    "Compress mobile sticky header badges to prevent screen space consumption in compact viewports",
+    "Implement stop session confirmation bottom sheet quantifying protected capital and market exit impact",
+    "Apply tabular-nums font feature and alignment to all numeric indicators across telemetry and KPI cards",
+    "Verify zero emojis in component markup and maintain existing context state contracts intact"
+  ],
+  "commands": {
+    "test": "node --test frontend/src/__tests__/antislop_autotrader.test.js",
+    "lint": "npx oxlint frontend/src/components/AutoTraderView.tsx frontend/src/components/autotrader/AutoTraderTelemetryPanel.tsx",
+    "typecheck": "npm run build --prefix frontend"
+  },
+  "acceptance_criteria": [
+    "assert.ok(viewHtml.includes('AutoTraderSkeleton'), 'AutoTraderSkeleton rendered during loading state')",
+    "assert.ok(viewHtml.includes('tabular-nums'), 'Numeric data columns use tabular-nums font feature')",
+    "assert.ok(viewHtml.includes('confirmStop') || viewHtml.includes('Proteger'), 'Stop session modal includes capital protection copy')",
+    "assert.strictEqual(/[\\u{1F300}-\\u{1F9FF}]/u.test(viewHtml), false, 'Zero emojis present in AutoTraderView')"
+  ],
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "All financial metrics in AutoTraderView and AutoTraderTelemetryPanel use tabular numerals",
+    "Zero emojis detected in AutoTrader markup",
+    "git diff --name-only shows only target_files"
+  ],
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/components/AutoTraderView.tsx frontend/src/components/autotrader/AutoTraderTelemetryPanel.tsx"
+  }
+}

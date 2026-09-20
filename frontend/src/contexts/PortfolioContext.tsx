@@ -332,6 +332,46 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } catch {}
   }, [localHoldings, user?.id]);
 
+  // Cross-device SSOT Sync: Synchronize local holdings to Supabase user_portfolios
+  useEffect(() => {
+    if (!user?.id) return;
+    Object.entries(localHoldings).forEach(([coinId, h]) => {
+      if (h && h.units > 0.000001) {
+        const coin = getDynamicCoinInfo(coinId);
+        const cloudMatch = supabasePortfolio.find(
+          (p) => p.symbol.toUpperCase() === coin.symbol.toUpperCase() || p.asset.toLowerCase() === coin.id.toLowerCase()
+        );
+        if (!cloudMatch || Math.abs(cloudMatch.amount - h.units) > 0.0001) {
+          void upsertPortfolioHoldingToSupabase(user.id, {
+            asset: coin.id,
+            symbol: coin.symbol,
+            amount: h.units,
+            avgBuyPrice: h.avgEntryPrice,
+          });
+        }
+      }
+    });
+  }, [user?.id, localHoldings, supabasePortfolio]);
+
+  // Cross-device SSOT Sync: Hydrate localHoldings from Supabase portfolio
+  useEffect(() => {
+    if (!user?.id || supabasePortfolio.length === 0) return;
+    setLocalHoldings((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      supabasePortfolio.forEach((row) => {
+        const symbolUpper = row.symbol.toUpperCase();
+        if (symbolUpper === 'USDT' || symbolUpper === 'USDC') return;
+        const coin = getDynamicCoinInfo(symbolUpper || row.asset);
+        if (!next[coin.id] || Math.abs(next[coin.id].units - row.amount) > 0.0001) {
+          next[coin.id] = { units: row.amount, avgEntryPrice: row.avg_buy_price || 1.0 };
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [user?.id, supabasePortfolio]);
+
   useEffect(() => {
     const handleAccountReset = () => {
       setLocalHoldings({});
