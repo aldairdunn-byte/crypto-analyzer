@@ -1,4 +1,4 @@
-﻿/**
+/**
  * TASK-01: account-reset-broadcast
  * Acceptance criteria:
  * 1. resetAllBotEngine() sends broadcast ACCOUNT_RESET after Supabase cleanup
@@ -23,8 +23,8 @@ const dispatchedEvents = [];
 global.dispatchEvent = (event) => { dispatchedEvents.push(event.type); };
 
 const storage = {};
-const removeScopedItem = (key, owner) => { delete storage[${owner}_]; };
-const setScopedItem = (key, val, owner) => { storage[${owner}_] = val; };
+const removeScopedItem = (key, owner) => { delete storage[`${owner}_${key}`]; };
+const setScopedItem = (key, val, owner) => { storage[`${owner}_${key}`] = val; };
 
 storage['user123_crypto_analyzer_bots'] = '[{"id":"bot1"}]';
 storage['user123_crypto_analyzer_trades'] = '[{"id":"trade1"}]';

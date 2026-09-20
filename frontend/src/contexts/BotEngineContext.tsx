@@ -257,8 +257,12 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [activeGridOrders, storageOwnerId]);
 
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   // Toast Helpers with Haptic Trading Sounds
-  const addToast = (toast: Omit<ToastItem, 'id'>) => {
+  const addToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
     // Warmup guard: Suppress audio feedback and banner popups during initial session wake-up (TSK-NOTIF-001)
     if (isNotificationWarmupActive()) {
       return;
@@ -278,11 +282,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setTimeout(() => {
       removeToast(id);
     }, 4500);
-  };
-
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  }, [removeToast]);
 
   // Synchronize account notifications with Supabase cloud trades across devices (TSK-NOTIFSYNC-001)
   const syncNotificationsForUser = useCallback((userId: string, cloudTrades: TradeRow[]) => {
@@ -1509,7 +1509,12 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const result: TradeRow[] = [];
 
         for (const t of prev) {
-          if (!handled && t.status === 'OPEN' && t.coin_id === trade.coinId && (trade.tradeId ? t.id === trade.tradeId : true)) {
+          const isCoinMatch =
+            t.coin_id === trade.coinId ||
+            t.coin_id.toLowerCase() === targetCoin.id.toLowerCase() ||
+            t.coin_id.toUpperCase() === targetCoin.symbol.toUpperCase();
+
+          if (!handled && t.status === 'OPEN' && isCoinMatch && (trade.tradeId ? t.id === trade.tradeId : true)) {
             handled = true;
             const isPartialClose = sellUnits < t.units - 0.000001;
 
@@ -1848,7 +1853,8 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
       }
     });
-  }, [trades, currentPrice, livePrices, activeCoin, setUsdtCash, updateHoldingFromTrade, addToast, pushNotification, currencyMode, penRate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trades, currentPrice, livePrices, activeCoin, setUsdtCash, updateHoldingFromTrade, addToast, pushNotification, currencyMode, penRate, user]);
 
   // Automated Execution Engine for Pending Limit Orders (Spot Breakout / Dip Buys)
   useEffect(() => {
@@ -1930,7 +1936,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
       }
     });
-  }, [trades, currentPrice, livePrices, activeCoin, updateHoldingFromTrade, addToast, pushNotification, currencyMode, penRate, user]);
+  }, [trades, currentPrice, livePrices, activeCoin, allCoinsStats, updateHoldingFromTrade, addToast, pushNotification, currencyMode, penRate, user]);
 
   // Cancel a Pending Limit Order and refund reserved USDT
   const cancelPendingTrade = useCallback(async (tradeId: string) => {
@@ -1977,7 +1983,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       timeAgo: 'Ahora',
       isRead: false,
     });
-  }, [trades, setUsdtCash, addToast, pushNotification]);
+  }, [trades, setUsdtCash, addToast, pushNotification, user]);
   useEffect(() => {
     const activeDcaBots = bots.filter((b) => b.status === 'ACTIVE' && b.strategy === 'DCA');
     if (activeDcaBots.length === 0) return;
@@ -2143,7 +2149,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       title: 'Historial Limpiado',
       message: 'El registro de operaciones ejecutadas ha sido vaciado.',
     });
-  }, [user]);
+  }, [user, storageOwnerId, addToast]);
 
   // 5. Autonomous Proactive Market Scanner (Strict Top-15 Spot Only + Persistent Cooldown + Warmup Guard)
   const mountTimeRef = useRef<number>(Date.now());
@@ -2347,7 +2353,7 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setScopedItem('crypto_analyzer_notifications', JSON.stringify(updated), storageOwnerId);
       return updated;
     });
-  }, []);
+  }, [storageOwnerId]);
 
   const dismissNotification = useCallback((id: string) => {
     setNotifications((prev) => {
@@ -2355,12 +2361,12 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setScopedItem('crypto_analyzer_notifications', JSON.stringify(updated), storageOwnerId);
       return updated;
     });
-  }, []);
+  }, [storageOwnerId]);
 
   const clearAllNotifications = useCallback(() => {
     setNotifications([]);
     setScopedItem('crypto_analyzer_notifications', JSON.stringify([]), storageOwnerId);
-  }, []);
+  }, [storageOwnerId]);
 
   // TASK-01: Subscribe to cross-device account reset broadcast channel
   useEffect(() => {

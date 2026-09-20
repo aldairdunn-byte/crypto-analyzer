@@ -30,8 +30,6 @@ export const AuthModal: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  if (!isAuthModalOpen) return null;
-
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) {
@@ -88,6 +86,8 @@ export const AuthModal: React.FC = () => {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [isAuthModalOpen, closeAuthModal]);
+
+  if (!isAuthModalOpen) return null;
 
   return (
     <ModalPortal>

@@ -230,7 +230,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
     setScopedItem('demo_usdt_cash', amount.toString(), user?.id);
-    if (user && profile) {
+    if (user) {
       setProfile((prev) => (prev ? { ...prev, demo_usdt_balance: amount } : null));
       await supabase.from('user_profiles').update({ demo_usdt_balance: amount }).eq('id', user.id);
     }

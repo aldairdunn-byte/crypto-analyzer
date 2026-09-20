@@ -3,6 +3,7 @@ import { useAuth } from './AuthContext';
 import { useMarketData } from './MarketDataContext';
 import { COINS, getDynamicCoinInfo } from '../lib/marketData';
 import {
+  supabase,
   deletePortfolioHoldingFromSupabase,
   fetchPortfolioFromSupabase,
   upsertPortfolioHoldingToSupabase,
@@ -182,9 +183,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return;
       }
       const rows = await fetchPortfolioFromSupabase(user.id);
+      setIsSupabaseConnected(true);
       if (rows && rows.length > 0) {
         setSupabasePortfolio(rows);
-        setIsSupabaseConnected(true);
 
         // In LIVE mode only, update real USDT cash from Supabase portfolio
         if (isLiveMode) {
@@ -220,6 +221,30 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       window.removeEventListener('crypto_analyzer_trades_updated', handleTradesUpdated);
     };
   }, [refreshPortfolio]);
+
+  // Realtime cross-device sync on user_portfolios
+  useEffect(() => {
+    if (!user?.id) return;
+    const portfolioChannel = supabase
+      .channel(`user-portfolios:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_portfolios',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          void refreshPortfolio();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(portfolioChannel);
+    };
+  }, [user?.id, refreshPortfolio]);
 
   // Cross-device cloud sync: profile.demo_usdt_balance stores free demo cash only.
   // Bot capital and spot holdings are loaded from their own tables and counted separately.
@@ -446,17 +471,19 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const removeHolding = useCallback((coinId: string) => {
     const coin = getDynamicCoinInfo(coinId);
-    if (user?.id) {
-      void deletePortfolioHoldingFromSupabase(user.id, coin.symbol);
-      void deletePortfolioHoldingFromSupabase(user.id, coin.id);
-    }
     setLocalHoldings((prev) => {
       const next = { ...prev };
       delete next[coinId];
       delete next[coin.id];
       return next;
     });
-    void refreshPortfolio();
+    if (user?.id) {
+      void (async () => {
+        await deletePortfolioHoldingFromSupabase(user.id, coin.symbol);
+        await deletePortfolioHoldingFromSupabase(user.id, coin.id);
+        await refreshPortfolio();
+      })();
+    }
   }, [user?.id, refreshPortfolio]);
 
   const updateHoldingFromTrade = useCallback((coinId: string, side: 'BUY' | 'SELL', units: number, price: number) => {
@@ -485,14 +512,16 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       } else {
         const remainingUnits = Math.max(0, current.units - units);
         if (remainingUnits <= 0.000001) {
-          if (user?.id) {
-            void deletePortfolioHoldingFromSupabase(user.id, coin.symbol);
-            void deletePortfolioHoldingFromSupabase(user.id, coin.id);
-          }
           const next = { ...prev };
           delete next[coinId];
           delete next[coin.id];
-          void refreshPortfolio();
+          if (user?.id) {
+            void (async () => {
+              await deletePortfolioHoldingFromSupabase(user.id, coin.symbol);
+              await deletePortfolioHoldingFromSupabase(user.id, coin.id);
+              await refreshPortfolio();
+            })();
+          }
           return next;
         }
         if (user?.id) {

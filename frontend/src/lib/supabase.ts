@@ -187,7 +187,7 @@ export async function fetchPortfolioFromSupabase(userId?: string): Promise<Portf
       .eq('user_id', userId)
       .order('total_usd', { ascending: false });
     return fallback.error ? [] : fallback.data || [];
-  } catch (err) {
+  } catch {
     return [];
   }
 }
@@ -219,13 +219,13 @@ export async function upsertPortfolioHoldingToSupabase(
   }
 }
 
-export async function deletePortfolioHoldingFromSupabase(userId: string, symbol: string): Promise<boolean> {
+export async function deletePortfolioHoldingFromSupabase(userId: string, identifier: string): Promise<boolean> {
   try {
     const { error } = await supabase
       .from('user_portfolios')
       .delete()
       .eq('user_id', userId)
-      .eq('symbol', symbol);
+      .or(`symbol.eq.${identifier},asset.eq.${identifier},symbol.ilike.${identifier},asset.ilike.${identifier}`);
     if (error) {
       console.warn('Error deleting user portfolio holding:', error.message);
       return false;

@@ -348,6 +348,7 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setScopedItem('demo_usdt_cash', targetCash.toString());
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Listen for global demo account reset events
@@ -1032,6 +1033,7 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const interval = setInterval(performScan, 12_000);
 
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRunning, isPaused, allCoinsStats, livePrices, selectedCapital, setCapitalInAutoTrader]);
 
   // Real-time continuous position price and PnL synchronization with Binance WebSocket feeds
