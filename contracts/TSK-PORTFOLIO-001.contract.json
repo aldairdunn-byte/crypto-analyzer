@@ -1,0 +1,56 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+  "task_id": "TSK-PORTFOLIO-001",
+  "epic_id": "EPC-PORTFOLIO",
+  "goal": "Implement Performance Breakdown Modal for quantitative audit of realized vs floating profits and winner trades in Portfolio",
+  "scope": {
+    "target_files": [
+      "frontend/src/components/assets/PerformanceBreakdownModal.tsx",
+      "frontend/src/components/AssetsView.tsx"
+    ],
+    "forbidden_files": [
+      "frontend/src/App.tsx",
+      "supabase/**/*",
+      "app.py",
+      "*.py"
+    ],
+    "authorized_global_files": []
+  },
+  "depends_on": [],
+  "contracts": {
+    "types_file": "frontend/src/components/AssetsView.tsx",
+    "function_signatures": [
+      "export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>",
+      "export const AssetsView: React.FC<AssetsViewProps>"
+    ]
+  },
+  "env": {
+    "NODE_ENV": "test"
+  },
+  "execution_steps": [
+    "Create PerformanceBreakdownModal with tabular-nums, winner trade audit, and 24h vs cumulative profit reconciliation",
+    "Make Rendimiento 24h and Atribución sections in AssetsView clickable to open PerformanceBreakdownModal",
+    "Execute automated tests and typecheck"
+  ],
+  "commands": {
+    "test": "node --test frontend/src/__tests__/portfolio_spot_sync_modal.test.js",
+    "lint": "npx oxlint frontend/src/components/assets/PerformanceBreakdownModal.tsx frontend/src/components/AssetsView.tsx",
+    "typecheck": "npm run build --prefix frontend"
+  },
+  "acceptance_criteria": [
+    "assert.ok(modalContent.includes('PerformanceBreakdownModal'), 'PerformanceBreakdownModal component is defined')",
+    "assert.ok(assetsContent.includes('PerformanceBreakdownModal'), 'AssetsView integrates PerformanceBreakdownModal')"
+  ],
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "Clicking performance card displays winner trades and mathematical breakdown of profits",
+    "git diff --name-only shows only target_files"
+  ],
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/components/assets/PerformanceBreakdownModal.tsx frontend/src/components/AssetsView.tsx"
+  }
+}

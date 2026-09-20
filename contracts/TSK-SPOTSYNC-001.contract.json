@@ -1,0 +1,53 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+  "task_id": "TSK-SPOTSYNC-001",
+  "epic_id": "EPC-SPOTSYNC",
+  "goal": "Reconcile spot holdings against Single Source of Truth to eliminate zombie holdings across multi-device sessions",
+  "scope": {
+    "target_files": [
+      "frontend/src/contexts/PortfolioContext.tsx"
+    ],
+    "forbidden_files": [
+      "frontend/src/App.tsx",
+      "supabase/**/*",
+      "app.py",
+      "*.py"
+    ],
+    "authorized_global_files": []
+  },
+  "depends_on": [],
+  "contracts": {
+    "types_file": "frontend/src/lib/supabase.ts",
+    "function_signatures": [
+      "export const PortfolioProvider: React.FC<{ children: React.ReactNode }>"
+    ]
+  },
+  "env": {
+    "NODE_ENV": "test"
+  },
+  "execution_steps": [
+    "Reconcile localHoldings against cloud state to purge depleted or sold spot assets on authenticated sessions",
+    "Ensure zero residual zombie holdings remain on second device upon cloud sync or page refresh",
+    "Execute automated test suite and linter"
+  ],
+  "commands": {
+    "test": "node --test frontend/src/__tests__/portfolio_spot_sync_modal.test.js",
+    "lint": "npx oxlint frontend/src/contexts/PortfolioContext.tsx",
+    "typecheck": "npm run build --prefix frontend"
+  },
+  "acceptance_criteria": [
+    "assert.ok(portfolioContent.includes('cloudHoldingKeys') || portfolioContent.includes('delete next[coinId]'), 'PortfolioContext purges sold spot holdings')"
+  ],
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "Selling a spot asset purges it across all open devices upon refresh/sync",
+    "git diff --name-only shows only target_files"
+  ],
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/contexts/PortfolioContext.tsx"
+  }
+}

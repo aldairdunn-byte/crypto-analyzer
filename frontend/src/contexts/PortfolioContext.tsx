@@ -61,6 +61,21 @@ const loadLocalHoldingsForUser = (userId?: string | null): Record<string, { unit
       try {
         const parsedTrades = JSON.parse(savedTrades);
         if (Array.isArray(parsedTrades)) {
+          // Reconcile sold spot units: do not revive liquidated holdings
+          const soldUnitsByCoin: Record<string, number> = {};
+          parsedTrades.forEach((t) => {
+            if (t && t.status === 'CLOSED' && t.side === 'SELL' && !t.bot_id && t.units > 0) {
+              const coin = getDynamicCoinInfo(t.coin_id);
+              soldUnitsByCoin[coin.id] = (soldUnitsByCoin[coin.id] || 0) + t.units;
+            }
+          });
+
+          Object.keys(base).forEach((cId) => {
+            if (soldUnitsByCoin[cId] && soldUnitsByCoin[cId] >= (base[cId]?.units || 0) - 0.000001) {
+              delete base[cId];
+            }
+          });
+
           parsedTrades.forEach((t) => {
             if (t && t.status === 'OPEN' && t.side === 'BUY' && !t.bot_id && t.units > 0) {
               const coin = getDynamicCoinInfo(t.coin_id);
@@ -353,24 +368,50 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   }, [user?.id, localHoldings, supabasePortfolio]);
 
-  // Cross-device SSOT Sync: Hydrate localHoldings from Supabase portfolio
+  // Cross-device SSOT Sync: Hydrate and reconcile localHoldings from Supabase portfolio
   useEffect(() => {
-    if (!user?.id || supabasePortfolio.length === 0) return;
+    if (!user?.id) return;
     setLocalHoldings((prev) => {
       let changed = false;
       const next = { ...prev };
+      const cloudHoldingKeys = new Set<string>();
+
       supabasePortfolio.forEach((row) => {
         const symbolUpper = row.symbol.toUpperCase();
         if (symbolUpper === 'USDT' || symbolUpper === 'USDC') return;
         const coin = getDynamicCoinInfo(symbolUpper || row.asset);
-        if (!next[coin.id] || Math.abs(next[coin.id].units - row.amount) > 0.0001) {
-          next[coin.id] = { units: row.amount, avgEntryPrice: row.avg_buy_price || 1.0 };
-          changed = true;
+        if (row.amount > 0.000001) {
+          cloudHoldingKeys.add(coin.id);
+          if (!next[coin.id] || Math.abs(next[coin.id].units - row.amount) > 0.0001) {
+            next[coin.id] = { units: row.amount, avgEntryPrice: row.avg_buy_price || 1.0 };
+            changed = true;
+          }
         }
       });
+
+      // PURGE ZOMBIE HOLDINGS ACROSS DEVICES:
+      // For authenticated sessions, any local holding that is no longer present in cloudPortfolio
+      // must be purged so multi-screen sales reflect identically upon refresh and sync.
+      if (isSupabaseConnected) {
+        Object.keys(next).forEach((coinId) => {
+          if (!cloudHoldingKeys.has(coinId)) {
+            delete next[coinId];
+            changed = true;
+          }
+        });
+      }
+
+      if (changed) {
+        if (Object.keys(next).length === 0) {
+          removeScopedItem('crypto_analyzer_demo_holdings', user.id);
+        } else {
+          setScopedItem('crypto_analyzer_demo_holdings', JSON.stringify(next), user.id);
+        }
+      }
+
       return changed ? next : prev;
     });
-  }, [user?.id, supabasePortfolio]);
+  }, [user?.id, supabasePortfolio, isSupabaseConnected]);
 
   useEffect(() => {
     const handleAccountReset = () => {
@@ -404,16 +445,19 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [user?.id]);
 
   const removeHolding = useCallback((coinId: string) => {
+    const coin = getDynamicCoinInfo(coinId);
     if (user?.id) {
-      const coin = getDynamicCoinInfo(coinId);
       void deletePortfolioHoldingFromSupabase(user.id, coin.symbol);
+      void deletePortfolioHoldingFromSupabase(user.id, coin.id);
     }
     setLocalHoldings((prev) => {
       const next = { ...prev };
       delete next[coinId];
+      delete next[coin.id];
       return next;
     });
-  }, [user?.id]);
+    void refreshPortfolio();
+  }, [user?.id, refreshPortfolio]);
 
   const updateHoldingFromTrade = useCallback((coinId: string, side: 'BUY' | 'SELL', units: number, price: number) => {
     setLocalHoldings((prev) => {
@@ -443,9 +487,12 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (remainingUnits <= 0.000001) {
           if (user?.id) {
             void deletePortfolioHoldingFromSupabase(user.id, coin.symbol);
+            void deletePortfolioHoldingFromSupabase(user.id, coin.id);
           }
           const next = { ...prev };
           delete next[coinId];
+          delete next[coin.id];
+          void refreshPortfolio();
           return next;
         }
         if (user?.id) {
@@ -465,7 +512,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
       }
     });
-  }, [user?.id]);
+  }, [user?.id, refreshPortfolio]);
 
   // Base spot holdings dictionary merged with real Supabase holdings + local holdings
   const holdings = useMemo<Record<string, CryptoHolding>>(() => {
@@ -485,9 +532,16 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       };
     });
 
-    // 2. Explicitly include all active holdings from localHoldings (e.g. DASH, ZEC, dynamic spot pairs)
+    // 2. Explicitly include active holdings from localHoldings ONLY IF not authenticated or in cloud
     Object.entries(localHoldings).forEach(([cId, local]) => {
       if (local && local.units > 0.000001) {
+        // If authenticated and supabasePortfolio was loaded, don't display holdings absent from cloud
+        if (user?.id && isSupabaseConnected && supabasePortfolio.length > 0) {
+          const match = supabasePortfolio.find(
+            (p) => p.symbol.toUpperCase() === cId.toUpperCase() || p.asset.toLowerCase() === cId.toLowerCase()
+          );
+          if (!match || match.amount <= 0.000001) return;
+        }
         const coin = getDynamicCoinInfo(cId);
         const coinId = coin.id;
         map[coinId] = {
@@ -518,7 +572,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
 
     return map;
-  }, [livePrices, supabasePortfolio, localHoldings]);
+  }, [livePrices, supabasePortfolio, localHoldings, isSupabaseConnected, user?.id]);
 
   const totalSpotValue = useMemo(() => {
     return Object.values(holdings).reduce((acc, h) => {

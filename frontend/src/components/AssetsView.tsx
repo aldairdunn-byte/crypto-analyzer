@@ -12,6 +12,7 @@ import { AssetsSpotTab } from './assets/AssetsSpotTab';
 import { AddAssetModal } from './assets/AddAssetModal';
 import { AdjustCashModal } from './assets/AdjustCashModal';
 import { SellAssetModal } from './assets/SellAssetModal';
+import { PerformanceBreakdownModal } from './assets/PerformanceBreakdownModal';
 import {
   SquaresFour,
   Robot,
@@ -24,6 +25,7 @@ import {
   CheckCircle2,
   X,
   Search,
+  TrendingUp,
 } from 'lucide-react';
 
 import { type CryptoHolding } from '../lib/portfolioMath';
@@ -76,6 +78,7 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
   // Modals & Drawers (Audited signals required)
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState<boolean>(false);
+  const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState<boolean>(false);
   const [sellModalItem, setSellModalItem] = useState<any | null>(null);
   const [sellPercentage, setSellPercentage] = useState<number>(100);
   const [isSelling, setIsSelling] = useState<boolean>(false);
@@ -458,6 +461,15 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
 
         <div className="flex items-center space-x-2">
           <button
+            onClick={() => setIsPerformanceModalOpen(true)}
+            className="bg-[#0E1118] hover:bg-[#151922] border border-emerald-500/30 hover:border-emerald-500/60 text-[#0ECB81] font-bold px-3.5 py-2 rounded-xl text-xs transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95 group"
+            title="Ver Auditoría y Desglose Cuantitativo de Rendimiento (Pionex & Bybit Standard)"
+          >
+            <TrendingUp className="w-3.5 h-3.5" />
+            <span>Auditar Rendimiento ({pnl24hUsd >= 0 ? '+' : ''}${pnl24hUsd.toFixed(2)})</span>
+          </button>
+
+          <button
             onClick={() => {
               setInputCash(usdtCash);
               setIsCashModalOpen(true);
@@ -492,42 +504,58 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
         </div>
       )}
 
-      {/* ─── 2. BENTO GRID DE 3 TARJETAS MAESTRAS ─── */}
-      <AssetsBentoCards
-        totalPortfolioValueUsd={totalPortfolioValueUsd}
-        totalPortfolioValuePen={totalPortfolioValuePen}
-        currencyMode={currencyMode}
-        penRate={penRate}
-        usdtCash={usdtCash}
-        stablePct={stablePct}
-        totalBotsFloatingPnlUsd={totalBotsFloatingPnlUsd}
-        totalBotsValUsd={totalBotsValUsd}
-        totalSpotValueUsd={totalSpotValueUsd}
-        botsPct={botsPct}
-        spotPct={spotPct}
-        isPnl24hZero={isPnl24hZero}
-        pnl24hUsd={pnl24hUsd}
-        pnl24hPct={pnl24hPct}
-        totalRealizedProfitUsd={totalRealizedProfitUsd}
-        totalSpotPnlUsd={totalSpotPnlUsd}
-        consolidatedSpotHoldingsCount={consolidatedSpotHoldings.length}
-        consolidatedBotsCount={consolidatedBots.length}
-        portfolioHealth={portfolioHealth}
-      />
+      {/* ─── 2. BENTO GRID DE 3 TARJETAS MAESTRAS (CLICKABLE PARA AUDITORÍA) ─── */}
+      <div
+        onClick={() => setIsPerformanceModalOpen(true)}
+        className="cursor-pointer group relative transition-all"
+        title="Click para ver Auditoría de Rendimiento Detallada (Pionex & Bybit Standard)"
+      >
+        <div className="absolute top-2 right-2 z-10 hidden sm:flex items-center gap-1 bg-[#0E1118]/90 border border-emerald-500/30 text-[#0ECB81] text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg opacity-80 group-hover:opacity-100 transition-opacity">
+          <TrendingUp className="w-3 h-3" />
+          <span>Click para Auditar Rendimiento</span>
+        </div>
+        <AssetsBentoCards
+          totalPortfolioValueUsd={totalPortfolioValueUsd}
+          totalPortfolioValuePen={totalPortfolioValuePen}
+          currencyMode={currencyMode}
+          penRate={penRate}
+          usdtCash={usdtCash}
+          stablePct={stablePct}
+          totalBotsFloatingPnlUsd={totalBotsFloatingPnlUsd}
+          totalBotsValUsd={totalBotsValUsd}
+          totalSpotValueUsd={totalSpotValueUsd}
+          botsPct={botsPct}
+          spotPct={spotPct}
+          isPnl24hZero={isPnl24hZero}
+          pnl24hUsd={pnl24hUsd}
+          pnl24hPct={pnl24hPct}
+          totalRealizedProfitUsd={totalRealizedProfitUsd}
+          totalSpotPnlUsd={totalSpotPnlUsd}
+          consolidatedSpotHoldingsCount={consolidatedSpotHoldings.length}
+          consolidatedBotsCount={consolidatedBots.length}
+          portfolioHealth={portfolioHealth}
+        />
+      </div>
 
-      {/* ─── 3. DESGLOSE CUANTITATIVO DE RENDIMIENTO POR MOTOR ─── */}
-      <IncomeBreakdownCard
-        gridBotsProfitUsd={gridBotsProfitUsd}
-        autoTraderProfitUsd={autoTraderProfitUsd}
-        spotPnlUsd={totalSpotPnlUsd}
-        gridBotsCount={gridBotsOnly.length}
-        spotHoldingsCount={consolidatedSpotHoldings.length}
-        isAutoTraderActive={isAutoTraderActive}
-        currencyMode={currencyMode}
-        penRate={penRate}
-        onNavigateToAutoTrader={onNavigateToAutoTrader}
-        onFilterTab={(tab) => setActiveTab(tab)}
-      />
+      {/* ─── 3. DESGLOSE CUANTITATIVO DE RENDIMIENTO POR MOTOR (CLICKABLE PARA AUDITORÍA) ─── */}
+      <div
+        onClick={() => setIsPerformanceModalOpen(true)}
+        className="cursor-pointer group relative transition-all"
+        title="Click para ver Auditoría y Conciliación Matemática de Atribución"
+      >
+        <IncomeBreakdownCard
+          gridBotsProfitUsd={gridBotsProfitUsd}
+          autoTraderProfitUsd={autoTraderProfitUsd}
+          spotPnlUsd={totalSpotPnlUsd}
+          gridBotsCount={gridBotsOnly.length}
+          spotHoldingsCount={consolidatedSpotHoldings.length}
+          isAutoTraderActive={isAutoTraderActive}
+          currencyMode={currencyMode}
+          penRate={penRate}
+          onNavigateToAutoTrader={onNavigateToAutoTrader}
+          onFilterTab={(tab) => setActiveTab(tab)}
+        />
+      </div>
 
       {/* ─── 4. DISTRIBUCIÓN GRÁFICA INTERACTIVA DEL PORTAFOLIO ─── */}
       <AssetsDonutCard
@@ -699,6 +727,23 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
         onSetSellPercentage={(pct) => setSellPercentage(pct)}
         isSelling={isSelling}
         onConfirmSell={handleConfirmSell}
+        penRate={penRate}
+      />
+
+      <PerformanceBreakdownModal
+        isOpen={isPerformanceModalOpen}
+        onClose={() => setIsPerformanceModalOpen(false)}
+        pnl24hUsd={pnl24hUsd}
+        pnl24hPct={pnl24hPct}
+        totalRealizedProfitUsd={totalRealizedProfitUsd}
+        gridBotsProfitUsd={gridBotsProfitUsd}
+        autoTraderProfitUsd={autoTraderProfitUsd}
+        totalSpotPnlUsd={totalSpotPnlUsd}
+        totalBotsFloatingPnlUsd={totalBotsFloatingPnlUsd}
+        trades={trades}
+        consolidatedBots={consolidatedBots}
+        consolidatedSpotHoldings={consolidatedSpotHoldings}
+        currencyMode={currencyMode}
         penRate={penRate}
       />
 
