@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { useAuth } from './AuthContext';
 import { usePortfolio } from './PortfolioContext';
 import { useMarketData } from './MarketDataContext';
+import { useBotEngine } from './BotEngineContext';
 import {
   createAutoTraderRunner,
   type AutoTraderRunner,
@@ -17,6 +18,7 @@ import {
   subscribeToAutoTraderSession,
   type TradeRow,
   type AutoTraderSessionRow,
+  type AutoTraderPositionState,
 } from '../lib/supabase';
 import {
   sendTelegramSpotTrade,
@@ -24,6 +26,7 @@ import {
   sendTelegramAutoTraderTokenEntry,
   sendTelegramPeriodicDigest,
 } from '../lib/telegram';
+import { desktopNotifications } from '../lib/desktopNotifications';
 
 export interface AutoTraderContextType {
   isRunning: boolean;
@@ -45,7 +48,7 @@ export interface AutoTraderContextType {
   setDailyMaxLossPct: (val: number) => void;
   maxTradesPerDay: number;
   setMaxTradesPerDay: (val: number) => void;
-  activePosition: any | null;
+  activePosition: AutoTraderPositionState | any | null;
   sessionRealizedPnlUsd: number;
   sessionRealizedPnlPct: number;
   closedTradesToday: number;
@@ -62,10 +65,58 @@ export interface AutoTraderContextType {
 
 const AutoTraderContext = createContext<AutoTraderContextType | undefined>(undefined);
 
+export function normalizeActivePosition(raw: any, livePrice?: number): AutoTraderPositionState | null {
+  if (!raw) return null;
+  const rawSymbol = raw.symbol || raw.coin_id || 'UNKNOWN';
+  const symbol = rawSymbol.replace(/usdt$/i, '').toUpperCase();
+  const pair = raw.pair || `${symbol}/USDT`;
+  const entryPrice = Number(raw.entryPrice ?? raw.entry_price ?? 0);
+  const units = Number(raw.units ?? 0);
+  const capitalInvested = Number(raw.capitalInvested ?? raw.amount_usd ?? (units * entryPrice));
+  const currentPrice = livePrice && livePrice > 0 ? livePrice : Number(raw.currentPrice ?? raw.current_price ?? raw.highest_price ?? entryPrice);
+  const highestSeen = Math.max(Number(raw.highestSeen ?? raw.highest_price ?? entryPrice), currentPrice);
+  const stopLossPrice = Number(raw.stopLossPrice ?? raw.stop_loss ?? (entryPrice * 0.98));
+  const takeProfitPrice = Number(raw.takeProfitPrice ?? raw.take_profit ?? (entryPrice * 1.02));
+  const breakEvenArmed = Boolean(raw.breakEvenArmed ?? raw.be_armed ?? (currentPrice >= entryPrice * 1.005));
+  const breakEvenPrice = Number(raw.breakEvenPrice ?? (entryPrice * 1.0025));
+  const trailingArmed = Boolean(raw.trailingArmed ?? raw.trailing_armed ?? (currentPrice >= entryPrice * 1.012));
+  const trailingStopPrice = Number(raw.trailingStopPrice ?? raw.stopLossPrice ?? raw.stop_loss ?? (entryPrice * 0.98));
+
+  const unrealizedPnlUsd = units > 0 && currentPrice > 0 ? Number(((currentPrice - entryPrice) * units).toFixed(2)) : Number(raw.unrealizedPnlUsd ?? 0);
+  const unrealizedPnlPct = capitalInvested > 0 ? Number(((unrealizedPnlUsd / capitalInvested) * 100).toFixed(2)) : (entryPrice > 0 ? Number((((currentPrice - entryPrice) / entryPrice) * 100).toFixed(2)) : 0);
+
+  const entryTimeMs = raw.entryTimestampMs ?? (raw.entry_time ? new Date(raw.entry_time).getTime() : Date.now());
+  const holdingSeconds = Math.max(0, Math.floor((Date.now() - entryTimeMs) / 1000));
+
+  return {
+    symbol,
+    pair,
+    entryPrice,
+    currentPrice,
+    highestSeen,
+    units,
+    capitalInvested,
+    stopLossPrice,
+    takeProfitPrice,
+    breakEvenArmed,
+    breakEvenPrice,
+    trailingArmed,
+    trailingStopPrice,
+    mfePct: Number(raw.mfePct ?? (highestSeen > entryPrice && entryPrice > 0 ? ((highestSeen - entryPrice) / entryPrice) * 100 : 0)),
+    maePct: Number(raw.maePct ?? 0),
+    unrealizedPnlUsd,
+    unrealizedPnlPct,
+    holdingSeconds,
+    orderId: raw.orderId ?? raw.id,
+    entryTimestampMs: entryTimeMs,
+  };
+}
+
 export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const { availableUsdt, capitalInBots, setUsdtCash, setCapitalInAutoTrader, setCapitalInBots } = usePortfolio();
   const { allCoinsStats, livePrices } = useMarketData();
+  const { addToast, addNotification, recordExternalTrade } = useBotEngine();
 
   // Configuration state with local persistence (survives F5 / page reload)
   const [selectedCapital, setSelectedCapital] = useState<number>(() => {
@@ -200,7 +251,48 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       };
       void persistTradeToSupabase(row, user?.id);
 
-      // 2. Dispatch Telegram Notification
+      // 2. Persist to unified app trades (visible in Portafolio and Terminal history)
+      recordExternalTrade(row);
+
+      // 3. Dispatch in-app Toast & Bell Notification
+      const pnlUsd = row.pnl_usd ?? 0;
+      const pnlPct = row.pnl_pct ?? 0;
+      const isWin = pnlUsd >= 0;
+      addToast({
+        type: isWin ? 'PROFIT' : 'SELL',
+        title: `Auto Trader: ${row.coin_id.toUpperCase()}/USDT`,
+        message: `${t.exitReason || 'Cerrado'}: ${isWin ? '+' : ''}$${pnlUsd.toFixed(2)} (${isWin ? '+' : ''}${pnlPct.toFixed(2)}%)`,
+      });
+
+      if (isWin) {
+        desktopNotifications.notifyAutoTraderTakeProfit(row.coin_id, pnlUsd, pnlPct);
+      } else {
+        desktopNotifications.notifyAutoTraderStopLoss(row.coin_id, pnlUsd, pnlPct);
+      }
+
+      addNotification({
+        id: `at-closed-${row.id}`,
+        coinId: row.coin_id.toLowerCase(),
+        coinSymbol: row.coin_id.toUpperCase(),
+        coinName: row.coin_id.toUpperCase(),
+        category: isWin ? 'PROFIT' : 'DANGER',
+        badge: isWin ? 'GANANCIA CERRADA' : 'STOP LOSS EJECUTADO',
+        badgeColor: isWin ? '#0ECB81' : '#F6465D',
+        badgeBg: isWin ? 'rgba(14, 203, 129, 0.15)' : 'rgba(246, 70, 93, 0.15)',
+        badgeBorder: isWin ? 'rgba(14, 203, 129, 0.35)' : 'rgba(246, 70, 93, 0.35)',
+        headline: isWin
+          ? `¡Auto Trader ganó +$${pnlUsd.toFixed(2)} USDT!`
+          : `Auto Trader cerró con -$${Math.abs(pnlUsd).toFixed(2)} USDT`,
+        plainExplanation: `Operación cerrada en ${row.coin_id.toUpperCase()} por ${t.exitReason || 'orden de mercado'}. Salida: $${Number(row.exit_price).toFixed(4)}.`,
+        highlightText: `Rendimiento neto: ${pnlPct.toFixed(2)}%. Capital y ganancias reintegrados a tu saldo.`,
+        actionText: `Ver historial`,
+        actionCoinId: row.coin_id.toLowerCase(),
+        timestamp: Date.now(),
+        timeAgo: 'Ahora',
+        isRead: false,
+      });
+
+      // 4. Dispatch Telegram Notification
       void sendTelegramSpotTrade({
         coinSymbol: (t.symbol || row.coin_id).toUpperCase(),
         coinName: t.coinName || t.symbol || row.coin_id,
@@ -212,7 +304,7 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         pnlPct: row.pnl_pct,
       });
     });
-  }, [user?.id]);
+  }, [user?.id, recordExternalTrade, addToast, addNotification]);
 
   // Session restoration or capital reconciliation across F5
   useEffect(() => {
@@ -257,8 +349,20 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setElapsedSeconds(elapsed);
         setCapitalInAutoTrader(savedAllocated);
         if (savedPos) {
-          setActivePosition(savedPos);
-          prevActivePositionRef.current = savedPos;
+          const norm = normalizeActivePosition(savedPos);
+          setActivePosition(norm);
+          prevActivePositionRef.current = norm;
+
+          // Auto-heal active position to Supabase SSOT if user is authenticated
+          if (user?.id) {
+            void upsertAutoTraderSessionInSupabase({
+              id: `at-session-${user.id}`,
+              user_id: user.id,
+              status: 'IN_POSITION',
+              selected_capital: savedAllocated,
+              active_position: norm,
+            });
+          }
         }
 
         const runner = createAutoTraderRunner({
@@ -388,9 +492,42 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     void fetchAutoTraderSessionFromSupabase(user.id).then((cloudSession: AutoTraderSessionRow | null) => {
       if (!isMounted) return;
 
-      // SSOT GUARD: If cloud session does not exist or is STOPPED in Supabase,
-      // terminate any stale local runner resurrecting from local storage!
-      if (!cloudSession || cloudSession.status === 'STOPPED') {
+      // If no cloud session exists, but local state has an active session, auto-heal to cloud
+      if (!cloudSession) {
+        const savedIsRunning = getScopedItem('autotrader_is_running') === 'true';
+        const savedAllocatedStr = getScopedItem('autotrader_capital_allocated');
+        const savedAllocated = savedAllocatedStr ? parseFloat(savedAllocatedStr) : 0;
+        const savedPosStr = getScopedItem('autotrader_active_position');
+        let savedPos: any = null;
+        try {
+          savedPos = savedPosStr ? JSON.parse(savedPosStr) : null;
+        } catch {}
+
+        if (savedIsRunning && savedAllocated > 0) {
+          const norm = normalizeActivePosition(savedPos);
+          void upsertAutoTraderSessionInSupabase({
+            id: `at-session-${user.id}`,
+            user_id: user.id,
+            status: norm ? 'IN_POSITION' : 'SCANNING',
+            selected_capital: savedAllocated,
+            duration_minutes: sessionDurationMinutes,
+            daily_target_pct: dailyTargetPct,
+            daily_max_loss_pct: dailyMaxLossPct,
+            max_trades_per_day: maxTradesPerDay,
+            trading_profile: 'MOMENTUM_INTRADAY',
+            digest_interval: telegramDigestInterval,
+            active_position: norm,
+            session_start_time: new Date().toISOString(),
+            session_realized_pnl_usd: sessionRealizedPnlUsd,
+            session_realized_pnl_pct: sessionRealizedPnlPct,
+            closed_trades_today: closedTradesToday,
+          });
+        }
+        return;
+      }
+
+      // SSOT GUARD: If cloud session is STOPPED in Supabase, terminate local runner
+      if (cloudSession.status === 'STOPPED') {
         if (runnerRef.current) {
           runnerRef.current.stop();
           runnerRef.current = null;
@@ -450,19 +587,25 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }
 
         if (cloudSession.active_position) {
-          setActivePosition(cloudSession.active_position);
-          prevActivePositionRef.current = cloudSession.active_position;
+          const coinKey = cloudSession.active_position.symbol?.toLowerCase();
+          const freshPrice = livePrices[coinKey];
+          const norm = normalizeActivePosition(cloudSession.active_position, freshPrice);
+          setActivePosition(norm);
+          prevActivePositionRef.current = norm;
+        } else {
+          setActivePosition(null);
+          prevActivePositionRef.current = null;
         }
 
         setIsCloudConnected(true);
         setLogs((prev) => [
-          `[${new Date().toISOString().slice(11, 19)}] [CLOUD SYNC 24/7] Sesión activa en Render recuperada (${cloudSession.status}). Operador: ${user.user_metadata?.full_name || user.email || 'Cuantitativo'}.`,
+          `[${new Date().toISOString().slice(11, 19)}] [CLOUD SYNC 24/7] Sesión activa en la nube recuperada (${cloudSession.status}). Operador: ${user.user_metadata?.full_name || user.email || 'Cuantitativo'}.`,
           ...prev.slice(0, 40),
         ]);
       }
     });
 
-    // 2. Realtime listener for 24/7 worker updates from Render
+    // 2. Realtime listener for cross-device & 24/7 worker updates
     const unsubscribe = subscribeToAutoTraderSession(user.id, (cloudSession) => {
       if (!isMounted || !cloudSession) return;
 
@@ -502,17 +645,31 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setIsPaused(true);
         setStatus('PAUSED');
         setLogs((prev) => [
-          `[${new Date().toISOString().slice(11, 19)}] [CLOUD PAUSED] Sesión pausada en la nube por guardrails.`,
+          `[${new Date().toISOString().slice(11, 19)}] [CLOUD PAUSED] Sesión pausada en la nube por guardrails o control remoto.`,
           ...prev.slice(0, 40),
         ]);
-      } else {
+      } else if (cloudSession.status === 'IN_POSITION') {
         setIsRunning(true);
         setIsPaused(false);
-        setStatus(cloudSession.status);
+        setStatus('IN_POSITION');
         if (cloudSession.active_position) {
-          setActivePosition(cloudSession.active_position);
-        } else if (cloudSession.status === 'SCANNING') {
-          setActivePosition(null);
+          const coinKey = cloudSession.active_position.symbol?.toLowerCase();
+          const freshPrice = livePrices[coinKey];
+          const norm = normalizeActivePosition(cloudSession.active_position, freshPrice);
+          setActivePosition(norm);
+          prevActivePositionRef.current = norm;
+          if (norm?.capitalInvested) {
+            setCapitalInAutoTrader(norm.capitalInvested);
+          }
+        }
+      } else if (cloudSession.status === 'SCANNING') {
+        setIsRunning(true);
+        setIsPaused(false);
+        setStatus('SCANNING');
+        setActivePosition(null);
+        prevActivePositionRef.current = null;
+        if (cloudSession.selected_capital) {
+          setCapitalInAutoTrader(cloudSession.selected_capital);
         }
       }
 
@@ -656,34 +813,129 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     ]);
   }, [setCapitalInBots, setCapitalInAutoTrader, setUsdtCash, user?.id, syncClosedTradesToExternalSystems]);
 
-  // Market exit for active position without stopping the entire Auto Trader session
+  // Market exit for active position without stopping the entire Auto Trader session (Omni-enabled)
   const exitActivePosition = useCallback((reason: string = 'SALIDA_MANUAL_MERCADO') => {
-    if (!runnerRef.current || !runnerRef.current.currentPosition) return;
-    try {
-      const pos = runnerRef.current.currentPosition;
-      runnerRef.current.executeExit(pos.currentPrice, reason);
-      const history = runnerRef.current.tradeHistory;
-      if (history && history.length > 0) {
-        setClosedTrades([...history]);
-        setClosedTradesToday(history.length);
-        const wins = history.filter((t: any) => (t.netPnL || 0) > 0).length;
-        setWinningTradesToday(wins);
-        setSessionRealizedPnlUsd(runnerRef.current.accumulatedDailyPnlUsd);
-        setSessionRealizedPnlPct(runnerRef.current.accumulatedDailyPnlPct);
-        syncClosedTradesToExternalSystems(history);
+    // 1. Local runner exit if this screen is hosting the execution runner
+    if (runnerRef.current && runnerRef.current.currentPosition) {
+      try {
+        const pos = runnerRef.current.currentPosition;
+        runnerRef.current.executeExit(pos.currentPrice, reason);
+        const history = runnerRef.current.tradeHistory;
+        if (history && history.length > 0) {
+          setClosedTrades([...history]);
+          setClosedTradesToday(history.length);
+          const wins = history.filter((t: any) => (t.netPnL || 0) > 0).length;
+          setWinningTradesToday(wins);
+          setSessionRealizedPnlUsd(runnerRef.current.accumulatedDailyPnlUsd);
+          setSessionRealizedPnlPct(runnerRef.current.accumulatedDailyPnlPct);
+          syncClosedTradesToExternalSystems(history);
+        }
+        setActivePosition(null);
+        prevActivePositionRef.current = null;
+        removeScopedItem('autotrader_active_position');
+        setStatus('SCANNING');
+        if (user?.id) {
+          void upsertAutoTraderSessionInSupabase({
+            id: `at-session-${user.id}`,
+            user_id: user.id,
+            status: 'SCANNING',
+            active_position: null,
+            session_realized_pnl_usd: runnerRef.current.accumulatedDailyPnlUsd,
+            session_realized_pnl_pct: runnerRef.current.accumulatedDailyPnlPct,
+            closed_trades_today: history.length,
+          });
+        }
+        setLogs((prev) => [
+          `[${new Date().toISOString().slice(11, 19)}] [SALIDA MANUAL] Posición en ${pos.symbol} cerrada al mercado. Capital preservado para nuevos escaneos.`,
+          ...prev.slice(0, 40),
+        ]);
+        return;
+      } catch (e) {
+        console.warn('Error exiting active position locally:', e);
       }
-      setActivePosition(null);
-      prevActivePositionRef.current = null;
-      removeScopedItem('autotrader_active_position');
-      setStatus('SCANNING');
-      setLogs((prev) => [
-        `[${new Date().toISOString().slice(11, 19)}] [SALIDA MANUAL] Posición en ${pos.symbol} cerrada al mercado. Capital preservado para nuevos escaneos.`,
-        ...prev.slice(0, 40),
-      ]);
-    } catch (e) {
-      console.warn('Error exiting active position:', e);
     }
-  }, [syncClosedTradesToExternalSystems]);
+
+    // 2. Remote / Omni exit fallback (when executed from a second screen without local runner)
+    if (activePosition) {
+      try {
+        const pos = activePosition;
+        const coinKey = pos.symbol?.toLowerCase();
+        const exitPrice = livePrices[coinKey] || pos.currentPrice || pos.entryPrice;
+        const cost = pos.capitalInvested || (pos.units * pos.entryPrice);
+        const proceeds = pos.units > 0 ? pos.units * exitPrice : cost;
+        const pnlUsd = Number((proceeds - cost).toFixed(2));
+        const pnlPct = cost > 0 ? Number(((pnlUsd / cost) * 100).toFixed(2)) : 0;
+
+        const closedTradeId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined;
+        const closedRow: TradeRow = {
+          id: closedTradeId as any,
+          user_id: user?.id,
+          coin_id: pos.symbol?.toLowerCase() || 'unknown',
+          side: 'SELL',
+          entry_price: pos.entryPrice,
+          exit_price: exitPrice,
+          amount_usd: cost,
+          units: pos.units,
+          pnl_usd: pnlUsd,
+          pnl_pct: pnlPct,
+          status: 'CLOSED',
+          strategy_type: 'SPOT_BREAKOUT',
+          order_type: 'MARKET',
+          created_at: new Date().toISOString(),
+        };
+
+        syncClosedTradesToExternalSystems([{
+          ...closedRow,
+          netPnL: pnlUsd,
+          returnPct: pnlPct,
+          exitReason: reason,
+          symbol: pos.symbol,
+        }]);
+
+        // Refund capital + PnL to free demo cash
+        setUsdtCash((prev) => Number((prev + proceeds).toFixed(2)));
+        setCapitalInAutoTrader(selectedCapital);
+
+        const newPnlUsd = Number((sessionRealizedPnlUsd + pnlUsd).toFixed(2));
+        const newClosedTrades = closedTradesToday + 1;
+        setSessionRealizedPnlUsd(newPnlUsd);
+        setClosedTradesToday(newClosedTrades);
+
+        setActivePosition(null);
+        prevActivePositionRef.current = null;
+        removeScopedItem('autotrader_active_position');
+        setStatus('SCANNING');
+
+        if (user?.id) {
+          void upsertAutoTraderSessionInSupabase({
+            id: `at-session-${user.id}`,
+            user_id: user.id,
+            status: 'SCANNING',
+            active_position: null,
+            session_realized_pnl_usd: newPnlUsd,
+            closed_trades_today: newClosedTrades,
+          });
+        }
+
+        setLogs((prev) => [
+          `[${new Date().toISOString().slice(11, 19)}] [SALIDA REMOTA OMNI] Posición en ${pos.symbol} cerrada al mercado desde terminal secundaria @ $${exitPrice.toFixed(4)}.`,
+          ...prev.slice(0, 40),
+        ]);
+      } catch (err) {
+        console.warn('Error in remote exitActivePosition:', err);
+      }
+    }
+  }, [
+    activePosition,
+    livePrices,
+    selectedCapital,
+    sessionRealizedPnlUsd,
+    closedTradesToday,
+    setUsdtCash,
+    setCapitalInAutoTrader,
+    syncClosedTradesToExternalSystems,
+    user?.id,
+  ]);
 
   // Clock interval for session timer & automatic completion
   useEffect(() => {
@@ -693,12 +945,12 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
         setElapsedSeconds(elapsed);
 
-        // Advance active position holding seconds in real time
+        // Dynamically refresh active position price and holding duration on all screens
         setActivePosition((prev: any) => {
-          if (!prev || !prev.entryTimestampMs) return prev;
-          const secs = Math.floor((Date.now() - prev.entryTimestampMs) / 1000);
-          if (secs === prev.holdingSeconds) return prev;
-          return { ...prev, holdingSeconds: secs };
+          if (!prev) return prev;
+          const coinKey = prev.symbol?.toLowerCase();
+          const freshPrice = livePrices[coinKey] || (allCoinsStats && allCoinsStats[coinKey]?.price);
+          return normalizeActivePosition(prev, freshPrice && freshPrice > 0 ? freshPrice : prev.currentPrice);
         });
 
         // Check session duration limit: pure timer, stops execution when time is reached
@@ -862,6 +1114,9 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Reset statistics handler
   const resetSessionStats = useCallback(() => {
+    if (runnerRef.current) {
+      runnerRef.current.resetDailySessionMetrics();
+    }
     setSessionRealizedPnlUsd(0);
     setSessionRealizedPnlPct(0);
     setClosedTradesToday(0);
@@ -874,7 +1129,12 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     removeScopedItem('autotrader_session_pnl_usd');
     removeScopedItem('autotrader_session_pnl_pct');
     removeScopedItem('autotrader_logs');
-  }, []);
+    addToast({
+      type: 'INFO',
+      title: 'Auto Trader: Métricas Reiniciadas',
+      message: 'Estadísticas del día y Circuit Breakers reseteados a cero.',
+    });
+  }, [addToast]);
 
   // Continuous Scan Loop
   useEffect(() => {
@@ -901,6 +1161,7 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const prevId = prevActivePositionRef.current?.orderId || prevActivePositionRef.current?.symbol;
           const currentId = pos.orderId || pos.symbol;
           if (!prevActivePositionRef.current || prevId !== currentId) {
+            const isRotation = Boolean(prevActivePositionRef.current && prevId !== currentId);
             prevActivePositionRef.current = pos;
             void sendTelegramAutoTraderTokenEntry({
               symbol: pos.symbol,
@@ -912,26 +1173,61 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               takeProfitPrice: pos.takeProfitPrice,
             });
 
-            // Persist OPEN trade to Supabase bot_trades so the order is immediately registered
+            const tradeId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined;
+            const openRow: TradeRow = {
+              id: tradeId as any,
+              user_id: user?.id,
+              bot_id: undefined,
+              coin_id: pos.symbol?.toLowerCase() || 'unknown',
+              side: 'BUY',
+              entry_price: Number(pos.entryPrice || 0),
+              amount_usd: Number(pos.capitalInvested || 0),
+              units: Number(pos.units || 0),
+              take_profit_price: pos.takeProfitPrice,
+              stop_loss_price: pos.stopLossPrice,
+              strategy_type: 'SPOT_BREAKOUT',
+              order_type: 'MARKET',
+              status: 'OPEN',
+              created_at: pos.entryTime || new Date().toISOString(),
+            };
+
+            // Register in unified app trades so Portafolio and Terminal see the open trade
+            recordExternalTrade(openRow);
+
             if (user?.id) {
-              const openRow: TradeRow = {
-                id: pos.orderId || `at-pos-${Date.now()}`,
-                user_id: user.id,
-                bot_id: 'autotrader-quant-pro',
-                coin_id: pos.symbol?.toLowerCase() || 'unknown',
-                side: 'BUY',
-                entry_price: Number(pos.entryPrice || 0),
-                amount_usd: Number(pos.capitalInvested || 0),
-                units: Number(pos.units || 0),
-                take_profit_price: pos.takeProfitPrice,
-                stop_loss_price: pos.stopLossPrice,
-                strategy_type: 'SPOT_BREAKOUT',
-                order_type: 'MARKET',
-                status: 'OPEN',
-                created_at: pos.entryTime || new Date().toISOString(),
-              };
               void persistTradeToSupabase(openRow, user.id);
             }
+
+            // Dispatch Toast & Bell Notification
+            addToast({
+              type: isRotation ? 'INFO' : 'BUY',
+              title: isRotation ? `Auto Trader: Rotación` : `Auto Trader: ${pos.symbol}/USDT`,
+              message: isRotation
+                ? `Rotando hacia ${pos.symbol} @ $${Number(pos.entryPrice).toFixed(4)}`
+                : `Compra ejecutada @ $${Number(pos.entryPrice).toFixed(4)} ($${Number(pos.capitalInvested).toFixed(2)} USDT)`,
+            });
+
+            addNotification({
+              id: `at-open-${openRow.id}`,
+              coinId: pos.symbol.toLowerCase(),
+              coinSymbol: pos.symbol.toUpperCase(),
+              coinName: pos.symbol.toUpperCase(),
+              category: 'BUY_OPPORTUNITY',
+              badge: isRotation ? 'ROTACIÓN DE ACTIVO' : 'COMPRA EJECUTADA',
+              badgeColor: '#0ECB81',
+              badgeBg: 'rgba(14, 203, 129, 0.15)',
+              badgeBorder: 'rgba(14, 203, 129, 0.35)',
+              headline: isRotation
+                ? `Auto Trader rotó hacia ${pos.symbol}/USDT`
+                : `Auto Trader compró ${pos.symbol}/USDT`,
+              plainExplanation: `Entrada ejecutada a $${Number(pos.entryPrice).toFixed(4)}.`,
+              highlightText: `Capital: $${Number(pos.capitalInvested).toFixed(2)} USDT. TP: $${Number(pos.takeProfitPrice).toFixed(4)} | SL: $${Number(pos.stopLossPrice).toFixed(4)}`,
+              actionText: `Ver posición`,
+              actionCoinId: pos.symbol.toLowerCase(),
+              timestamp: Date.now(),
+              timeAgo: 'Ahora',
+              isRead: false,
+            });
           }
 
           // Live price sync from real-time market data feed before emitting position state
@@ -945,37 +1241,42 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             runnerRef.current.updatePositionPrice(freshPrice);
           }
 
-          const posData = {
-            symbol: pos.symbol,
-            pair: `${pos.symbol}/USDT`,
-            entryPrice: pos.entryPrice,
-            currentPrice: pos.currentPrice,
-            highestSeen: pos.highestPriceSeen,
-            units: pos.units,
-            capitalInvested: pos.capitalInvested,
-            stopLossPrice: pos.stopLossPrice,
-            takeProfitPrice: pos.takeProfitPrice,
-            breakEvenArmed: pos.isBreakEvenArmed || false,
-            breakEvenPrice: pos.entryPrice * 1.0025,
-            trailingArmed: pos.isTrailingArmed || false,
-            trailingStopPrice: pos.stopLossPrice,
-            mfePct: pos.maxFavorableExcursionPct || 0,
-            maePct: pos.maxAdverseExcursionPct || 0,
-            unrealizedPnlUsd: pos.unrealizedPnL || 0,
-            unrealizedPnlPct: pos.capitalInvested > 0 ? (pos.unrealizedPnL / pos.capitalInvested) * 100 : 0,
-            holdingSeconds: Math.floor((Date.now() - pos.entryTimestampMs) / 1000),
-            orderId: pos.orderId,
-            entryTimestampMs: pos.entryTimestampMs,
-          };
+          const posData = normalizeActivePosition(pos, freshPrice);
+          if (posData) {
+            setActivePosition(posData);
+            setScopedItem('autotrader_active_position', JSON.stringify(posData));
 
-          setActivePosition(posData);
-          setScopedItem('autotrader_active_position', JSON.stringify(posData));
+            // Cross-device SSOT Cloud Sync: Immediately broadcast position to Supabase
+            if (user?.id) {
+              void upsertAutoTraderSessionInSupabase({
+                id: `at-session-${user.id}`,
+                user_id: user.id,
+                status: 'IN_POSITION',
+                selected_capital: selectedCapital,
+                active_position: posData,
+              });
+            }
+          }
         } else {
+          const wasInPos = Boolean(prevActivePositionRef.current || activePosition);
           prevActivePositionRef.current = null;
           setActivePosition(null);
           removeScopedItem('autotrader_active_position');
           if (isRunning) {
             setCapitalInAutoTrader(selectedCapital);
+          }
+
+          // Cross-device SSOT Cloud Sync: Reset cloud state to SCANNING
+          if (user?.id && wasInPos) {
+            void upsertAutoTraderSessionInSupabase({
+              id: `at-session-${user.id}`,
+              user_id: user.id,
+              status: isPaused ? 'PAUSED' : 'SCANNING',
+              active_position: null,
+              session_realized_pnl_usd: runnerRef.current.accumulatedDailyPnlUsd,
+              session_realized_pnl_pct: runnerRef.current.accumulatedDailyPnlPct,
+              closed_trades_today: runnerRef.current.tradeHistory.length,
+            });
           }
         }
 
@@ -1016,10 +1317,22 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           runnerRef.current.status === 'MAX_TRADES_REACHED' ||
           runnerRef.current.status === 'SESSION_EXPIRED'
         ) {
+          const stopStatus = runnerRef.current.status;
           setIsRunning(false);
-          setStatus(runnerRef.current.status);
+          setStatus(stopStatus);
           removeScopedItem('autotrader_is_running');
           removeScopedItem('autotrader_active_position');
+
+          addToast({
+            type: stopStatus === 'TARGET_REACHED' ? 'PROFIT' : 'INFO',
+            title: 'Auto Trader: Salvaguarda',
+            message:
+              stopStatus === 'TARGET_REACHED'
+                ? 'Meta de ganancia diaria alcanzada. Ganancias resguardadas.'
+                : stopStatus === 'DAILY_STOP_TRIGGERED'
+                ? 'Límite de pérdida diaria alcanzado. Capital protegido.'
+                : 'Sesión finalizada por límite de tiempo o trades.',
+          });
         }
       } catch (err) {
         console.error('[AutoTraderProvider] Scan tick error:', err);

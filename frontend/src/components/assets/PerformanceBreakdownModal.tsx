@@ -459,7 +459,7 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
                                 </td>
                                 <td className="pr-3 text-right">
                                   <span className="font-black text-[#0ECB81] tabular-nums">
-                                    +{formatMicroPnl(netPnl, currencyMode, penRate)}
+                                    {formatMicroPnl(netPnl, currencyMode, penRate)}
                                   </span>
                                 </td>
                               </tr>

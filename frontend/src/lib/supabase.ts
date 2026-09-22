@@ -97,6 +97,31 @@ export interface MarketCacheRow {
   cached_at?: string;
 }
 
+export const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export interface AutoTraderPositionState {
+  symbol: string;
+  pair: string;
+  entryPrice: number;
+  currentPrice: number;
+  highestSeen: number;
+  units: number;
+  capitalInvested: number;
+  stopLossPrice: number;
+  takeProfitPrice: number;
+  breakEvenArmed: boolean;
+  breakEvenPrice: number;
+  trailingArmed: boolean;
+  trailingStopPrice: number;
+  mfePct: number;
+  maePct: number;
+  unrealizedPnlUsd: number;
+  unrealizedPnlPct: number;
+  holdingSeconds: number;
+  orderId?: string;
+  entryTimestampMs: number;
+}
+
 export interface AutoTraderSessionRow {
   id: string;
   user_id?: string;
@@ -108,13 +133,14 @@ export interface AutoTraderSessionRow {
   max_trades_per_day: number;
   trading_profile: string;
   digest_interval: string;
-  active_position?: any;
+  active_position?: AutoTraderPositionState | any;
   session_start_time?: string;
   session_realized_pnl_usd: number;
   session_realized_pnl_pct: number;
   closed_trades_today: number;
   updated_at?: string;
 }
+
 
 // ─── DIRECT SUPABASE QUERY HELPERS (POSTGREST API) ───
 
@@ -370,8 +396,16 @@ export async function persistTradeToSupabase(trade: TradeRow, userId?: string): 
     // Supabase table check constraint requires status IN ('OPEN', 'CLOSED', 'CANCELLED')
     const dbStatus = trade.status === 'PENDING' ? 'OPEN' : trade.status;
 
+    // UUID Sanitization: PostgreSQL bot_trades requires valid UUID v4 for id and bot_id
+    const isIdValidUuid = typeof trade.id === 'string' && UUID_V4_REGEX.test(trade.id);
+    const tradeId = isIdValidUuid
+      ? trade.id
+      : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : undefined);
+
+    const isBotIdValidUuid = typeof trade.bot_id === 'string' && UUID_V4_REGEX.test(trade.bot_id);
+
     const payload: Record<string, any> = {
-      id: trade.id,
+      ...(tradeId ? { id: tradeId } : {}),
       coin_id: trade.coin_id,
       side: trade.side,
       entry_price: trade.entry_price,
@@ -388,7 +422,7 @@ export async function persistTradeToSupabase(trade: TradeRow, userId?: string): 
     if (userId || trade.user_id) {
       payload.user_id = userId || trade.user_id;
     }
-    if (trade.bot_id) {
+    if (isBotIdValidUuid) {
       payload.bot_id = trade.bot_id;
     }
 

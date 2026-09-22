@@ -4,6 +4,7 @@ import { type GridLevelItem, getDynamicCoinInfo, formatDynamicPrice, formatTrade
 import { CryptoIcon } from './CryptoIcon';
 import { BotDetailModal } from './BotDetailModal';
 import { PositionsTab } from './activity/PositionsTab';
+import { usePortfolio } from '../contexts/PortfolioContext';
 import {
   Robot as PhosphorRobot,
   ChartLineUp,
@@ -78,6 +79,7 @@ export const BottomActivityPanel = ({
 
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [selectedBotForInspection, setSelectedBotForInspection] = useState<BotRow | null>(null);
+  const { holdings } = usePortfolio();
 
   useEffect(() => {
     localStorage.setItem('crypto_analyzer_activity_tab', activeTab);
@@ -632,7 +634,10 @@ export const BottomActivityPanel = ({
                     const coinInfo = getDynamicCoinInfo(tr.coin_id);
                     const decimals = coinInfo ? coinInfo.decimals : 2;
                     const isClosed = tr.status === 'CLOSED';
+                    const isExited = Boolean(tr.exit_price && tr.exit_price > 0) || isClosed;
                     const isBuy = tr.side === 'BUY';
+                    const holdingUnits = holdings[tr.coin_id]?.units || (coinInfo ? holdings[coinInfo.id]?.units : 0) || 0;
+                    const isHeldInSpot = !isExited && isBuy && holdingUnits > 0.00001;
                     const isWin = (tr.pnl_usd ?? 0) >= 0;
                     const feeUsd = typeof tr.fee_usd === 'number'
                       ? tr.fee_usd
@@ -674,7 +679,14 @@ export const BottomActivityPanel = ({
                           <div>
                             <span className="text-slate-500 block">Entrada → Salida:</span>
                             <span className="text-slate-200 tabular-nums font-bold">
-                              {formatDynamicPrice(tr.entry_price, decimals, currencyMode, penRate)} → {tr.exit_price ? formatDynamicPrice(tr.exit_price, decimals, currencyMode, penRate) : (isBuy ? 'En Cartera' : '-')}
+                              {formatDynamicPrice(tr.entry_price, decimals, currencyMode, penRate)} →{' '}
+                              {tr.exit_price
+                                ? formatDynamicPrice(tr.exit_price, decimals, currencyMode, penRate)
+                                : isHeldInSpot
+                                ? 'En Cartera'
+                                : isExited
+                                ? formatDynamicPrice(tr.entry_price, decimals, currencyMode, penRate)
+                                : '-'}
                             </span>
                           </div>
                           <div className="text-right">
@@ -691,11 +703,7 @@ export const BottomActivityPanel = ({
                             Monto: <strong className="text-white">{formatDynamicPrice(tr.amount_usd, 2, currencyMode, penRate)}</strong>
                           </span>
                           <div>
-                            {isBuy ? (
-                              <span className="px-2 py-0.5 rounded-lg bg-white/5 text-slate-300 border border-white/10 text-[10px] font-bold">
-                                EN INVENTARIO
-                              </span>
-                            ) : isClosed ? (
+                            {isExited || isClosed || typeof tr.pnl_usd === 'number' ? (
                               <div className="flex items-center gap-1.5">
                                 <span className="text-[9.5px] text-slate-400 font-mono">
                                   Bruto: {grossPnl >= 0 ? '+' : ''}{formatDynamicPrice(grossPnl, 2, currencyMode, penRate)}
@@ -705,8 +713,19 @@ export const BottomActivityPanel = ({
                                   {formatDynamicPrice(tr.pnl_usd ?? 0, 2, currencyMode, penRate)}
                                 </span>
                               </div>
+                            ) : isHeldInSpot ? (
+                              <div className="flex flex-col items-end leading-tight">
+                                <span className="px-2 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
+                                  EN INVENTARIO
+                                </span>
+                                <span className="text-[9px] text-slate-400 font-mono mt-0.5">
+                                  Costo: {formatDynamicPrice(tr.amount_usd, 2, currencyMode, penRate)}
+                                </span>
+                              </div>
                             ) : (
-                              <span className="text-slate-500 font-bold text-[10px]">En Curso</span>
+                              <span className="px-2 py-0.5 rounded-lg bg-white/5 text-slate-400 border border-white/10 text-[10px] font-bold">
+                                Liquidado
+                              </span>
                             )}
                           </div>
                         </div>
@@ -736,7 +755,10 @@ export const BottomActivityPanel = ({
                         const coinInfo = getDynamicCoinInfo(tr.coin_id);
                         const decimals = coinInfo ? coinInfo.decimals : 2;
                         const isClosed = tr.status === 'CLOSED';
+                        const isExited = Boolean(tr.exit_price && tr.exit_price > 0) || isClosed;
                         const isBuy = tr.side === 'BUY';
+                        const holdingUnits = holdings[tr.coin_id]?.units || (coinInfo ? holdings[coinInfo.id]?.units : 0) || 0;
+                        const isHeldInSpot = !isExited && isBuy && holdingUnits > 0.00001;
                         const isWin = (tr.pnl_usd ?? 0) >= 0;
                         const feeUsd = typeof tr.fee_usd === 'number'
                           ? tr.fee_usd
@@ -781,20 +803,28 @@ export const BottomActivityPanel = ({
                               {formatDynamicPrice(tr.entry_price, decimals, currencyMode, penRate)}
                             </td>
                             <td className="text-slate-200 tabular-nums">
-                              {tr.exit_price ? formatDynamicPrice(tr.exit_price, decimals, currencyMode, penRate) : (isBuy ? <span className="text-slate-500">En Cartera</span> : '-')}
+                              {tr.exit_price ? (
+                                formatDynamicPrice(tr.exit_price, decimals, currencyMode, penRate)
+                              ) : isHeldInSpot ? (
+                                <span className="text-emerald-400/80 font-bold">En Cartera</span>
+                              ) : isExited ? (
+                                formatDynamicPrice(tr.entry_price, decimals, currencyMode, penRate)
+                              ) : (
+                                '-'
+                              )}
                             </td>
                             <td className="text-slate-300 tabular-nums">
                               {formatDynamicPrice(tr.amount_usd, 2, currencyMode, penRate)}
                             </td>
                             <td>
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                isBuy
-                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
-                                  : isClosed
+                                isExited || isClosed
                                   ? 'bg-white/5 text-slate-400 border-white/10'
-                                  : 'bg-emerald-500/15 text-[#0ECB81] border-emerald-500/30'
+                                  : isHeldInSpot
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                                  : 'bg-white/5 text-slate-400 border-white/10'
                               }`}>
-                                {isBuy ? 'COMPRADO' : tr.status}
+                                {isExited || isClosed ? 'CERRADO' : (isHeldInSpot ? 'COMPRADO' : (tr.status || 'EJECUTADO'))}
                               </span>
                             </td>
                             <td className="text-right pr-2 tabular-nums">
@@ -808,16 +838,7 @@ export const BottomActivityPanel = ({
                               </div>
                             </td>
                             <td className="text-right pr-3 font-extrabold tabular-nums">
-                              {isBuy ? (
-                                <div className="flex flex-col items-end leading-tight">
-                                  <span className="px-2 py-0.5 rounded-lg font-bold bg-white/5 text-slate-300 border border-white/10 text-[10px]">
-                                    EN INVENTARIO
-                                  </span>
-                                  <span className="text-[9px] text-slate-500 font-mono mt-0.5">
-                                    Costo: {formatDynamicPrice(tr.amount_usd, 2, currencyMode, penRate)}
-                                  </span>
-                                </div>
-                              ) : isClosed ? (
+                              {isExited || isClosed || typeof tr.pnl_usd === 'number' ? (
                                 <div className="flex flex-col items-end leading-tight">
                                   <span className={`px-2 py-0.5 rounded-lg font-black ${isWin ? 'bg-emerald-500/15 text-[#0ECB81]' : 'bg-rose-500/15 text-[#F6465D]'}`}>
                                     {isWin ? '+' : ''}
@@ -827,8 +848,24 @@ export const BottomActivityPanel = ({
                                     Bruto: {grossPnl >= 0 ? '+' : ''}{formatDynamicPrice(grossPnl, 2, currencyMode, penRate)}
                                   </span>
                                 </div>
+                              ) : isHeldInSpot ? (
+                                <div className="flex flex-col items-end leading-tight">
+                                  <span className="px-2 py-0.5 rounded-lg font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                                    EN INVENTARIO
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 font-mono mt-0.5">
+                                    Costo: {formatDynamicPrice(tr.amount_usd, 2, currencyMode, penRate)}
+                                  </span>
+                                </div>
                               ) : (
-                                <span className="text-slate-500 font-bold">En Curso</span>
+                                <div className="flex flex-col items-end leading-tight">
+                                  <span className="px-2 py-0.5 rounded-lg font-bold bg-white/5 text-slate-400 border border-white/10 text-[10px]">
+                                    Liquidado
+                                  </span>
+                                  <span className="text-[9px] text-slate-500 font-mono mt-0.5">
+                                    Fuera de Cartera
+                                  </span>
+                                </div>
                               )}
                             </td>
                           </tr>

@@ -332,7 +332,7 @@ export const AssetDetailDrawer = ({
                       <div className="bg-[#08090C] p-2.5 rounded-xl border border-white/5">
                         <span className="text-[10px] text-slate-400 block font-sans">Precio Compra Prom.</span>
                         <span className="font-bold text-white tabular-nums">
-                          {formatDynamicPrice(avgEntry, coinMeta.decimals, currencyMode, penRate)}
+                          {formatDynamicPrice(avgEntry, Math.max(4, coinMeta.decimals), currencyMode, penRate)}
                         </span>
                         <span className="text-[10px] text-slate-500 block font-sans">Punto de Equilibrio</span>
                       </div>
@@ -360,26 +360,26 @@ export const AssetDetailDrawer = ({
                     <div className="grid grid-cols-2 gap-2 text-xs font-mono">
                       {tpPrice && (
                         <div className="flex flex-col">
-                          <span className="text-[10px] text-emerald-400 font-bold">🎯 Take Profit</span>
+                          <span className="text-[10px] text-emerald-400 font-bold">Take Profit</span>
                           <span className="text-white font-black tabular-nums">
-                            {formatDynamicPrice(tpPrice, coinMeta.decimals, currencyMode, penRate)}
+                            {formatDynamicPrice(tpPrice, Math.max(4, coinMeta.decimals), currencyMode, penRate)}
                           </span>
                           {tpDistancePct !== null && (
                             <span className="text-[9.5px] text-slate-400">
-                              (a {tpDistancePct >= 0 ? '+' : ''}{tpDistancePct.toFixed(1)}% del spot)
+                              (a {tpDistancePct >= 0 ? '+' : ''}{tpDistancePct.toFixed(2)}% del spot)
                             </span>
                           )}
                         </div>
                       )}
                       {slPrice && (
                         <div className="flex flex-col">
-                          <span className="text-[10px] text-rose-400 font-bold">🛑 Stop Loss</span>
+                          <span className="text-[10px] text-rose-400 font-bold">Stop Loss</span>
                           <span className="text-white font-black tabular-nums">
-                            {formatDynamicPrice(slPrice, coinMeta.decimals, currencyMode, penRate)}
+                            {formatDynamicPrice(slPrice, Math.max(4, coinMeta.decimals), currencyMode, penRate)}
                           </span>
                           {slDistancePct !== null && (
                             <span className="text-[9.5px] text-slate-400">
-                              (a {slDistancePct.toFixed(1)}% del spot)
+                              (a {slDistancePct.toFixed(2)}% del spot)
                             </span>
                           )}
                         </div>

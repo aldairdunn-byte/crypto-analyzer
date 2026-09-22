@@ -392,7 +392,7 @@ export const ActiveBotsPanel: React.FC<ActiveBotsPanelProps> = ({
                           <div>
                             <span className="text-slate-500 block">Entrada → Salida:</span>
                             <span className="text-slate-200 tabular-nums">
-                              {formatDynamicPrice(tr.entry_price, 2, currencyMode, penRate)} → {tr.exit_price ? formatDynamicPrice(tr.exit_price, 2, currencyMode, penRate) : (isBuy ? 'En Cartera' : '-')}
+                              {formatDynamicPrice(tr.entry_price, 2, currencyMode, penRate)} → {tr.exit_price ? formatDynamicPrice(tr.exit_price, 2, currencyMode, penRate) : '-'}
                             </span>
                           </div>
                           <div className="text-right">
@@ -408,15 +408,9 @@ export const ActiveBotsPanel: React.FC<ActiveBotsPanelProps> = ({
                             Monto: <strong className="text-white">{formatDynamicPrice(tr.amount_usd, 2, currencyMode, penRate)}</strong>
                           </span>
                           <div>
-                            {isBuy ? (
-                              <span className="px-2 py-0.5 rounded-lg bg-white/5 text-slate-300 border border-white/10 text-[10px] font-bold">
-                                EN INVENTARIO
-                              </span>
-                            ) : (
-                              <span className={`px-2 py-0.5 rounded-lg font-black tabular-nums ${isWin ? 'bg-emerald-500/15 text-[#0ECB81]' : 'bg-rose-500/15 text-[#F6465D]'}`}>
-                                {isWin ? '+' : ''}{formatDynamicPrice(tr.pnl_usd ?? 0, 2, currencyMode, penRate)}
-                              </span>
-                            )}
+                            <span className={`px-2 py-0.5 rounded-lg font-black tabular-nums ${isWin ? 'bg-emerald-500/15 text-[#0ECB81]' : 'bg-rose-500/15 text-[#F6465D]'}`}>
+                              {isWin ? '+' : ''}{formatDynamicPrice(tr.pnl_usd ?? 0, 2, currencyMode, penRate)}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -477,22 +471,16 @@ export const ActiveBotsPanel: React.FC<ActiveBotsPanelProps> = ({
                             </td>
                             <td className="p-2.5 text-slate-300">{formatDynamicPrice(tr.entry_price, 2, currencyMode, penRate)}</td>
                             <td className="p-2.5 text-slate-300">
-                              {tr.exit_price ? formatDynamicPrice(tr.exit_price ?? 0, 2, currencyMode, penRate) : (isBuy ? 'En Cartera' : '-')}
+                              {tr.exit_price ? formatDynamicPrice(tr.exit_price ?? 0, 2, currencyMode, penRate) : '-'}
                             </td>
                             <td className="p-2.5 text-slate-300">{formatDynamicPrice(tr.amount_usd, 2, currencyMode, penRate)}</td>
                             <td className="p-2.5 text-right text-amber-400 font-bold">
                               -{formatDynamicPrice(feeUsd, 2, currencyMode, penRate)}
                             </td>
                             <td className="p-2.5 text-right font-black">
-                              {isBuy ? (
-                                <span className="px-2 py-0.5 rounded-lg bg-white/5 text-slate-400 border border-white/10 text-[10px]">
-                                  EN INVENTARIO
-                                </span>
-                              ) : (
-                                <span className={isWin ? 'text-[#0ECB81]' : 'text-[#F6465D]'}>
-                                  {isWin ? '+' : ''}{formatDynamicPrice(tr.pnl_usd ?? 0, 2, currencyMode, penRate)}
-                                </span>
-                              )}
+                              <span className={isWin ? 'text-[#0ECB81]' : 'text-[#F6465D]'}>
+                                {isWin ? '+' : ''}{formatDynamicPrice(tr.pnl_usd ?? 0, 2, currencyMode, penRate)}
+                              </span>
                             </td>
                           </tr>
                         );

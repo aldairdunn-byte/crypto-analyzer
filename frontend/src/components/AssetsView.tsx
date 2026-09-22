@@ -167,7 +167,7 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
         bot: null as any,
         isAutoTrader: true,
         coin,
-        name: 'Auto Trader Quant Pro',
+        name: activePos ? `Auto Trader (${activePos.symbol}/USDT)` : 'Auto Trader Quant Pro',
         symbol: activePos ? activePos.symbol : 'AUTO',
         category: 'TOP' as const,
         capitalAllocated,

@@ -1,11 +1,13 @@
+import { storageGet, storageSet, storageRemove } from './storageAdapter';
+
 const APP_PREFIX = 'crypto_analyzer';
 const GUEST_ID_KEY = `${APP_PREFIX}:guest_id`;
 
 const getGuestId = (): string => {
-  let guestId = localStorage.getItem(GUEST_ID_KEY);
+  let guestId = storageGet(GUEST_ID_KEY);
   if (!guestId) {
     guestId = crypto.randomUUID();
-    localStorage.setItem(GUEST_ID_KEY, guestId);
+    storageSet(GUEST_ID_KEY, guestId);
   }
   return guestId;
 };
@@ -23,19 +25,19 @@ export const getScopedItem = (
   userId?: string | null,
   options: { legacyFallback?: boolean } = {}
 ): string | null => {
-  const scopedValue = localStorage.getItem(getScopedStorageKey(baseKey, userId));
+  const scopedValue = storageGet(getScopedStorageKey(baseKey, userId));
   if (scopedValue !== null) return scopedValue;
-  if (!userId && options.legacyFallback) return localStorage.getItem(baseKey);
+  if (!userId && options.legacyFallback) return storageGet(baseKey);
   return null;
 };
 
 export const setScopedItem = (baseKey: string, value: string, userId?: string | null): void => {
-  localStorage.setItem(getScopedStorageKey(baseKey, userId), value);
+  storageSet(getScopedStorageKey(baseKey, userId), value);
 };
 
 export const removeScopedItem = (baseKey: string, userId?: string | null): void => {
-  localStorage.removeItem(getScopedStorageKey(baseKey, userId));
-  if (!userId) localStorage.removeItem(baseKey);
+  storageRemove(getScopedStorageKey(baseKey, userId));
+  if (!userId) storageRemove(baseKey);
 };
 
 export interface MigratedGuestData {
@@ -70,12 +72,12 @@ export const migrateGuestDataToUser = (userId: string): MigratedGuestData => {
       const userKey = `${APP_PREFIX}:${userOwner}:${baseKey}`;
       const guestKey = `${APP_PREFIX}:${guestOwner}:${baseKey}`;
 
-      const existingUserVal = localStorage.getItem(userKey);
-      const guestVal = localStorage.getItem(guestKey) ?? localStorage.getItem(baseKey);
+      const existingUserVal = storageGet(userKey);
+      const guestVal = storageGet(guestKey) ?? storageGet(baseKey);
 
       // If user doesn't have data yet, but guest has active data, copy it over
       if (existingUserVal === null && guestVal !== null && guestVal !== '[]' && guestVal !== '{}') {
-        localStorage.setItem(userKey, guestVal);
+        storageSet(userKey, guestVal);
         result[baseKey] = guestVal;
       }
     });

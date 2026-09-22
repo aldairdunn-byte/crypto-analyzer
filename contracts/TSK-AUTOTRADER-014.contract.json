@@ -1,0 +1,76 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-AUTOTRADER-014",
+  "epic_id": "EPC-AUTOTRADER",
+  "goal": "Implement Omni-Channel Cross-Device Auto Trader Active Position Synchronization, Supabase UUID Sanitization, and Remote Market Execution",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/supabase.ts",
+      "frontend/src/contexts/AutoTraderContext.tsx"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": [
+      "frontend/src/components/AssetsView.tsx",
+      "frontend/src/components/AutoTraderView.tsx"
+    ]
+  },
+
+  "depends_on": ["TSK-AUTOTRADER-013"],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/supabase.ts",
+    "interfaces": "export interface AutoTraderPositionState { symbol: string; pair: string; entryPrice: number; currentPrice: number; highestSeen: number; units: number; capitalInvested: number; stopLossPrice: number; takeProfitPrice: number; breakEvenArmed: boolean; breakEvenPrice: number; trailingArmed: boolean; trailingStopPrice: number; mfePct: number; maePct: number; unrealizedPnlUsd: number; unrealizedPnlPct: number; holdingSeconds: number; orderId?: string; entryTimestampMs: number; }",
+    "function_signatures": [
+      "persistTradeToSupabase(trade: TradeRow, userId?: string): Promise<boolean>",
+      "upsertAutoTraderSessionInSupabase(session: Partial<AutoTraderSessionRow>): Promise<boolean>",
+      "subscribeToAutoTraderSession(userId: string, callback: (session: AutoTraderSessionRow) => void): () => void"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit tests in frontend/src/__tests__/cross_device_autotrader_sync.test.js covering UUID sanitization, active position normalization, and remote market execution",
+    "Run node --test frontend/src/__tests__/cross_device_autotrader_sync.test.js to observe test failures before implementation",
+    "Sanitize UUID v4 generation and foreign key handling for bot_trades in frontend/src/lib/supabase.ts",
+    "Implement normalizeActivePosition and auto-healing synchronization from local storage to Supabase in frontend/src/contexts/AutoTraderContext.tsx",
+    "Update exitActivePosition in frontend/src/contexts/AutoTraderContext.tsx to allow remote market execution when runnerRef.current is absent",
+    "Ensure AssetsView.tsx displays active token metadata and current spot valuations when a position is present",
+    "Run node --test frontend/src/__tests__/cross_device_autotrader_sync.test.js to verify test suite passes",
+    "Validate contract using validate_contract.py"
+  ],
+
+  "commands": {
+    "test": "node --test frontend/src/__tests__/cross_device_autotrader_sync.test.js",
+    "lint": "npm --prefix frontend run build",
+    "typecheck": "npm --prefix frontend run build"
+  },
+
+  "acceptance_criteria": [
+    "persistTradeToSupabase replaces non-UUID identifiers with valid UUID v4 strings and sets bot_id to null when referencing non-grid bots",
+    "normalizeActivePosition transforms both camelCase and snake_case properties into unified position state",
+    "Active position transitions trigger upsertAutoTraderSessionInSupabase with status IN_POSITION and serialized position state",
+    "Position closures update Supabase auto_trader_sessions to status SCANNING with null active_position",
+    "exitActivePosition succeeds on secondary screens where runnerRef.current is null",
+    "Unit tests in cross_device_autotrader_sync.test.js execute with code 0",
+    "Frontend build completes without TypeScript compilation errors"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/supabase.ts frontend/src/contexts/AutoTraderContext.tsx frontend/src/components/AssetsView.tsx; rm -f frontend/src/__tests__/cross_device_autotrader_sync.test.js contracts/TSK-AUTOTRADER-014.contract.json"
+  }
+}

@@ -1,3 +1,5 @@
+import { storageGet, storageSet } from './storageAdapter.ts';
+
 export interface CoinInfo {
   id: string;
   name: string;
@@ -20,14 +22,14 @@ export const COINS: Record<string, CoinInfo> = {
   ripple: { id: 'ripple', name: 'Ripple', symbol: 'XRP', binanceSymbol: 'XRPUSDT', category: 'TOP', basePrice: 1.4200, decimals: 4 },
   cardano: { id: 'cardano', name: 'Cardano', symbol: 'ADA', binanceSymbol: 'ADAUSDT', category: 'TOP', basePrice: 0.7840, decimals: 4 },
   avalanche: { id: 'avalanche', name: 'Avalanche', symbol: 'AVAX', binanceSymbol: 'AVAXUSDT', category: 'TOP', basePrice: 28.80, decimals: 2 },
-  sui: { id: 'sui', name: 'Sui Network', symbol: 'SUI', binanceSymbol: 'SUIUSDT', category: 'TOP', basePrice: 2.85, decimals: 2 },
-  polkadot: { id: 'polkadot', name: 'Polkadot', symbol: 'DOT', binanceSymbol: 'DOTUSDT', category: 'TOP', basePrice: 5.25, decimals: 2 },
+  sui: { id: 'sui', name: 'Sui Network', symbol: 'SUI', binanceSymbol: 'SUIUSDT', category: 'TOP', basePrice: 2.85, decimals: 4 },
+  polkadot: { id: 'polkadot', name: 'Polkadot', symbol: 'DOT', binanceSymbol: 'DOTUSDT', category: 'TOP', basePrice: 5.25, decimals: 4 },
   chainlink: { id: 'chainlink', name: 'Chainlink', symbol: 'LINK', binanceSymbol: 'LINKUSDT', category: 'TOP', basePrice: 18.45, decimals: 2 },
   polygon: { id: 'polygon', name: 'Polygon', symbol: 'POL', binanceSymbol: 'POLUSDT', category: 'TOP', basePrice: 0.3850, decimals: 4 },
   tron: { id: 'tron', name: 'TRON', symbol: 'TRX', binanceSymbol: 'TRXUSDT', category: 'TOP', basePrice: 0.2480, decimals: 4 },
-  aptos: { id: 'aptos', name: 'Aptos', symbol: 'APT', binanceSymbol: 'APTUSDT', category: 'TOP', basePrice: 8.90, decimals: 2 },
-  celestia: { id: 'celestia', name: 'Celestia', symbol: 'TIA', binanceSymbol: 'TIAUSDT', category: 'TOP', basePrice: 5.10, decimals: 2 },
-  cosmos: { id: 'cosmos', name: 'Cosmos', symbol: 'ATOM', binanceSymbol: 'ATOMUSDT', category: 'TOP', basePrice: 4.80, decimals: 2 },
+  aptos: { id: 'aptos', name: 'Aptos', symbol: 'APT', binanceSymbol: 'APTUSDT', category: 'TOP', basePrice: 8.90, decimals: 4 },
+  celestia: { id: 'celestia', name: 'Celestia', symbol: 'TIA', binanceSymbol: 'TIAUSDT', category: 'TOP', basePrice: 5.10, decimals: 4 },
+  cosmos: { id: 'cosmos', name: 'Cosmos', symbol: 'ATOM', binanceSymbol: 'ATOMUSDT', category: 'TOP', basePrice: 4.80, decimals: 4 },
   sei: { id: 'sei', name: 'Sei Network', symbol: 'SEI', binanceSymbol: 'SEIUSDT', category: 'TOP', basePrice: 0.4200, decimals: 4 },
   hedera: { id: 'hedera', name: 'Hedera', symbol: 'HBAR', binanceSymbol: 'HBARUSDT', category: 'TOP', basePrice: 0.2250, decimals: 4 },
   algorand: { id: 'algorand', name: 'Algorand', symbol: 'ALGO', binanceSymbol: 'ALGOUSDT', category: 'TOP', basePrice: 0.2820, decimals: 4 },
@@ -489,13 +491,13 @@ export async function fetchLiveUsdPenRate(): Promise<number> {
     const data = await res.json();
     if (data && data.rates && data.rates.PEN) {
       const rate = Number(parseFloat(data.rates.PEN).toFixed(3));
-      localStorage.setItem('crypto_analyzer_live_pen_rate', rate.toString());
+      storageSet('crypto_analyzer_live_pen_rate', rate.toString());
       return rate;
     }
   } catch (e) {
     console.info('Live USD/PEN API notice:', e);
   }
-  const cached = localStorage.getItem('crypto_analyzer_live_pen_rate');
+  const cached = storageGet('crypto_analyzer_live_pen_rate');
   return cached ? parseFloat(cached) : 3.75;
 }
 
@@ -617,16 +619,42 @@ export function formatDynamicPrice(
   const converted = currency === 'PEN' ? price * penRate : price;
   const symbol = currency === 'PEN' ? 'S/ ' : '$';
 
+  if (!converted || isNaN(converted)) return `${symbol}0.00`;
+
+  // Monedas de alto valor (BTC, ETH >= $1,000)
   if (converted >= 1000) {
-    return `${symbol}${converted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  } else if (converted >= 1) {
-    return `${symbol}${converted.toFixed(2)}`;
-  } else if (converted >= 0.01) {
-    return `${symbol}${converted.toFixed(4)}`;
-  } else if (converted > 0) {
-    return `${symbol}${converted.toFixed(Math.max(4, decimals))}`;
+    const d = Math.max(2, decimals > 2 ? decimals : 2);
+    return `${symbol}${converted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: d })}`;
   }
-  return `${symbol}0.00`;
+
+  // Monedas medianas ($100 a $1,000 ej. SOL, BNB, TAO)
+  if (converted >= 100) {
+    const d = Math.max(2, decimals);
+    return `${symbol}${converted.toFixed(d)}`;
+  }
+
+  // Monedas intermedias ($10 a $100 ej. AVAX, LINK, INJ)
+  if (converted >= 10) {
+    const d = Math.max(2, decimals);
+    return `${symbol}${converted.toFixed(d)}`;
+  }
+
+  // Monedas menores a $10 (ej. SUI, NEAR, TIA, APT, RENDER, WLD, XRP)
+  // CRÍTICO: 4 decimales mínimo para distinguir Take Profit y Stop Loss del precio spot
+  if (converted >= 1) {
+    const d = Math.max(4, decimals);
+    return `${symbol}${converted.toFixed(d)}`;
+  }
+
+  // Monedas entre $0.01 y $1 (ej. ADA, DOGE, SEI, HBAR)
+  if (converted >= 0.01) {
+    const d = Math.max(4, decimals);
+    return `${symbol}${converted.toFixed(d)}`;
+  }
+
+  // Micro-monedas y Memecoins (< $0.01)
+  const d = Math.max(decimals, 6);
+  return `${symbol}${converted.toFixed(d)}`;
 }
 
 /**
@@ -848,14 +876,14 @@ export async function fetchAllCoins24hStats(): Promise<Record<string, { price: n
     });
 
     try {
-      localStorage.setItem('crypto_analyzer_last_ticker_stats', JSON.stringify(result));
+      storageSet('crypto_analyzer_last_ticker_stats', JSON.stringify(result));
     } catch {}
 
     return result;
   } catch (err) {
     console.warn('Could not fetch bulk ticker from Binance, using cached fallback:', err);
     try {
-      const cached = localStorage.getItem('crypto_analyzer_last_ticker_stats');
+      const cached = storageGet('crypto_analyzer_last_ticker_stats');
       if (cached) {
         const parsed = JSON.parse(cached);
         const sanitized: Record<string, any> = {};

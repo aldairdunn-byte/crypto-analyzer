@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Home,
   Activity,
@@ -12,7 +12,9 @@ import {
   Bell,
   ShieldAlert,
   Bot,
+  AppWindow,
 } from 'lucide-react';
+import { storageGet } from '../lib/storageAdapter';
 import { COINS, getDynamicCoinInfo, formatDynamicPrice, type CoinInfo } from '../lib/marketData';
 import { CryptoIcon } from './CryptoIcon';
 import { SparklineChart } from './SparklineChart';
@@ -91,6 +93,22 @@ export const HeaderTickerBar = ({
   const [isWalletOpen, setIsWalletOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<TickerSearchCategory>('ALL');
+
+  // Widget popup launcher — opens floating mini-window synced via BroadcastChannel
+  const handleLaunchWidget = useCallback(() => {
+    const savedX = storageGet('crypto_analyzer_widget_x');
+    const savedY = storageGet('crypto_analyzer_widget_y');
+    const left = savedX ? parseInt(savedX) : Math.max(0, window.screenX + window.outerWidth - 380);
+    const top  = savedY ? parseInt(savedY) : Math.max(0, window.screenY + 60);
+    const popup = window.open(
+      `${window.location.origin}/?view=widget&standalone=1`,
+      'CryptoAnalyzerWidgetPopup',
+      `width=345,height=195,left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=no`
+    );
+    if (!popup) {
+      window.open(`${window.location.origin}/?view=widget`, '_blank');
+    }
+  }, []);
 
   const coin = getDynamicCoinInfo(activeCoin);
   const isPositive = change24h >= 0;
@@ -438,6 +456,15 @@ export const HeaderTickerBar = ({
         >
           <span className="sm:hidden font-mono text-[10px] font-black">{currencyMode === 'USD' ? '$ USD' : 'S/ PEN'}</span>
           <span className="hidden sm:inline font-mono text-xs whitespace-nowrap">$ USD ⇄ S/ PEN</span>
+        </button>
+
+        {/* Widget Popup Launcher */}
+        <button
+          onClick={handleLaunchWidget}
+          title="Abrir widget flotante"
+          className="relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 bg-[#0E1118] hover:bg-[#151922] border border-white/10 hover:border-[#00e676]/40 rounded-xl text-slate-300 hover:text-[#00e676] transition-all cursor-pointer shadow-sm active:scale-95 group"
+        >
+          <AppWindow className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:scale-110 transition-transform duration-200" />
         </button>
 
         {/* Interactive Notification Bell */}

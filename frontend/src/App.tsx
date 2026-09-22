@@ -21,6 +21,7 @@ import { NotificationsDrawer } from './components/NotificationsDrawer';
 import { BottomNavMobile, type MasterViewType } from './components/BottomNavMobile';
 import { AuthModal } from './components/AuthModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { DesktopWidgetView } from './components/desktop/DesktopWidgetView';
 import { type StrategyRecommendation, evaluateStrategyForCoin } from './lib/strategyAdvisor';
 import {
   Robot,
@@ -195,6 +196,45 @@ const MainContent: React.FC = () => {
       autoTraderUnrealizedPnl
     );
   }, [trades, holdings, livePrices, allCoinsStats, totalMarkToMarketEquity, autoTraderUnrealizedPnl]);
+
+  // ── BroadcastChannel: Emit live portfolio data to widget popup every 3s ──────
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
+    const ch = new BroadcastChannel('crypto_analyzer_widget_v1');
+    const activeGridBot = bots.find((b) => b.status === 'ACTIVE');
+    const autoTraderPos = autoTrader.activePosition;
+    const botPnlPct = autoTraderPos ? (autoTraderPos.unrealizedPnlPct || 0) : 0;
+    const botSymbol = autoTraderPos?.symbol ||
+      (activeGridBot ? `${activeGridBot.coin_id.toUpperCase()}/USDT` : null);
+
+    const emit = () => {
+      const perf = calculateRealisticPortfolioPerformance(
+        trades, holdings, livePrices, allCoinsStats, totalMarkToMarketEquity, autoTraderUnrealizedPnl
+      );
+      const tickerCoins = ['btc','eth','sol','sui','link'].map(sym => {
+        const stat = allCoinsStats[sym] || allCoinsStats[`${sym}usdt`];
+        const price = livePrices[sym] || stat?.price || 0;
+        const change = stat?.priceChangePercent ?? stat?.change24h ?? 0;
+        return { sym: sym.toUpperCase(), price, change };
+      }).filter(c => c.price > 0);
+
+      ch.postMessage({
+        totalBalance: totalMarkToMarketEquity,
+        pnlUsd: perf.pnl24hUsd || 0,
+        pnlPct: perf.pnl24hPct || 0,
+        hasBotActive: autoTrader.isRunning || !!activeGridBot,
+        isAutoTrader: autoTrader.isRunning,
+        botSymbol,
+        botPnlPct,
+        ticker: tickerCoins,
+        ts: Date.now(),
+      });
+    };
+
+    emit();
+    const id = setInterval(emit, 3000);
+    return () => { clearInterval(id); ch.close(); };
+  }, [totalMarkToMarketEquity, autoTrader.isRunning, autoTrader.activePosition, bots, trades, holdings, livePrices, allCoinsStats, autoTraderUnrealizedPnl]);
 
   return (
     <div className="h-screen w-screen bg-[#08090C] text-[#F8FAFC] flex flex-col font-sans overflow-hidden select-none">
@@ -536,6 +576,21 @@ const MainContent: React.FC = () => {
 };
 
 export function App() {
+  const isWidgetMode = typeof window !== 'undefined' && (
+    window.location.search.includes('view=widget') ||
+    window.location.hash.includes('widget') ||
+    window.location.pathname === '/widget'
+  );
+
+  // Widget mode: render standalone receiver (no heavy context tree)
+  if (isWidgetMode) {
+    return (
+      <ErrorBoundary>
+        <DesktopWidgetView />
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <AuthProvider>

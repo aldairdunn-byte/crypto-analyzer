@@ -1345,6 +1345,18 @@ export class AutoTraderRunner {
     }
 
     const pos = this.currentPosition;
+
+    // Anti-cross-token / anomalous spike guard
+    if (pos.currentPrice > 0) {
+      const priceDeltaPct = Math.abs((newPrice - pos.currentPrice) / pos.currentPrice) * 100;
+      if (priceDeltaPct > 35) {
+        this.log(
+          `[ANOMALY GUARD BLOCKED] Tick anómalo ignorado para ${pos.symbol}: $${newPrice} (variación instantánea de ${priceDeltaPct.toFixed(1)}% vs actual $${pos.currentPrice}).`
+        );
+        return;
+      }
+    }
+
     pos.currentPrice = newPrice;
     pos.highestPriceSeen = Math.max(pos.highestPriceSeen || pos.entryPrice, newPrice);
 
@@ -1925,6 +1937,11 @@ export class AutoTraderRunner {
     }
     this.dailyRealizedPnL += tradeRecord.netPnL;
 
+    // Synchronize daily accumulated stats for UI dashboard consistency
+    this.closedTradesToday += 1;
+    this.accumulatedDailyPnlUsd += tradeRecord.netPnL;
+    this.accumulatedDailyPnlPct += this.assignedCapital > 0 ? (tradeRecord.netPnL / this.assignedCapital) * 100 : 0;
+
     this.unrealizedPnL = 0;
     this.currentPosition = null;
 
@@ -1970,19 +1987,27 @@ export class AutoTraderRunner {
   }
 
   /**
-   * WebSocket Position Monitor connection
+   * WebSocket Position Monitor connection with strict symbol matching
    */
   public initPositionWebSocket(binanceSymbol: string) {
     if (typeof WebSocket === 'undefined') return;
 
     try {
       this.closePositionWebSocket();
-      const wsUrl = `wss://stream.binance.com:9443/ws/${binanceSymbol.toLowerCase()}@trade`;
-      this.activeWebSocket = new WebSocket(wsUrl);
+      const expectedSymbol = binanceSymbol.toUpperCase();
+      const wsUrl = `wss://stream.binance.com:9443/ws/${expectedSymbol.toLowerCase()}@trade`;
+      const ws = new WebSocket(wsUrl);
+      this.activeWebSocket = ws;
 
-      this.activeWebSocket.onmessage = (event: any) => {
+      ws.onmessage = (event: any) => {
+        // Drop message if this socket is no longer the active one or position was cleared
+        if (this.activeWebSocket !== ws || !this.currentPosition) return;
         try {
           const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          // Strictly verify that the tick belongs to the expected symbol
+          if (data && data.s && data.s.toUpperCase() !== expectedSymbol) {
+            return;
+          }
           if (data && data.p) {
             const livePrice = parseFloat(data.p);
             if (livePrice > 0) {
@@ -1994,12 +2019,14 @@ export class AutoTraderRunner {
         }
       };
 
-      this.activeWebSocket.onerror = (_err: any) => {
-        this.log(`[WS ERROR] Error en stream de posición ${binanceSymbol}`);
+      ws.onerror = (_err: any) => {
+        this.log(`[WS ERROR] Error en stream de posición ${expectedSymbol}`);
       };
 
-      this.activeWebSocket.onclose = () => {
-        this.activeWebSocket = null;
+      ws.onclose = () => {
+        if (this.activeWebSocket === ws) {
+          this.activeWebSocket = null;
+        }
       };
     } catch (e: any) {
       this.log(`[WS WARN] No se pudo inicializar WebSocket de posición: ${e.message}`);
@@ -2009,12 +2036,34 @@ export class AutoTraderRunner {
   public closePositionWebSocket() {
     if (this.activeWebSocket) {
       try {
+        this.activeWebSocket.onmessage = null;
+        this.activeWebSocket.onerror = null;
+        this.activeWebSocket.onclose = null;
         this.activeWebSocket.close();
       } catch {
         // ignore
       }
       this.activeWebSocket = null;
     }
+  }
+
+  public resetDailySessionMetrics(): void {
+    this.accumulatedDailyPnlUsd = 0;
+    this.accumulatedDailyPnlPct = 0;
+    this.closedTradesToday = 0;
+    this.dailyRealizedPnL = 0;
+    this.realizedPnL = 0;
+    this.rotationsCount = 0;
+    this.rotationsRejectedCount = 0;
+    this.tradeTimestamps = [];
+    if (
+      this.status === 'TARGET_REACHED' ||
+      this.status === 'DAILY_STOP_TRIGGERED' ||
+      this.status === 'MAX_TRADES_REACHED'
+    ) {
+      this.status = 'SCANNING';
+    }
+    this.log(`[SESSION RESET] Métricas diarias y circuit breakers reseteados a cero.`);
   }
 
   /**

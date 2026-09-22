@@ -61,6 +61,8 @@ interface BotEngineContextType {
   addToast: (toast: Omit<ToastItem, 'id'>) => void;
   removeToast: (id: string) => void;
   notifications: PlainSpanishNotification[];
+  addNotification: (notif: PlainSpanishNotification) => void;
+  recordExternalTrade: (trade: TradeRow) => void;
   unreadNotificationsCount: number;
   markAllNotificationsAsRead: () => void;
   dismissNotification: (id: string) => void;
@@ -203,6 +205,20 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
     void showNativeNotification(notif);
   }, [storageOwnerId, isNotificationWarmupActive]);
+
+  const recordExternalTrade = useCallback((trade: TradeRow) => {
+    setTrades((prev) => {
+      const exists = prev.some((t) => t.id === trade.id);
+      let updated: TradeRow[];
+      if (exists) {
+        updated = prev.map((t) => (t.id === trade.id ? { ...t, ...trade } : t));
+      } else {
+        updated = [trade, ...prev];
+      }
+      setScopedItem('crypto_analyzer_trades', JSON.stringify(updated), storageOwnerId);
+      return updated;
+    });
+  }, [storageOwnerId]);
 
   // Memory ref for previous prices per coin to ensure strict Tick-Crossing
   const prevPricesRef = useRef<Record<string, number>>({});
@@ -419,9 +435,34 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           if (tradesRes.data && tradesRes.data.length > 0) {
             // Deserialise all rows from Supabase, parsing metadata from entry_reason / exit_reason
             const cloudTrades: TradeRow[] = (tradesRes.data as any[]).map(parseSupabaseTradeRow);
-            setTrades(cloudTrades);
-            setScopedItem('crypto_analyzer_trades', JSON.stringify(cloudTrades), user.id);
-            syncNotificationsForUser(user.id, cloudTrades);
+
+            // Reconcile orphaned OPEN trades whose bots are stopped or no longer exist
+            const activeBotIds = new Set(
+              (botsRes.data && botsRes.data.length > 0 ? (botsRes.data as BotRow[]) : bots)
+                .filter((b) => b.status === 'ACTIVE')
+                .map((b) => b.id)
+            );
+            const reconciledTrades = cloudTrades.map((t) => {
+              if (t.status === 'OPEN' && t.bot_id && !activeBotIds.has(t.bot_id)) {
+                const exitP = t.exit_price || t.entry_price || 0;
+                void updateTradeStatusInSupabase(t.id, {
+                  status: 'CLOSED',
+                  exit_price: exitP,
+                  reason: 'BOT_STOPPED_RECONCILED',
+                  user_id: user.id,
+                });
+                return {
+                  ...t,
+                  status: 'CLOSED' as const,
+                  exit_price: exitP,
+                };
+              }
+              return t;
+            });
+
+            setTrades(reconciledTrades);
+            setScopedItem('crypto_analyzer_trades', JSON.stringify(reconciledTrades), user.id);
+            syncNotificationsForUser(user.id, reconciledTrades);
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new Event('crypto_analyzer_trades_updated'));
             }
@@ -661,6 +702,22 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             return t;
           });
         });
+
+        // Persist closures to Supabase
+        if (user) {
+          refundResult.closedTrades.forEach((ct) => {
+            void updateTradeStatusInSupabase(ct.tradeId, {
+              status: 'CLOSED',
+              exit_price: ct.exitPrice,
+              fee_usd: ct.feeUsd,
+              gross_pnl_usd: ct.grossPnlUsd,
+              pnl_usd: ct.pnlUsd,
+              pnl_pct: ct.pnlPct,
+              reason: 'GRID_STOP_LOSS',
+              user_id: user.id,
+            });
+          });
+        }
 
         // 4. Return exact calculated capital (unspent + liquidated positions)
         setUsdtCash((prev) => Number((prev + refundResult.totalRefund).toFixed(2)));
@@ -1120,6 +1177,21 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             return t;
           })
         );
+
+        if (user) {
+          refundResult.closedTrades.forEach((ct) => {
+            void updateTradeStatusInSupabase(ct.tradeId, {
+              status: 'CLOSED',
+              exit_price: ct.exitPrice,
+              fee_usd: ct.feeUsd,
+              gross_pnl_usd: ct.grossPnlUsd,
+              pnl_usd: ct.pnlUsd,
+              pnl_pct: ct.pnlPct,
+              reason: 'BOT_STOPPED',
+              user_id: user.id,
+            });
+          });
+        }
       }
 
       // Credit exact refunded capital (unspent + liquidated positions)
@@ -1225,6 +1297,21 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             return t;
           })
         );
+
+        if (user) {
+          refundResult.closedTrades.forEach((ct) => {
+            void updateTradeStatusInSupabase(ct.tradeId, {
+              status: 'CLOSED',
+              exit_price: ct.exitPrice,
+              fee_usd: ct.feeUsd,
+              gross_pnl_usd: ct.grossPnlUsd,
+              pnl_usd: ct.pnlUsd,
+              pnl_pct: ct.pnlPct,
+              reason: 'BOT_DELETED',
+              user_id: user.id,
+            });
+          });
+        }
       }
 
       setUsdtCash((prev) => Number((prev + refundResult.totalRefund).toFixed(2)));
@@ -1295,6 +1382,21 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           return t;
         })
       );
+
+      if (user) {
+        allClosedTradesMap.forEach((ct) => {
+          void updateTradeStatusInSupabase(ct.tradeId, {
+            status: 'CLOSED',
+            exit_price: ct.exitPrice,
+            fee_usd: ct.feeUsd,
+            gross_pnl_usd: ct.grossPnlUsd,
+            pnl_usd: ct.pnlUsd,
+            pnl_pct: ct.pnlPct,
+            reason: 'STOP_ALL_EMERGENCY',
+            user_id: user.id,
+          });
+        });
+      }
     }
 
     const activeBotIds = new Set(activeBots.map((b) => b.id));
@@ -1503,101 +1605,180 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setUsdtCash((prev) => prev + netProceeds);
       updateHoldingFromTrade(trade.coinId, 'SELL', sellUnits, effectivePrice);
 
-      // Close or partially close open trade in state & persist to Supabase
+      // Close or partially close open trade in state & persist to Supabase (FIFO multi-trade consumption)
       setTrades((prev) => {
-        let handled = false;
+        let remainingSellUnits = sellUnits;
         const result: TradeRow[] = [];
+        let anyMatched = false;
 
-        for (const t of prev) {
-          const isCoinMatch =
-            t.coin_id === trade.coinId ||
-            t.coin_id.toLowerCase() === targetCoin.id.toLowerCase() ||
-            t.coin_id.toUpperCase() === targetCoin.symbol.toUpperCase();
-
-          if (!handled && t.status === 'OPEN' && isCoinMatch && (trade.tradeId ? t.id === trade.tradeId : true)) {
-            handled = true;
-            const isPartialClose = sellUnits < t.units - 0.000001;
-
-            if (isPartialClose) {
-              // ── PARTIAL CLOSE: keep remaining position OPEN, create CLOSED record for sold portion ──
-              const remainingUnits = Number((t.units - sellUnits).toFixed(targetCoin.decimals));
-              const remainingAmountUsd = Number((remainingUnits * t.entry_price).toFixed(2));
-
-              // Keep the original trade open with reduced size
-              result.push({
-                ...t,
-                units: remainingUnits,
-                amount_usd: remainingAmountUsd,
-              });
-
-              // Create a new CLOSED trade record for the sold portion
-              const partialCostBasis = sellUnits * t.entry_price;
-              const partialGrossPnl = proceeds - partialCostBasis;
-              const partialNetPnl = netProceeds - partialCostBasis;
-              const partialPnlPct = partialCostBasis > 0 ? (partialNetPnl / partialCostBasis) * 100 : 0;
-
-              const closedPartial: TradeRow = {
-                id: crypto.randomUUID(),
-                user_id: user?.id,
-                coin_id: trade.coinId,
-                bot_id: t.bot_id,
-                side: 'SELL',
-                entry_price: t.entry_price,
-                exit_price: effectivePrice,
-                amount_usd: proceeds,
-                units: Number(sellUnits.toFixed(targetCoin.decimals)),
-                fee_usd: feeUsd,
-                fee_rate: 0.001,
-                take_profit_price: t.take_profit_price,
-                stop_loss_price: t.stop_loss_price,
-                strategy_type: t.strategy_type,
-                order_type: 'MARKET',
-                gross_pnl_usd: Number(partialGrossPnl.toFixed(2)),
-                pnl_usd: Number(partialNetPnl.toFixed(2)),
-                pnl_pct: Number(partialPnlPct.toFixed(2)),
-                status: 'CLOSED',
-                created_at: new Date().toISOString(),
-              };
-              result.push(closedPartial);
-
-              // Update original trade and insert closed partial in Supabase
-              updateTradeStatusInSupabase(t.id, {
-                status: 'OPEN',
-                units: remainingUnits,
-                amount_usd: remainingAmountUsd,
-                user_id: user?.id,
-              });
-              persistTradeToSupabase(closedPartial, user?.id);
+        // If a specific tradeId was passed, target only that trade
+        if (trade.tradeId) {
+          for (const t of prev) {
+            if (t.id === trade.tradeId && t.status === 'OPEN') {
+              anyMatched = true;
+              const isPartialClose = remainingSellUnits < t.units - 0.000001;
+              if (isPartialClose) {
+                const remainingUnits = Number((t.units - remainingSellUnits).toFixed(targetCoin.decimals));
+                const remainingAmountUsd = Number((remainingUnits * t.entry_price).toFixed(2));
+                result.push({
+                  ...t,
+                  units: remainingUnits,
+                  amount_usd: remainingAmountUsd,
+                });
+                const partialCostBasis = remainingSellUnits * t.entry_price;
+                const partialGrossPnl = (remainingSellUnits * effectivePrice) - partialCostBasis;
+                const partialNetPnl = partialGrossPnl - feeUsd;
+                const partialPnlPct = partialCostBasis > 0 ? (partialNetPnl / partialCostBasis) * 100 : 0;
+                const closedPartial: TradeRow = {
+                  id: crypto.randomUUID(),
+                  user_id: user?.id,
+                  coin_id: trade.coinId,
+                  bot_id: t.bot_id,
+                  side: 'SELL',
+                  entry_price: t.entry_price,
+                  exit_price: effectivePrice,
+                  amount_usd: Number((remainingSellUnits * effectivePrice).toFixed(2)),
+                  units: Number(remainingSellUnits.toFixed(targetCoin.decimals)),
+                  fee_usd: feeUsd,
+                  fee_rate: 0.001,
+                  gross_pnl_usd: Number(partialGrossPnl.toFixed(2)),
+                  pnl_usd: Number(partialNetPnl.toFixed(2)),
+                  pnl_pct: Number(partialPnlPct.toFixed(2)),
+                  status: 'CLOSED',
+                  created_at: new Date().toISOString(),
+                };
+                result.push(closedPartial);
+                updateTradeStatusInSupabase(t.id, {
+                  status: 'OPEN',
+                  units: remainingUnits,
+                  amount_usd: remainingAmountUsd,
+                  user_id: user?.id,
+                });
+                persistTradeToSupabase(closedPartial, user?.id);
+              } else {
+                result.push({
+                  ...t,
+                  status: 'CLOSED' as const,
+                  exit_price: effectivePrice,
+                  gross_pnl_usd: Number(grossProfitUsd.toFixed(2)),
+                  pnl_usd: Number(netProfitUsd.toFixed(2)),
+                  pnl_pct: Number(profitPct.toFixed(2)),
+                  fee_usd: Number(((t.fee_usd || 0) + feeUsd).toFixed(4)),
+                });
+                updateTradeStatusInSupabase(t.id, {
+                  status: 'CLOSED',
+                  exit_price: effectivePrice,
+                  gross_pnl_usd: Number(grossProfitUsd.toFixed(2)),
+                  pnl_usd: Number(netProfitUsd.toFixed(2)),
+                  pnl_pct: Number(profitPct.toFixed(2)),
+                  fee_usd: Number(((t.fee_usd || 0) + feeUsd).toFixed(4)),
+                  reason: 'MANUAL_SELL',
+                  user_id: user?.id,
+                });
+              }
             } else {
-              // ── FULL CLOSE: mark the entire trade as CLOSED ──
-              result.push({
-                ...t,
-                status: 'CLOSED' as const,
-                exit_price: effectivePrice,
-                gross_pnl_usd: Number(grossProfitUsd.toFixed(2)),
-                pnl_usd: Number(netProfitUsd.toFixed(2)),
-                pnl_pct: Number(profitPct.toFixed(2)),
-                fee_usd: Number(((t.fee_usd || 0) + feeUsd).toFixed(4)),
-              });
-
-              // Persist full closure in Supabase
-              updateTradeStatusInSupabase(t.id, {
-                status: 'CLOSED',
-                exit_price: effectivePrice,
-                gross_pnl_usd: Number(grossProfitUsd.toFixed(2)),
-                pnl_usd: Number(netProfitUsd.toFixed(2)),
-                pnl_pct: Number(profitPct.toFixed(2)),
-                fee_usd: Number(((t.fee_usd || 0) + feeUsd).toFixed(4)),
-                reason: 'MANUAL_SELL',
-                user_id: user?.id,
-              });
+              result.push(t);
             }
-          } else {
-            result.push(t);
+          }
+        } else {
+          // FIFO consumption across all matching open BUY trades for this coin
+          for (const t of prev) {
+            const isCoinMatch =
+              t.coin_id === trade.coinId ||
+              t.coin_id.toLowerCase() === targetCoin.id.toLowerCase() ||
+              t.coin_id.toUpperCase() === targetCoin.symbol.toUpperCase();
+
+            if (remainingSellUnits > 0.000001 && t.status === 'OPEN' && isCoinMatch && t.side === 'BUY') {
+              anyMatched = true;
+              if (remainingSellUnits >= t.units - 0.000001) {
+                // Full close of this trade
+                const closedUnits = t.units;
+                remainingSellUnits -= closedUnits;
+                const tradeProceeds = closedUnits * effectivePrice;
+                const tradeCost = closedUnits * t.entry_price;
+                const tradeFee = Number((tradeProceeds * 0.001).toFixed(4));
+                const tradeGrossPnl = tradeProceeds - tradeCost;
+                const tradeNetPnl = tradeGrossPnl - tradeFee;
+                const tradePnlPct = tradeCost > 0 ? (tradeNetPnl / tradeCost) * 100 : 0;
+
+                const fullyClosed: TradeRow = {
+                  ...t,
+                  status: 'CLOSED' as const,
+                  exit_price: effectivePrice,
+                  gross_pnl_usd: Number(tradeGrossPnl.toFixed(2)),
+                  pnl_usd: Number(tradeNetPnl.toFixed(2)),
+                  pnl_pct: Number(tradePnlPct.toFixed(2)),
+                  fee_usd: Number(((t.fee_usd || 0) + tradeFee).toFixed(4)),
+                };
+                result.push(fullyClosed);
+
+                updateTradeStatusInSupabase(t.id, {
+                  status: 'CLOSED',
+                  exit_price: effectivePrice,
+                  gross_pnl_usd: Number(tradeGrossPnl.toFixed(2)),
+                  pnl_usd: Number(tradeNetPnl.toFixed(2)),
+                  pnl_pct: Number(tradePnlPct.toFixed(2)),
+                  fee_usd: Number(((t.fee_usd || 0) + tradeFee).toFixed(4)),
+                  reason: 'MANUAL_SELL_FIFO',
+                  user_id: user?.id,
+                });
+              } else {
+                // Partial close of this trade
+                const soldUnits = remainingSellUnits;
+                remainingSellUnits = 0;
+                const remainingUnits = Number((t.units - soldUnits).toFixed(targetCoin.decimals));
+                const remainingAmountUsd = Number((remainingUnits * t.entry_price).toFixed(2));
+
+                // Retain remaining open position
+                result.push({
+                  ...t,
+                  units: remainingUnits,
+                  amount_usd: remainingAmountUsd,
+                });
+
+                // Record closed partial record
+                const partialCost = soldUnits * t.entry_price;
+                const partialProceeds = soldUnits * effectivePrice;
+                const partialFee = Number((partialProceeds * 0.001).toFixed(4));
+                const partialGross = partialProceeds - partialCost;
+                const partialNet = partialGross - partialFee;
+                const partialPct = partialCost > 0 ? (partialNet / partialCost) * 100 : 0;
+
+                const closedPartial: TradeRow = {
+                  id: crypto.randomUUID(),
+                  user_id: user?.id,
+                  coin_id: trade.coinId,
+                  bot_id: t.bot_id,
+                  side: 'SELL',
+                  entry_price: t.entry_price,
+                  exit_price: effectivePrice,
+                  amount_usd: Number(partialProceeds.toFixed(2)),
+                  units: Number(soldUnits.toFixed(targetCoin.decimals)),
+                  fee_usd: partialFee,
+                  fee_rate: 0.001,
+                  gross_pnl_usd: Number(partialGross.toFixed(2)),
+                  pnl_usd: Number(partialNet.toFixed(2)),
+                  pnl_pct: Number(partialPct.toFixed(2)),
+                  status: 'CLOSED',
+                  created_at: new Date().toISOString(),
+                };
+                result.push(closedPartial);
+
+                updateTradeStatusInSupabase(t.id, {
+                  status: 'OPEN',
+                  units: remainingUnits,
+                  amount_usd: remainingAmountUsd,
+                  user_id: user?.id,
+                });
+                persistTradeToSupabase(closedPartial, user?.id);
+              }
+            } else {
+              result.push(t);
+            }
           }
         }
 
-        if (!handled) {
+        if (!anyMatched) {
           // No matching open trade found — create standalone closed record
           const standaloneTrade: TradeRow = {
             id: crypto.randomUUID(),
@@ -2432,6 +2613,8 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         addToast,
         removeToast,
         notifications,
+        addNotification: pushNotification,
+        recordExternalTrade,
         unreadNotificationsCount,
         markAllNotificationsAsRead,
         dismissNotification,
