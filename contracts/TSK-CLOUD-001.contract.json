@@ -1,0 +1,55 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+  "task_id": "TSK-CLOUD-001",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Add HTTP health check server listening on PORT in telegram_bot.py to keep Render container live",
+  "scope": {
+    "target_files": [
+      "telegram_bot.py",
+      "test_cloud_liveness.py"
+    ],
+    "forbidden_files": [
+      "frontend/**/*",
+      "supabase_client.py",
+      "bot_engine.py",
+      "engine.py"
+    ],
+    "authorized_global_files": []
+  },
+  "depends_on": [],
+  "contracts": {
+    "types_file": "telegram_bot.py",
+    "function_signatures": [
+      "def start_health_server(port: int = 10000) -> None"
+    ]
+  },
+  "env": {
+    "PORT": "10000"
+  },
+  "execution_steps": [
+    "Write unit test in test_cloud_liveness.py verifying HTTP GET /health returns 200 with status ok JSON payload",
+    "Implement threaded HTTPServer in telegram_bot.py that responds to GET /health and GET / with 200 OK JSON payload",
+    "Start health server on background daemon thread in telegram_bot.py main block",
+    "Execute pytest test_cloud_liveness.py to verify test passes"
+  ],
+  "commands": {
+    "test": "python -m pytest test_cloud_liveness.py",
+    "lint": "python -m py_compile telegram_bot.py",
+    "typecheck": "python -c \"import telegram_bot\""
+  },
+  "acceptance_criteria": [
+    "HTTP GET to /health returns status code 200 with JSON body containing status ok",
+    "HTTP GET to root / returns status code 200 with JSON body containing status ok"
+  ],
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "git diff --name-only shows only target_files"
+  ],
+  "rollback": {
+    "command": "git checkout HEAD -- telegram_bot.py test_cloud_liveness.py"
+  }
+}

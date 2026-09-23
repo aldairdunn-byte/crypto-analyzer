@@ -51,7 +51,7 @@ class SupabaseClient:
         key: Optional[str] = None,
         max_retries: int = 3,
         retry_delay: float = 0.5,
-        timeout: float = 8.0
+        timeout: float = 15.0
     ) -> None:
         self.url: str = (url or os.getenv("SUPABASE_URL", "")).rstrip("/")
         self.key: str = key or os.getenv("SUPABASE_KEY", "")
@@ -164,7 +164,8 @@ class SupabaseClient:
         entry_price: float,
         units: float,
         amount_usd: float,
-        entry_reason: Optional[str] = None
+        entry_reason: Optional[str] = None,
+        user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Registra la apertura de una nueva operación de trading."""
         payload = {
@@ -179,6 +180,8 @@ class SupabaseClient:
         }
         if bot_id:
             payload["bot_id"] = bot_id
+        if user_id:
+            payload["user_id"] = user_id
 
         def _op():
             endpoint = f"{self.url}/rest/v1/bot_trades"

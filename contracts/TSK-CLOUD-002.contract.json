@@ -1,0 +1,54 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+  "task_id": "TSK-CLOUD-002",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Increase Supabase client timeout to 15 seconds and add user_id argument support in record_trade method",
+  "scope": {
+    "target_files": [
+      "supabase_client.py",
+      "test_supabase_timeout.py"
+    ],
+    "forbidden_files": [
+      "frontend/**/*",
+      "telegram_bot.py",
+      "bot_engine.py",
+      "engine.py"
+    ],
+    "authorized_global_files": []
+  },
+  "depends_on": [],
+  "contracts": {
+    "types_file": "supabase_client.py",
+    "function_signatures": [
+      "def record_trade(self, bot_id: Optional[str], coin_id: str, side: str, entry_price: float, units: float, amount_usd: float, entry_reason: Optional[str] = None, user_id: Optional[str] = None) -> Dict[str, Any]"
+    ]
+  },
+  "env": {},
+  "execution_steps": [
+    "Write unit test in test_supabase_timeout.py verifying SupabaseClient timeout is 15 seconds and record_trade sets user_id in payload",
+    "Update default timeout to 15.0 in SupabaseClient __init__ in supabase_client.py",
+    "Add optional user_id parameter to record_trade and include user_id in payload when provided",
+    "Execute pytest test_supabase_timeout.py to verify test passes"
+  ],
+  "commands": {
+    "test": "python -m pytest test_supabase_timeout.py",
+    "lint": "python -m py_compile supabase_client.py",
+    "typecheck": "python -c \"import supabase_client\""
+  },
+  "acceptance_criteria": [
+    "SupabaseClient instance has timeout attribute equal to 15.0",
+    "record_trade payload includes user_id when user_id is passed",
+    "record_trade payload omits user_id when user_id is None"
+  ],
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "git diff --name-only shows only target_files"
+  ],
+  "rollback": {
+    "command": "git checkout HEAD -- supabase_client.py test_supabase_timeout.py"
+  }
+}

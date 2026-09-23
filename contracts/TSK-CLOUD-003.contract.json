@@ -1,0 +1,54 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+  "task_id": "TSK-CLOUD-003",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Pass user_id parameter from active bot record to record_trade during grid bot execution in bot_engine.py",
+  "scope": {
+    "target_files": [
+      "bot_engine.py",
+      "test_cloud_multitenancy.py"
+    ],
+    "forbidden_files": [
+      "frontend/**/*",
+      "telegram_bot.py",
+      "supabase_client.py"
+    ],
+    "authorized_global_files": []
+  },
+  "depends_on": [
+    "TSK-CLOUD-001",
+    "TSK-CLOUD-002"
+  ],
+  "contracts": {
+    "types_file": "bot_engine.py",
+    "function_signatures": [
+      "def evaluate_active_grid_bot_tick(bot: Dict[str, Any], current_price: float, client: Optional[Any] = None, telegram_notifier: Optional[Any] = None) -> Dict[str, Any]"
+    ]
+  },
+  "env": {},
+  "execution_steps": [
+    "Write unit test in test_cloud_multitenancy.py verifying record_trade receives user_id matching bot record",
+    "Update evaluate_active_grid_bot_tick in bot_engine.py to extract user_id from bot and pass it to client.record_trade",
+    "Execute pytest test_cloud_multitenancy.py to verify test passes"
+  ],
+  "commands": {
+    "test": "python -m pytest test_cloud_multitenancy.py",
+    "lint": "python -m py_compile bot_engine.py",
+    "typecheck": "python -c \"import bot_engine\""
+  },
+  "acceptance_criteria": [
+    "evaluate_active_grid_bot_tick calls client.record_trade with user_id matching bot user_id value",
+    "mock client receives user_id kwarg on BUY execution"
+  ],
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "git diff --name-only shows only target_files"
+  ],
+  "rollback": {
+    "command": "git checkout HEAD -- bot_engine.py test_cloud_multitenancy.py"
+  }
+}

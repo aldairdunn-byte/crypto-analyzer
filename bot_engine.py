@@ -550,6 +550,7 @@ def evaluate_active_grid_bot_tick(
     """
     import json
     bot_id = bot.get("id")
+    user_id = bot.get("user_id")
     coin_id = str(bot.get("coin_id") or "solana").lower()
     bot_name = bot.get("name", f"Grid Bot {coin_id.upper()}")
     capital = float(bot.get("capital_allocated_usd") or 100.0)
@@ -651,7 +652,8 @@ def evaluate_active_grid_bot_tick(
                             entry_price=current_price,
                             units=units,
                             amount_usd=allocation,
-                            entry_reason=f"Grid Buy Nivel ${lvl_price:,.4f}"
+                            entry_reason=f"Grid Buy Nivel ${lvl_price:,.4f}",
+                            user_id=user_id
                         )
                     except Exception as e:
                         logger.error(f"Error registrando compra en Supabase: {e}")
@@ -661,7 +663,8 @@ def evaluate_active_grid_bot_tick(
                     "price": current_price,
                     "units": units,
                     "amount_usd": allocation,
-                    "level_price": lvl_price
+                    "level_price": lvl_price,
+                    "user_id": user_id
                 })
 
                 if telegram_notifier and getattr(telegram_notifier, "is_configured", False):

@@ -13,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 
 logger = logging.getLogger("TelegramNotifier")
@@ -1089,26 +1091,49 @@ def run_cloud_auto_trader_cycle(
     return actions
 
 
-if __name__ == "__main__":
-    import threading
-    from http.server import HTTPServer, BaseHTTPRequestHandler
 
-    class HealthHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
+class HealthHTTPRequestHandler(BaseHTTPRequestHandler):
+    """Manejador HTTP ligero para endpoints de salud y keep-alive de Render."""
+
+    def log_message(self, format, *args):
+        # Silenciar logs ruidosos de healthcheck
+        pass
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+
+    def do_GET(self):
+        if self.path in ("/health", "/", "/healthz", "/ping"):
+            payload = json.dumps({
+                "status": "ok",
+                "service": "Crypto Analyzer Pro 2.0 24/7 Service",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
-            self.wfile.write(b'{"status":"healthy","service":"Crypto Analyzer Pro 2.0 24/7 Service"}')
+            self.wfile.write(payload)
+        else:
+            self.send_response(404)
+            self.end_headers()
 
-        def log_message(self, format, *args):
-            pass  # Silenciar logs de healthcheck
 
+def start_health_server(port: int = 10000) -> HTTPServer:
+    """Inicia el servidor HTTP de liveness en un hilo daemon."""
+    server = HTTPServer(("0.0.0.0", port), HealthHTTPRequestHandler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    print(f"🚀 Crypto Analyzer Pro Web Service iniciado en puerto {port} (Render Free Tier 24/7)")
+    return server
+
+
+if __name__ == "__main__":
     port = int(os.getenv("PORT", "10000"))
     try:
-        httpd = HTTPServer(("0.0.0.0", port), HealthHandler)
-        server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-        server_thread.start()
-        print(f"🚀 Crypto Analyzer Pro Web Service iniciado en puerto {port} (Render Free Tier)")
+        httpd = start_health_server(port)
     except Exception as e:
         print(f"⚠️ Aviso del servidor HTTP: {e}")
 
