@@ -265,12 +265,36 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
   const totalPortfolioValuePen = totalPortfolioValueUsd * penRate;
   const maxDemoCashUsd = Math.max(0, Number((1000 - totalBotsCapitalUsd - totalSpotValueUsd).toFixed(2)));
 
-  const totalClosedTradesProfit = trades
-    .filter((t) => t.status === 'CLOSED' && t.pnl_usd)
+  const closedWinnerProfit = trades
+    .filter((t) => t.status === 'CLOSED' && typeof t.pnl_usd === 'number' && t.pnl_usd > 0)
     .reduce((sum, t) => sum + (t.pnl_usd || 0), 0);
-  const totalRealizedProfitUsd = Math.max(totalBotsProfitUsd, totalClosedTradesProfit);
+  const totalClosedTradesProfit = trades
+    .filter((t) => t.status === 'CLOSED' && typeof t.pnl_usd === 'number')
+    .reduce((sum, t) => sum + (t.pnl_usd || 0), 0);
+  const totalRealizedProfitUsd = Math.max(totalBotsProfitUsd, closedWinnerProfit, totalClosedTradesProfit);
 
-  const rawPnl24hUsd = totalRealizedProfitUsd + totalSpotPnlUsd + totalBotsFloatingPnlUsd;
+  // Exact 24-Hour window closed trades profit
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const cutoff24h = Date.now() - ONE_DAY_MS;
+  const closedWinner24hProfit = trades
+    .filter((t) => {
+      if (t.status !== 'CLOSED' || typeof t.pnl_usd !== 'number' || t.pnl_usd <= 0) return false;
+      const tradeTime = new Date(t.created_at || (t as any).timestamp || 0).getTime();
+      return tradeTime >= cutoff24h;
+    })
+    .reduce((sum, t) => sum + (t.pnl_usd || 0), 0);
+
+  const trades24hNetProfit = trades
+    .filter((t) => {
+      if (t.status !== 'CLOSED' || typeof t.pnl_usd !== 'number') return false;
+      const tradeTime = new Date(t.created_at || (t as any).timestamp || 0).getTime();
+      return tradeTime >= cutoff24h;
+    })
+    .reduce((sum, t) => sum + (t.pnl_usd || 0), 0);
+
+  const trades24hProfit = closedWinner24hProfit > 0 ? closedWinner24hProfit : trades24hNetProfit;
+
+  const rawPnl24hUsd = trades24hProfit + totalSpotPnlUsd + totalBotsFloatingPnlUsd;
   const pnl24hUsd = Number(rawPnl24hUsd.toFixed(4));
   const isPnl24hZero = Math.abs(pnl24hUsd) < 0.0001;
   const safePnl24hPct = isPnl24hZero || totalPortfolioValueUsd <= 0

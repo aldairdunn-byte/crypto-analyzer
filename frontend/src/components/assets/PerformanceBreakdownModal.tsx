@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, TrendingUp, CheckCircle2, DollarSign, Layers, Activity, HelpCircle, ShieldCheck, Receipt } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, TrendingUp, CheckCircle2, DollarSign, Layers, Activity, HelpCircle, ShieldCheck, Receipt, Calendar } from 'lucide-react';
 import { ModalPortal } from '../ui/ModalPortal';
 import { useModalKeyboard, formatMicroPnl } from '../../lib/formatters';
 import { CryptoIcon } from '../CryptoIcon';
@@ -40,16 +40,14 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
   penRate,
 }) => {
   useModalKeyboard(onClose);
-  const [activeSubTab, setActiveSubTab] = useState<'AUDIT' | 'WINNERS'>('AUDIT');
-
-  if (!isOpen) return null;
+  const [activeSubTab, setActiveSubTab] = useState<'AUDIT' | 'WINNERS' | 'DAILY'>('AUDIT');
 
   // 1. Filter Closed Winner Trades
-  const closedTrades = trades.filter((t) => t.status === 'CLOSED');
-  const winnerTrades = closedTrades.filter((t) => (t.pnl_usd || 0) > 0);
+  const closedTrades = useMemo(() => (trades || []).filter((t) => t.status === 'CLOSED'), [trades]);
+  const winnerTrades = useMemo(() => closedTrades.filter((t) => (t.pnl_usd || 0) > 0), [closedTrades]);
 
   // 2. Fee Calculation (VIP0 0.10% maker / 0.20% roundtrip)
-  const totalFeesPaidUsd = trades.reduce((acc, t) => {
+  const totalFeesPaidUsd = (trades || []).reduce((acc, t) => {
     const fee = typeof t.fee_usd === 'number'
       ? t.fee_usd
       : ((t.amount_usd || 0) * (t.side === 'SELL' ? 0.002 : 0.001));
@@ -63,6 +61,80 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
   const historicalProfitUsd = Math.max(0, Number((totalRealizedProfitUsd - gridBotsProfitUsd - autoTraderProfitUsd).toFixed(2)));
   const totalFloatingPnlUsd = Number((totalSpotPnlUsd + totalBotsFloatingPnlUsd).toFixed(2));
   const totalActiveCyclePnl = Number((gridBotsProfitUsd + autoTraderProfitUsd + totalFloatingPnlUsd).toFixed(2));
+
+  // 5. Daily Aggregation for 24H history tab
+  const dailyPnLData = useMemo(() => {
+    const dayMap: Record<string, {
+      date: string;
+      tradesCount: number;
+      winnerCount: number;
+      grossProfitUsd: number;
+      feesUsd: number;
+      netProfitUsd: number;
+      trades: TradeRow[];
+    }> = {};
+
+    for (const t of closedTrades) {
+      const rawDate = t.created_at || (t as any).timestamp || new Date().toISOString();
+      const dateKey = rawDate.slice(0, 10);
+      if (!dayMap[dateKey]) {
+        dayMap[dateKey] = {
+          date: dateKey,
+          tradesCount: 0,
+          winnerCount: 0,
+          grossProfitUsd: 0,
+          feesUsd: 0,
+          netProfitUsd: 0,
+          trades: [],
+        };
+      }
+      const day = dayMap[dateKey];
+      day.tradesCount += 1;
+      const pnl = Number(t.pnl_usd || 0);
+      const fee = typeof t.fee_usd === 'number'
+        ? t.fee_usd
+        : ((t.amount_usd || 0) * (t.side === 'SELL' ? 0.002 : 0.001));
+
+      if (pnl > 0) {
+        day.winnerCount += 1;
+      }
+      day.grossProfitUsd += (pnl + fee);
+      day.feesUsd += fee;
+      day.netProfitUsd += pnl;
+      day.trades.push(t);
+    }
+
+    const baseCapital = 1000;
+    const daysList = Object.values(dayMap).map((d) => {
+      const netProfit = Number(d.netProfitUsd.toFixed(4));
+      const pct = baseCapital > 0 ? Number(((netProfit / baseCapital) * 100).toFixed(2)) : 0;
+      return {
+        ...d,
+        netProfitUsd: netProfit,
+        feesUsd: Number(d.feesUsd.toFixed(4)),
+        grossProfitUsd: Number(d.grossProfitUsd.toFixed(4)),
+        dailyPct: pct,
+      };
+    }).sort((a, b) => b.date.localeCompare(a.date));
+
+    const totalDays = daysList.length;
+    const totalNetProfitUsd = Number(daysList.reduce((acc, d) => acc + d.netProfitUsd, 0).toFixed(4));
+    const totalPct = baseCapital > 0 ? Number(((totalNetProfitUsd / baseCapital) * 100).toFixed(2)) : 0;
+    const avgDailyPct = totalDays > 0 ? Number((totalPct / totalDays).toFixed(2)) : 0;
+
+    return {
+      days: daysList,
+      summary: {
+        totalDays,
+        totalNetProfitUsd,
+        totalPct,
+        avgDailyPct,
+      },
+    };
+  }, [closedTrades]);
+
+  // Hook rules: Only return null after ALL hooks have executed unconditionally
+  if (!isOpen) return null;
 
   return (
     <ModalPortal>
@@ -108,11 +180,11 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
           </div>
 
           {/* Subtabs Selector */}
-          <div className="flex border-b border-white/10 px-4 sm:px-6 bg-[#08090C] shrink-0">
+          <div className="flex border-b border-white/10 px-4 sm:px-6 bg-[#08090C] shrink-0 overflow-x-auto no-scrollbar">
             <button
               type="button"
               onClick={() => setActiveSubTab('AUDIT')}
-              className={`py-2.5 px-4 text-xs font-mono font-bold transition-all border-b-2 flex items-center gap-1.5 cursor-pointer ${
+              className={`py-2.5 px-3.5 text-xs font-mono font-bold transition-all border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
                 activeSubTab === 'AUDIT'
                   ? 'border-[#0ECB81] text-white'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -123,8 +195,20 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
             </button>
             <button
               type="button"
+              onClick={() => setActiveSubTab('DAILY')}
+              className={`py-2.5 px-3.5 text-xs font-mono font-bold transition-all border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                activeSubTab === 'DAILY'
+                  ? 'border-cyan-400 text-cyan-300'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>📅 Rendimiento por Día (24H)</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveSubTab('WINNERS')}
-              className={`py-2.5 px-4 text-xs font-mono font-bold transition-all border-b-2 flex items-center gap-1.5 cursor-pointer ${
+              className={`py-2.5 px-3.5 text-xs font-mono font-bold transition-all border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
                 activeSubTab === 'WINNERS'
                   ? 'border-[#0ECB81] text-white'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -324,6 +408,115 @@ export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>
                   </div>
                 </div>
               </>
+            ) : activeSubTab === 'DAILY' ? (
+              /* DAILY TAB: Multi-day History & Daily Performance Cards */
+              <div className="space-y-4">
+                {/* 1. Header with Multi-Day Metrics & Average Return */}
+                <div className="bg-[#08090C] rounded-2xl p-4 border border-cyan-500/25 bg-cyan-500/[0.02] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-cyan-400 font-mono font-bold flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>Rendimiento Histórico Diario (24H SSOT)</span>
+                    </div>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-2xl sm:text-3xl font-black text-[#0ECB81] font-mono tabular-nums">
+                        {dailyPnLData.summary.totalNetProfitUsd >= 0 ? '+' : ''}${dailyPnLData.summary.totalNetProfitUsd.toFixed(2)} USDT
+                      </span>
+                      <span className="text-xs font-bold text-emerald-400 font-mono">
+                        ({dailyPnLData.summary.totalPct >= 0 ? '+' : ''}{dailyPnLData.summary.totalPct.toFixed(2)}% Total)
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono mt-1">
+                      Promedio Diario: <span className="text-cyan-300 font-bold">+{dailyPnLData.summary.avgDailyPct.toFixed(2)}% / día</span> sobre {dailyPnLData.summary.totalDays} {dailyPnLData.summary.totalDays === 1 ? 'día' : 'días'} operados
+                    </div>
+                  </div>
+
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-1.5 bg-[#0E1118] px-3.5 py-2.5 rounded-xl border border-white/10 font-mono">
+                    <span className="text-[10px] text-slate-400">Total Días Auditados</span>
+                    <span className="text-base font-black text-white">{dailyPnLData.summary.totalDays} {dailyPnLData.summary.totalDays === 1 ? 'DÍA' : 'DÍAS'}</span>
+                  </div>
+                </div>
+
+                {/* Explanation Banner */}
+                <div className="bg-[#08090C] rounded-xl p-3 border border-white/10 flex items-start gap-2.5 text-[11px] text-slate-300 font-mono">
+                  <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-white font-bold">Conciliación de 24 Horas:</span> Cada tarjeta agrupa las operaciones cerradas en ese día exacto con su ganancia neta y porcentaje real contra la banca base ($1,000 USDT).
+                  </div>
+                </div>
+
+                {/* Daily Cards List */}
+                {dailyPnLData.days.length === 0 ? (
+                  <div className="p-8 text-center bg-[#08090C] rounded-xl border border-white/5 text-slate-500 font-mono text-xs">
+                    No hay operaciones cerradas registradas para calcular el rendimiento por día.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {dailyPnLData.days.map((day) => {
+                      const isPositive = day.netProfitUsd >= 0;
+                      const [year, month, dayNum] = day.date.split('-');
+                      const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'];
+                      const monthName = months[parseInt(month, 10) - 1] || month;
+                      const isToday = new Date().toISOString().slice(0, 10) === day.date;
+
+                      return (
+                        <div
+                          key={day.date}
+                          className="bg-[#08090C] rounded-xl border border-white/10 hover:border-cyan-500/40 p-4 transition-all space-y-3"
+                        >
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                                <Calendar className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold text-white font-mono">
+                                    {dayNum} {monthName} {year}
+                                  </span>
+                                  {isToday && (
+                                    <span className="text-[10px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded font-mono font-bold">
+                                      HOY (En curso)
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[11px] text-slate-400 font-mono">
+                                  {day.tradesCount} operaciones ({day.winnerCount} ganadoras)
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="text-right">
+                              <div className={`text-base font-black font-mono tabular-nums ${isPositive ? 'text-[#0ECB81]' : 'text-rose-400'}`}>
+                                {isPositive ? '+' : ''}${day.netProfitUsd.toFixed(2)} USDT
+                              </div>
+                              <div className={`text-xs font-bold font-mono ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                ({isPositive ? '+' : ''}{day.dailyPct.toFixed(2)}% del día)
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Day Micro-Accounting Row */}
+                          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/5 font-mono text-[11px]">
+                            <div className="bg-[#0E1118] p-2 rounded-lg border border-white/5">
+                              <div className="text-slate-400 text-[10px]">Beneficio Bruto</div>
+                              <div className="text-slate-200 font-bold tabular-nums">+${day.grossProfitUsd.toFixed(2)}</div>
+                            </div>
+                            <div className="bg-[#0E1118] p-2 rounded-lg border border-white/5">
+                              <div className="text-slate-400 text-[10px]">Comisiones (Fees)</div>
+                              <div className="text-amber-400 font-bold tabular-nums">-${day.feesUsd.toFixed(2)}</div>
+                            </div>
+                            <div className="bg-[#0E1118] p-2 rounded-lg border border-white/5">
+                              <div className="text-slate-400 text-[10px]">Ganancia Neta</div>
+                              <div className="text-[#0ECB81] font-bold tabular-nums">+${day.netProfitUsd.toFixed(2)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             ) : (
               /* WINNERS TAB: Detailed List of Winning Operations with Responsive Mobile Cards + Desktop Table */
               <div className="space-y-2.5">

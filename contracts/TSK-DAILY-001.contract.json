@@ -1,0 +1,54 @@
+{
+  "contract_version": "4.0",
+  "status": "COMPLETED",
+  "language": "typescript",
+  "task_id": "TSK-DAILY-001",
+  "epic_id": "EPC-ANALYTICS",
+  "goal": "Add Daily PnL history tab to PerformanceBreakdownModal grouping closed trades by date with daily profit percentage and multi-day totals",
+  "scope": {
+    "target_files": [
+      "frontend/src/components/assets/PerformanceBreakdownModal.tsx",
+      "frontend/src/__tests__/daily_pnl_modal.test.js"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "frontend/package.json",
+      "backend/**/*"
+    ],
+    "authorized_global_files": []
+  },
+  "depends_on": [],
+  "contracts": {
+    "types_file": "frontend/src/components/assets/PerformanceBreakdownModal.tsx",
+    "function_signatures": [
+      "export const PerformanceBreakdownModal: React.FC<PerformanceBreakdownModalProps>"
+    ]
+  },
+  "env": {},
+  "execution_steps": [
+    "Write unit test in frontend/src/__tests__/daily_pnl_modal.test.js asserting DAILY tab renders daily pnl groups and multi-day averages",
+    "Add DAILY subtab to PerformanceBreakdownModal with calendar icon and trade grouping logic",
+    "Render summary card showing total days, total cumulative percentage, and average daily percentage",
+    "Render list of daily cards showing date, net profit, daily percentage, winner trades count, and fee deductions",
+    "Execute node --test frontend/src/__tests__/daily_pnl_modal.test.js to verify test passes"
+  ],
+  "commands": {
+    "test": "node --test frontend/src/__tests__/daily_pnl_modal.test.js",
+    "lint": "npx oxlint frontend/src/components/assets/PerformanceBreakdownModal.tsx",
+    "typecheck": "npm run build --prefix frontend"
+  },
+  "acceptance_criteria": [
+    "PerformanceBreakdownModal renders a third subtab button for daily performance",
+    "Closed trades are grouped by ISO date string",
+    "Daily summary card displays total days count and average daily return percentage",
+    "Each day card shows net profit and percentage calculated against base capital"
+  ],
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "git diff --name-only shows only target_files"
+  ],
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/components/assets/PerformanceBreakdownModal.tsx frontend/src/__tests__/daily_pnl_modal.test.js"
+  }
+}

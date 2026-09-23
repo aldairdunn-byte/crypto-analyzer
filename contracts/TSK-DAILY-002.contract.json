@@ -1,0 +1,53 @@
+{
+  "contract_version": "4.0",
+  "status": "COMPLETED",
+  "language": "typescript",
+  "task_id": "TSK-DAILY-002",
+  "epic_id": "EPC-ANALYTICS",
+  "goal": "Calculate distinct 24h PnL and cumulative multi-day PnL in AssetsView and pass metrics to performance modal and bento cards",
+  "scope": {
+    "target_files": [
+      "frontend/src/components/AssetsView.tsx",
+      "frontend/src/__tests__/assets_view_daily_split.test.js"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "frontend/package.json"
+    ],
+    "authorized_global_files": []
+  },
+  "depends_on": [
+    "TSK-DAILY-001"
+  ],
+  "contracts": {
+    "types_file": "frontend/src/components/AssetsView.tsx",
+    "function_signatures": [
+      "export const AssetsView: React.FC = () =>"
+    ]
+  },
+  "env": {},
+  "execution_steps": [
+    "Write unit test in frontend/src/__tests__/assets_view_daily_split.test.js verifying 24h window filter logic separate from cumulative trades profit",
+    "Update AssetsView to filter closed trades within 24h window for pnl24hUsd and pnl24hPct",
+    "Maintain totalRealizedProfitUsd as cumulative all-time closed trades profit",
+    "Execute node --test frontend/src/__tests__/assets_view_daily_split.test.js to verify test passes"
+  ],
+  "commands": {
+    "test": "node --test frontend/src/__tests__/assets_view_daily_split.test.js",
+    "lint": "npx oxlint frontend/src/components/AssetsView.tsx",
+    "typecheck": "npm run build --prefix frontend"
+  },
+  "acceptance_criteria": [
+    "pnl24hUsd sums only closed trades within last 24 hours plus floating pnl",
+    "totalRealizedProfitUsd preserves cumulative all-time closed trades profit",
+    "pnl24hPct accurately reflects percentage gain of the 24 hour period"
+  ],
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "git diff --name-only shows only target_files"
+  ],
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/components/AssetsView.tsx frontend/src/__tests__/assets_view_daily_split.test.js"
+  }
+}
