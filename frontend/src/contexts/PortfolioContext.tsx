@@ -9,7 +9,8 @@ import {
   upsertPortfolioHoldingToSupabase,
   type PortfolioRow,
 } from '../lib/supabase';
-import { getScopedItem, removeScopedItem, setScopedItem, migrateGuestDataToUser } from '../lib/accountStorage';
+import { getScopedItem, removeScopedItem, setScopedItem, migrateGuestDataToUser, getScopedStorageKey } from '../lib/accountStorage';
+import { storageGet, storageSet, storageRemove } from '../lib/storageAdapter';
 import { reconcileDemoFreeCash, calculateMarkToMarketTotalEquity } from '../lib/portfolioMath';
 import { type CryptoHolding } from '../components/AssetsView';
 
@@ -502,6 +503,30 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       delete next[coin.symbol.toLowerCase()];
       return next;
     });
+
+    try {
+      const keysToClean = [
+        'crypto_analyzer_demo_holdings',
+        getScopedStorageKey('crypto_analyzer_demo_holdings', user?.id),
+      ];
+      keysToClean.forEach((k) => {
+        const raw = storageGet(k);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            delete parsed[coinId];
+            delete parsed[coin.id];
+            delete parsed[coin.symbol.toLowerCase()];
+            if (Object.keys(parsed).length === 0) {
+              storageRemove(k);
+            } else {
+              storageSet(k, JSON.stringify(parsed));
+            }
+          } catch {}
+        }
+      });
+    } catch {}
+
     if (user?.id) {
       void (async () => {
         await deletePortfolioHoldingFromSupabase(user.id, coin.symbol);
@@ -510,6 +535,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       })();
     }
   }, [user?.id, refreshPortfolio]);
+
 
   const updateHoldingFromTrade = useCallback((coinId: string, side: 'BUY' | 'SELL', units: number, price: number) => {
     setLocalHoldings((prev) => {

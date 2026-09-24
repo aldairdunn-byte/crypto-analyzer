@@ -37,7 +37,11 @@ export const setScopedItem = (baseKey: string, value: string, userId?: string | 
 
 export const removeScopedItem = (baseKey: string, userId?: string | null): void => {
   storageRemove(getScopedStorageKey(baseKey, userId));
-  if (!userId) storageRemove(baseKey);
+  storageRemove(baseKey);
+  try {
+    const guestOwner = `guest:${getGuestId()}`;
+    storageRemove(`${APP_PREFIX}:${guestOwner}:${baseKey}`);
+  } catch {}
 };
 
 export interface MigratedGuestData {
