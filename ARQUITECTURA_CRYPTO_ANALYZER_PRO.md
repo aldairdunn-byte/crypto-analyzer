@@ -225,7 +225,7 @@ Todas las tablas operan bajo el aislamiento estricto de **Row Level Security (RL
 - [x] **Fase C — Notificaciones Telegram con Dopamina + Terminal React 19:** 100% Completada con UI/UX Pro Max.
 - [x] **Fase D — Despliegue a Producción & CI/CD Cloud:** 100% COMPLETADA Y EN VIVO:
   - 🌐 **Frontend Web (Vercel):** [https://frontend-two-lyart-49.vercel.app](https://frontend-two-lyart-49.vercel.app)
-  - ⚙️ **Worker 24/7 (Render):** [https://crypto-analyzer-bot-plri.onrender.com](https://crypto-analyzer-bot-plri.onrender.com)
+  - ⚙️ **Worker 24/7 (Render):** [https://crypto-analyzer-bot-p1ri.onrender.com](https://crypto-analyzer-bot-p1ri.onrender.com)
   - 🐙 **Repositorio GitHub:** [https://github.com/aldairdunn-byte/crypto-analyzer](https://github.com/aldairdunn-byte/crypto-analyzer)
   - 📱 **Canal de Alertas:** `@CryptoDunnAlerts_bot`
 - [x] **Fase D.1 — Arquitectura Multi-Usuario & Sincronización Cross-Device Realtime:** 100% COMPLETADA:
