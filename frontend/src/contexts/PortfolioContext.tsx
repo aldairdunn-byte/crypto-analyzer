@@ -65,14 +65,27 @@ const loadLocalHoldingsForUser = (userId?: string | null): Record<string, { unit
           // Reconcile sold spot units: do not revive liquidated holdings
           const soldUnitsByCoin: Record<string, number> = {};
           parsedTrades.forEach((t) => {
-            if (t && t.status === 'CLOSED' && t.side === 'SELL' && !t.bot_id && t.units > 0) {
+            if (!t || !t.units || t.units <= 0) return;
+            // Any trade that is CLOSED or side SELL represents liquidated/exited spot units
+            const isClosed = t.status === 'CLOSED';
+            const isSell = t.side === 'SELL';
+            if (isClosed || isSell) {
               const coin = getDynamicCoinInfo(t.coin_id);
-              soldUnitsByCoin[coin.id] = (soldUnitsByCoin[coin.id] || 0) + t.units;
+              const keys = [coin.id, coin.symbol.toLowerCase(), t.coin_id?.toLowerCase()].filter(Boolean);
+              keys.forEach((key) => {
+                soldUnitsByCoin[key] = (soldUnitsByCoin[key] || 0) + t.units;
+              });
             }
           });
 
           Object.keys(base).forEach((cId) => {
-            if (soldUnitsByCoin[cId] && soldUnitsByCoin[cId] >= (base[cId]?.units || 0) - 0.000001) {
+            const coin = getDynamicCoinInfo(cId);
+            const totalSold = Math.max(
+              soldUnitsByCoin[cId] || 0,
+              soldUnitsByCoin[coin.id] || 0,
+              soldUnitsByCoin[coin.symbol.toLowerCase()] || 0
+            );
+            if (totalSold >= (base[cId]?.units || 0) - 0.0001) {
               delete base[cId];
             }
           });
@@ -108,6 +121,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const [supabasePortfolio, setSupabasePortfolio] = useState<PortfolioRow[]>([]);
   const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean>(true);
+  const [isCloudPortfolioLoaded, setIsCloudPortfolioLoaded] = useState<boolean>(false);
 
   // USDT Cash: In DEMO mode defaults to $1,000. In LIVE mode defaults to $0.00 (until Binance API is connected)
   const [usdtCash, setUsdtCashState] = useState<number>(() => {
@@ -180,10 +194,12 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     try {
       if (!user?.id) {
         setSupabasePortfolio([]);
+        setIsCloudPortfolioLoaded(false);
         return;
       }
       const rows = await fetchPortfolioFromSupabase(user.id);
       setIsSupabaseConnected(true);
+      setIsCloudPortfolioLoaded(true);
       if (rows && rows.length > 0) {
         setSupabasePortfolio(rows);
 
@@ -199,6 +215,13 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (isLiveMode) {
           setUsdtCashState(0.0);
           setScopedItem('usdtCash', '0', user.id);
+        } else {
+          // If cloud confirms 0 spot holdings for this authenticated user, clean ghost holdings
+          setLocalHoldings((prev) => {
+            if (Object.keys(prev).length === 0) return prev;
+            removeScopedItem('crypto_analyzer_demo_holdings', user.id);
+            return {};
+          });
         }
       }
     } catch (err) {
@@ -213,6 +236,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const handleTradesUpdated = () => {
       refreshPortfolio();
+      setLocalHoldings(loadLocalHoldingsForUser(user?.id));
     };
     window.addEventListener('crypto_analyzer_trades_updated', handleTradesUpdated);
 
@@ -220,7 +244,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       clearInterval(interval);
       window.removeEventListener('crypto_analyzer_trades_updated', handleTradesUpdated);
     };
-  }, [refreshPortfolio]);
+  }, [refreshPortfolio, user?.id]);
 
   // Realtime cross-device sync on user_portfolios
   useEffect(() => {
@@ -475,6 +499,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const next = { ...prev };
       delete next[coinId];
       delete next[coin.id];
+      delete next[coin.symbol.toLowerCase()];
       return next;
     });
     if (user?.id) {
@@ -488,8 +513,15 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const updateHoldingFromTrade = useCallback((coinId: string, side: 'BUY' | 'SELL', units: number, price: number) => {
     setLocalHoldings((prev) => {
-      const current = prev[coinId] || { units: 0, avgEntryPrice: price };
       const coin = getDynamicCoinInfo(coinId);
+      const matchedKey = Object.keys(prev).find(
+        (k) =>
+          k.toLowerCase() === coinId.toLowerCase() ||
+          k.toLowerCase() === coin.id.toLowerCase() ||
+          k.toLowerCase() === coin.symbol.toLowerCase()
+      ) || coinId;
+
+      const current = prev[matchedKey] || { units: 0, avgEntryPrice: price };
       if (side === 'BUY') {
         const totalUnits = current.units + units;
         const totalCost = (current.units * current.avgEntryPrice) + (units * price);
@@ -504,7 +536,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
         return {
           ...prev,
-          [coinId]: {
+          [matchedKey]: {
             units: totalUnits,
             avgEntryPrice: newAvg,
           },
@@ -513,8 +545,10 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const remainingUnits = Math.max(0, current.units - units);
         if (remainingUnits <= 0.000001) {
           const next = { ...prev };
+          delete next[matchedKey];
           delete next[coinId];
           delete next[coin.id];
+          delete next[coin.symbol.toLowerCase()];
           if (user?.id) {
             void (async () => {
               await deletePortfolioHoldingFromSupabase(user.id, coin.symbol);
@@ -534,7 +568,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
         return {
           ...prev,
-          [coinId]: {
+          [matchedKey]: {
             units: remainingUnits,
             avgEntryPrice: current.avgEntryPrice,
           },
@@ -564,8 +598,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // 2. Explicitly include active holdings from localHoldings ONLY IF not authenticated or in cloud
     Object.entries(localHoldings).forEach(([cId, local]) => {
       if (local && local.units > 0.000001) {
-        // If authenticated and supabasePortfolio was loaded, don't display holdings absent from cloud
-        if (user?.id && isSupabaseConnected && supabasePortfolio.length > 0) {
+        // If authenticated and cloud portfolio was loaded, don't display holdings absent from cloud
+        if (user?.id && isSupabaseConnected && isCloudPortfolioLoaded) {
           const match = supabasePortfolio.find(
             (p) => p.symbol.toUpperCase() === cId.toUpperCase() || p.asset.toLowerCase() === cId.toLowerCase()
           );
@@ -601,7 +635,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
 
     return map;
-  }, [livePrices, supabasePortfolio, localHoldings, isSupabaseConnected, user?.id]);
+  }, [livePrices, supabasePortfolio, localHoldings, isSupabaseConnected, isCloudPortfolioLoaded, user?.id]);
 
   const totalSpotValue = useMemo(() => {
     return Object.values(holdings).reduce((acc, h) => {

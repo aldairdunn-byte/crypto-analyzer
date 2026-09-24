@@ -1,6 +1,6 @@
 services:
-  - type: worker
-    name: crypto-analyzer-worker
+  - type: web
+    name: crypto-analyzer-bot
     env: python
     region: oregon
     plan: free

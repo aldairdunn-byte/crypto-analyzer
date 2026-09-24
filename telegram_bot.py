@@ -706,13 +706,14 @@ def get_telegram_notifier() -> TelegramNotifier:
     return _telegram_notifier_instance
 
 
-# Mapeo de símbolos Binance estándar
+# Mapeo de símbolos Binance estándar y alias canónicos
 BINANCE_SYMBOLS = {
     "solana": "SOLUSDT",
     "bitcoin": "BTCUSDT",
     "ethereum": "ETHUSDT",
     "polkadot": "DOTUSDT",
     "binancecoin": "BNBUSDT",
+    "bnb": "BNBUSDT",
     "cardano": "ADAUSDT",
     "avalanche-2": "AVAXUSDT",
     "avalanche": "AVAXUSDT",
@@ -724,8 +725,80 @@ BINANCE_SYMBOLS = {
     "dogecoin": "DOGEUSDT",
     "pepe": "PEPEUSDT",
     "fetch-ai": "FETUSDT",
-    "shiba-inu": "SHIBUSDT"
+    "shiba-inu": "SHIBUSDT",
+    "tron": "TRXUSDT",
+    "trx": "TRXUSDT",
+    "injective": "INJUSDT",
+    "injective-protocol": "INJUSDT",
+    "inj": "INJUSDT",
+    "super": "SUPERUSDT",
+    "superverse": "SUPERUSDT",
+    "layerzero": "ZROUSDT",
+    "zro": "ZROUSDT",
+    "prom": "PROMUSDT",
+    "gram": "GRAMUSDT",
+    "ripple": "XRPUSDT",
+    "xrp": "XRPUSDT",
+    "cetus": "CETUSUSDT",
+    "jst": "JSTUSDT",
+    "prove": "PROVEUSDT",
+    "zama": "ZAMAUSDT",
+    "sky": "SKYUSDT",
+    "cake": "CAKEUSDT",
+    "pancakeswap": "CAKEUSDT",
+    "chainlink": "LINKUSDT",
+    "polygon": "POLUSDT",
+    "matic": "POLUSDT",
+    "aptos": "APTUSDT",
+    "celestia": "TIAUSDT",
+    "cosmos": "ATOMUSDT",
+    "sei": "SEIUSDT",
+    "hedera": "HBARUSDT",
+    "algorand": "ALGOUSDT",
+    "internet-computer": "ICPUSDT",
+    "vechain": "VETUSDT",
+    "filecoin": "FILUSDT",
+    "stacks": "STXUSDT",
+    "ordinals": "ORDIUSDT",
+    "arbitrum": "ARBUSDT",
+    "optimism": "OPUSDT",
+    "starknet": "STRKUSDT",
+    "manta": "MANTAUSDT",
+    "worldcoin": "WLDUSDT",
+    "the-graph": "GRTUSDT"
 }
+
+def resolve_binance_symbol(coin_id: str, bot_name: str = "", binance_symbols_set: Optional[Any] = None) -> str:
+    """Resuelve el símbolo de Binance correspondiente de manera determinista."""
+    import re
+    cid = (coin_id or "").lower().strip()
+    if cid in BINANCE_SYMBOLS:
+        return BINANCE_SYMBOLS[cid]
+    
+    # Intentar extraer del nombre del bot (e.g. "Grid TRX/USDT" -> "TRXUSDT")
+    if bot_name:
+        m = re.search(r'([A-Za-z0-9]+)/USDT', bot_name)
+        if m:
+            extracted = f"{m.group(1).upper()}USDT"
+            if not binance_symbols_set or extracted in binance_symbols_set:
+                return extracted
+
+    # Coincidencia directa limpia
+    cand = f"{cid.upper()}USDT"
+    if binance_symbols_set and cand in binance_symbols_set:
+        return cand
+
+    # Prefijos estándar si existen en Binance
+    cand4 = f"{cid.upper()[:4]}USDT"
+    if binance_symbols_set and cand4 in binance_symbols_set:
+        return cand4
+
+    cand3 = f"{cid.upper()[:3]}USDT"
+    if binance_symbols_set and cand3 in binance_symbols_set:
+        return cand3
+
+    return cand
+
 
 def _format_pair(symbol: str) -> str:
     if symbol.endswith("USDT"):
@@ -1163,6 +1236,7 @@ if __name__ == "__main__":
                             if resp.status_code == 200:
                                 price_list = resp.json()
                                 binance_map = {item["symbol"]: float(item["price"]) for item in price_list if "symbol" in item and "price" in item}
+                                binance_symbols_set = set(binance_map.keys())
 
                                 # 0. Evaluar Cloud Auto Trader Pro 24/7
                                 if active_sessions:
@@ -1180,7 +1254,8 @@ if __name__ == "__main__":
                                 # 1. Evaluar Grid Bots activos
                                 for bot in (active_bots or []):
                                     coin_id = str(bot.get("coin_id") or "solana").lower()
-                                    b_symbol = BINANCE_SYMBOLS.get(coin_id, f"{coin_id.upper()[:4]}USDT")
+                                    bot_name = str(bot.get("name") or "")
+                                    b_symbol = resolve_binance_symbol(coin_id=coin_id, bot_name=bot_name, binance_symbols_set=binance_symbols_set)
                                     live_price = binance_map.get(b_symbol)
 
                                     if live_price and live_price > 0:
@@ -1221,7 +1296,7 @@ if __name__ == "__main__":
                                 for trade in (open_trades or []):
                                     try:
                                         coin_id = str(trade.get("coin_id") or "").lower()
-                                        b_symbol = BINANCE_SYMBOLS.get(coin_id, f"{coin_id.upper()[:4]}USDT")
+                                        b_symbol = resolve_binance_symbol(coin_id=coin_id, bot_name="", binance_symbols_set=binance_symbols_set)
                                         cur_p = binance_map.get(b_symbol)
                                         if not cur_p or cur_p <= 0:
                                             continue

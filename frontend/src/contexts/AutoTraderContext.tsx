@@ -114,7 +114,7 @@ export function normalizeActivePosition(raw: any, livePrice?: number): AutoTrade
 
 export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const { availableUsdt, capitalInBots, setUsdtCash, setCapitalInAutoTrader, setCapitalInBots } = usePortfolio();
+  const { availableUsdt, capitalInBots, setUsdtCash, setCapitalInAutoTrader, setCapitalInBots, removeHolding } = usePortfolio();
   const { allCoinsStats, livePrices } = useMarketData();
   const { addToast, addNotification, recordExternalTrade } = useBotEngine();
 
@@ -254,7 +254,10 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       // 2. Persist to unified app trades (visible in Portafolio and Terminal history)
       recordExternalTrade(row);
 
-      // 3. Dispatch in-app Toast & Bell Notification
+      // 3. Atomically purge spot holding so no ghost position remains
+      removeHolding(row.coin_id);
+
+      // 4. Dispatch in-app Toast & Bell Notification
       const pnlUsd = row.pnl_usd ?? 0;
       const pnlPct = row.pnl_pct ?? 0;
       const isWin = pnlUsd >= 0;
@@ -304,7 +307,7 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         pnlPct: row.pnl_pct,
       });
     });
-  }, [user?.id, recordExternalTrade, addToast, addNotification]);
+  }, [user?.id, recordExternalTrade, removeHolding, addToast, addNotification]);
 
   // Session restoration or capital reconciliation across F5
   useEffect(() => {
