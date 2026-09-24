@@ -36,6 +36,7 @@ export interface WidgetPayload {
   isAutoTrader: boolean;
   botSymbol: string | null;
   botPnlPct: number;
+  botProfitUsd?: number;
   ticker: { sym: string; price: number; change: number }[];
   lastSale?: WidgetSaleInfo | null;
   ts: number;
@@ -98,11 +99,11 @@ const StandaloneWidget: React.FC = () => {
     return () => clearInterval(id);
   }, []);
 
-  // Auto-resize standalone window to ensure lastSale fits comfortably
+  // Auto-resize standalone window to ensure widget fits comfortably without dead space
   useEffect(() => {
     try {
-      if (typeof window !== 'undefined' && window.outerHeight < 230) {
-        window.resizeTo(345, 235);
+      if (typeof window !== 'undefined' && (window.outerHeight > 190 || window.outerHeight < 160)) {
+        window.resizeTo(345, 175);
       }
     } catch {}
   }, []);
@@ -153,10 +154,8 @@ const StandaloneWidget: React.FC = () => {
   const pnlUsd       = data?.pnlUsd ?? 0;
   const pnlPct       = data?.pnlPct ?? 0;
   const isPositive   = pnlUsd >= 0;
-  const ticker       = data?.ticker ?? [];
   const hasBotActive = data?.hasBotActive ?? false;
   const botSymbol    = data?.botSymbol ?? null;
-  const botPnlPct    = data?.botPnlPct ?? 0;
   const lastSale     = data?.lastSale ?? null;
 
   return (
@@ -273,31 +272,23 @@ const StandaloneWidget: React.FC = () => {
         </div>
       ) : null}
 
-      {/* ── Ticker de precios ────────────────────────────────────────── */}
-      {ticker.length > 0 && (
-        <div className="flex items-center gap-3 px-3.5 pb-2 overflow-x-auto scrollbar-none">
-          {ticker.map(c => (
-            <div key={c.sym} className="flex items-center gap-1.5 shrink-0">
-              <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">{c.sym}</span>
-              <span className="text-[9px] text-zinc-300 font-mono">${fmtPrice(c.price)}</span>
-              <span className={`text-[8px] font-bold ${c.change >= 0 ? 'text-[#00e676]' : 'text-rose-400'}`}>
-                {c.change >= 0 ? '+' : ''}{c.change.toFixed(2)}%
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* ── Bot activo / Moneda con última ganancia ──────────────────── */}
       {(() => {
         const displaySymbol = (lastSale?.symbol ? `${lastSale.symbol.replace('/USDT', '')}/USDT` : botSymbol?.toLowerCase().includes('genius') ? null : botSymbol);
-        const isWinningCoin = Boolean(lastSale && lastSale.profitUsd > 0);
+        const profitAmount = (lastSale && lastSale.profitUsd > 0)
+          ? lastSale.profitUsd
+          : (data?.botProfitUsd ?? 0);
+        const hasProfit = profitAmount > 0;
+        const profitDisplay = hasProfit
+          ? `+$${profitAmount >= 0.01 ? profitAmount.toFixed(2) : profitAmount.toFixed(4)} USDT`
+          : `+$0.00 USDT`;
+
         return (
           <div className="flex items-center justify-between px-3.5 py-2 bg-zinc-900/60 border-t border-zinc-800/60">
             <div className="flex items-center gap-1.5 min-w-0">
-              <Bot className={`w-3.5 h-3.5 shrink-0 stroke-[2] ${isWinningCoin ? 'text-[#00e676]' : hasBotActive ? 'text-sky-400' : 'text-zinc-600'}`} />
+              <Bot className={`w-3.5 h-3.5 shrink-0 stroke-[2] ${hasProfit ? 'text-[#00e676]' : hasBotActive ? 'text-sky-400' : 'text-zinc-600'}`} />
               <span className="text-[10px] text-zinc-400 font-medium shrink-0">
-                {!connected ? 'Conectando...' : isWinningCoin ? 'Ganó recién' : hasBotActive ? (data?.isAutoTrader ? 'Auto Trader' : 'Grid Bot') : 'Sin bot activo'}
+                {!connected ? 'Conectando...' : hasBotActive || lastSale ? (data?.isAutoTrader ? 'Auto Trader' : 'Grid Bot') : 'Sin bot activo'}
               </span>
               {displaySymbol && (
                 <>
@@ -306,13 +297,9 @@ const StandaloneWidget: React.FC = () => {
                 </>
               )}
             </div>
-            {isWinningCoin && lastSale ? (
-              <span className="text-[10px] font-extrabold text-[#00e676] shrink-0 pl-1">
-                +${lastSale.profitUsd >= 0.01 ? lastSale.profitUsd.toFixed(2) : lastSale.profitUsd.toFixed(4)} USDT
-              </span>
-            ) : hasBotActive ? (
-              <span className={`text-[10px] font-semibold ${botPnlPct >= 0 ? 'text-[#00e676]' : 'text-rose-400'} shrink-0 pl-1`}>
-                {botPnlPct >= 0 ? '+' : ''}{botPnlPct.toFixed(2)}%
+            {hasBotActive || (lastSale && lastSale.profitUsd > 0) ? (
+              <span className="text-[10px] font-extrabold text-[#00e676] shrink-0 pl-1 font-mono">
+                {profitDisplay}
               </span>
             ) : connected ? (
               <span className="text-[9px] text-zinc-600 italic">Inactivo</span>
@@ -410,34 +397,18 @@ const EmbeddedWidget: React.FC = () => {
   const botSymbol = activePosition?.symbol ||
     (lastSale?.symbol ? `${lastSale.symbol.replace('/USDT', '')}/USDT` : null) ||
     (relevantGridBot ? `${relevantGridBot.coin_id.toUpperCase()}/USDT` : null);
-  const botPnlPct = useMemo(() => {
-    if (activePosition) return activePosition.unrealizedPnlPct || 0;
-    if (relevantGridBot) {
-      const botTrades = trades.filter((t) => t.status === 'CLOSED' && (t.bot_id === relevantGridBot.id || t.coin_id === relevantGridBot.coin_id));
-      const botRealized = botTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0);
-      const cap = relevantGridBot.capital_allocated_usd || 100;
-      return cap > 0 ? (botRealized / cap) * 100 : 0;
-    }
-    return 0;
-  }, [activePosition, relevantGridBot, trades]);
 
   const hasBotActive = isRunning || !!relevantGridBot;
 
-  const tickerCoins = useMemo(() => {
-    const candidateCoins = [
-      ...(lastSale ? [lastSale.symbol.toLowerCase().replace('/usdt', '')] : []),
-      ...activeGridBots.map((b) => b.coin_id.toLowerCase()),
-      ...trades.slice(0, 5).map((t) => t.coin_id.toLowerCase()),
-      'btc', 'eth', 'sol',
-    ];
-    const unique = Array.from(new Set(candidateCoins)).slice(0, 5);
-    return unique.map((sym) => {
-      const stat = allCoinsStats[sym] || allCoinsStats[`${sym}usdt`] || allCoinsStats[sym.toUpperCase()];
-      const price = livePrices[sym] || stat?.price || getDynamicCoinInfo(sym)?.basePrice || 0;
-      const change = stat?.priceChangePercent ?? stat?.change24h ?? 0;
-      return { sym: sym.toUpperCase(), price, change };
-    }).filter((c) => c.price > 0);
-  }, [lastSale, activeGridBots, trades, allCoinsStats, livePrices]);
+  const botProfitUsd = useMemo(() => {
+    if (activePosition) return activePosition.unrealizedPnl || 0;
+    if (relevantGridBot) {
+      const botTrades = trades.filter((t) => t.status === 'CLOSED' && (t.bot_id === relevantGridBot.id || t.coin_id === relevantGridBot.coin_id));
+      return botTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0);
+    }
+    if (lastSale && lastSale.profitUsd > 0) return lastSale.profitUsd;
+    return 0;
+  }, [activePosition, relevantGridBot, trades, lastSale]);
 
   const togglePin = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -457,7 +428,7 @@ const EmbeddedWidget: React.FC = () => {
     window.open(
       `${window.location.origin}/?view=widget&standalone=1`,
       'CryptoAnalyzerWidgetPopup',
-      `width=345,height=235,left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=no`
+      `width=345,height=175,left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=no`
     );
   };
 
@@ -556,29 +527,23 @@ const EmbeddedWidget: React.FC = () => {
               </div>
             ) : null}
 
-            {/* Ticker */}
-            {tickerCoins.length > 0 && (
-              <div className="flex items-center gap-3 px-3.5 pb-2 overflow-x-auto">
-                {tickerCoins.map(c => (
-                  <div key={c.sym} className="flex items-center gap-1 shrink-0">
-                    <span className="text-[9px] text-zinc-500 font-bold">{c.sym}</span>
-                    <span className="text-[9px] text-zinc-300 font-mono">${fmtPrice(c.price)}</span>
-                    <span className={`text-[8px] font-bold ${c.change >= 0 ? 'text-[#00e676]' : 'text-rose-400'}`}>{c.change >= 0 ? '+' : ''}{c.change.toFixed(2)}%</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
             {/* ── Bot activo / Moneda con última ganancia ──────────────────── */}
             {(() => {
               const displaySymbol = (lastSale?.symbol ? `${lastSale.symbol.replace('/USDT', '')}/USDT` : botSymbol?.toLowerCase().includes('genius') ? null : botSymbol);
-              const isWinningCoin = Boolean(lastSale && lastSale.profitUsd > 0);
+              const profitAmount = (lastSale && lastSale.profitUsd > 0)
+                ? lastSale.profitUsd
+                : botProfitUsd;
+              const hasProfit = profitAmount > 0;
+              const profitDisplay = hasProfit
+                ? `+$${profitAmount >= 0.01 ? profitAmount.toFixed(2) : profitAmount.toFixed(4)} USDT`
+                : `+$0.00 USDT`;
+
               return (
                 <div className="flex items-center justify-between px-3.5 py-2 bg-zinc-900/60 border-t border-zinc-800/60">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <Bot className={`w-3.5 h-3.5 stroke-[2] ${isWinningCoin ? 'text-[#00e676]' : hasBotActive ? 'text-sky-400' : 'text-zinc-600'}`} />
+                    <Bot className={`w-3.5 h-3.5 stroke-[2] ${hasProfit ? 'text-[#00e676]' : hasBotActive ? 'text-sky-400' : 'text-zinc-600'}`} />
                     <span className="text-[10px] text-zinc-400 font-medium shrink-0">
-                      {isWinningCoin ? 'Ganó recién' : hasBotActive ? (isRunning ? 'Auto Trader' : 'Grid Bot') : 'Sin bot activo'}
+                      {hasBotActive || lastSale ? (isRunning ? 'Auto Trader' : 'Grid Bot') : 'Sin bot activo'}
                     </span>
                     {displaySymbol && (
                       <>
@@ -587,13 +552,9 @@ const EmbeddedWidget: React.FC = () => {
                       </>
                     )}
                   </div>
-                  {isWinningCoin && lastSale ? (
-                    <span className="text-[10px] font-extrabold text-[#00e676] shrink-0 pl-1">
-                      +${lastSale.profitUsd >= 0.01 ? lastSale.profitUsd.toFixed(2) : lastSale.profitUsd.toFixed(4)} USDT
-                    </span>
-                  ) : hasBotActive ? (
-                    <span className={`text-[10px] font-semibold ${botPnlPct >= 0 ? 'text-[#00e676]' : 'text-rose-400'} shrink-0 pl-1`}>
-                      {botPnlPct >= 0 ? '+' : ''}{botPnlPct.toFixed(2)}%
+                  {hasBotActive || (lastSale && lastSale.profitUsd > 0) ? (
+                    <span className="text-[10px] font-extrabold text-[#00e676] shrink-0 pl-1 font-mono">
+                      {profitDisplay}
                     </span>
                   ) : (
                     <span className="text-[9px] text-zinc-600 italic">Inactivo</span>

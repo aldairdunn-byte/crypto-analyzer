@@ -103,7 +103,7 @@ export const HeaderTickerBar = ({
     const popup = window.open(
       `${window.location.origin}/?view=widget&standalone=1`,
       'CryptoAnalyzerWidgetPopup',
-      `width=345,height=235,left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=no`
+      `width=345,height=175,left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=no`
     );
     if (!popup) {
       window.open(`${window.location.origin}/?view=widget`, '_blank');

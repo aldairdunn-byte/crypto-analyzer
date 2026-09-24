@@ -292,26 +292,20 @@ const MainContent: React.FC = () => {
         calculatedBotPnlPct = botCap > 0 ? (botRealizedPnl / botCap) * 100 : 0;
       }
 
+      let calculatedBotProfitUsd = 0;
+      if (autoTraderPos) {
+        calculatedBotProfitUsd = autoTraderPos.unrealizedPnl || 0;
+      } else if (relevantGridBot) {
+        const botClosedTrades = trades.filter((t) => (t.bot_id === relevantGridBot.id || t.coin_id === relevantGridBot.coin_id) && t.status === 'CLOSED');
+        calculatedBotProfitUsd = botClosedTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0);
+      } else if (lastSale && lastSale.profitUsd > 0) {
+        calculatedBotProfitUsd = lastSale.profitUsd;
+      }
+
       // If a sale won recently, display that exact winning coin!
       const botSymbol = autoTraderPos?.symbol ||
         (lastSale?.symbol ? `${lastSale.symbol.replace('/USDT', '')}/USDT` : null) ||
         (relevantGridBot ? `${relevantGridBot.coin_id.toUpperCase()}/USDT` : null);
-
-      // 3. Ticker: Prioritize user's active bots and traded coins over generic fallbacks
-      const candidateCoins = [
-        ...(lastSale ? [lastSale.symbol.toLowerCase().replace('/usdt', '')] : []),
-        ...activeGridBots.map((b) => b.coin_id.toLowerCase()),
-        ...trades.slice(0, 5).map((t) => t.coin_id.toLowerCase()),
-        'btc', 'eth', 'sol',
-      ];
-      const uniqueCoinKeys = Array.from(new Set(candidateCoins)).slice(0, 5);
-
-      const tickerCoins = uniqueCoinKeys.map((sym) => {
-        const stat = allCoinsStats[sym] || allCoinsStats[`${sym}usdt`] || allCoinsStats[sym.toUpperCase()];
-        const price = livePrices[sym] || stat?.price || getDynamicCoinInfo(sym)?.basePrice || 0;
-        const change = stat?.priceChangePercent ?? stat?.change24h ?? 0;
-        return { sym: sym.toUpperCase(), price, change };
-      }).filter((c) => c.price > 0);
 
       ch.postMessage({
         totalBalance: totalMarkToMarketEquity,
@@ -321,7 +315,8 @@ const MainContent: React.FC = () => {
         isAutoTrader: autoTrader.isRunning,
         botSymbol,
         botPnlPct: calculatedBotPnlPct,
-        ticker: tickerCoins,
+        botProfitUsd: calculatedBotProfitUsd,
+        ticker: [],
         lastSale,
         ts: Date.now(),
       });

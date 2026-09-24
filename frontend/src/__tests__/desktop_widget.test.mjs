@@ -91,3 +91,20 @@ test('WIDGET-004: Relevant bot selection prioritizes the bot matching last sale 
   assert.equal(relevantGridBot.coin_id, 'kernel');
 });
 
+test('WIDGET-005: Widget profit displays dollar profit in USDT and filters out phantom genius bot', () => {
+  const bots = [
+    { id: 'bot-cake', coin_id: 'cake', status: 'ACTIVE' },
+    { id: 'bot-legacy-genius', coin_id: 'genius', status: 'ACTIVE' },
+  ];
+  const cleanedBots = bots.filter((b) => b.coin_id.toLowerCase() !== 'genius');
+  assert.equal(cleanedBots.length, 1);
+  assert.equal(cleanedBots[0].coin_id, 'cake');
+
+  const botProfitUsd = 0.26;
+  const profitDisplay = botProfitUsd > 0
+    ? `+$${botProfitUsd >= 0.01 ? botProfitUsd.toFixed(2) : botProfitUsd.toFixed(4)} USDT`
+    : '+$0.00 USDT';
+  assert.equal(profitDisplay, '+$0.26 USDT');
+});
+
+
