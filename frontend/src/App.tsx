@@ -307,7 +307,7 @@ const MainContent: React.FC = () => {
         (lastSale?.symbol ? `${lastSale.symbol.replace('/USDT', '')}/USDT` : null) ||
         (relevantGridBot ? `${relevantGridBot.coin_id.toUpperCase()}/USDT` : null);
 
-      ch.postMessage({
+      const payload = {
         totalBalance: totalMarkToMarketEquity,
         pnlUsd: perf.pnl24hUsd || 0,
         pnlPct: perf.pnl24hPct || 0,
@@ -319,7 +319,12 @@ const MainContent: React.FC = () => {
         ticker: [],
         lastSale,
         ts: Date.now(),
-      });
+      };
+
+      ch.postMessage(payload);
+      try {
+        localStorage.setItem('crypto_analyzer_widget_payload', JSON.stringify(payload));
+      } catch {}
     };
 
     emit();

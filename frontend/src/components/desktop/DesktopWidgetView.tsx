@@ -67,8 +67,15 @@ function useIsStandalone() {
 
 // ─── WIDGET STANDALONE (popup/Tauri) — usa BroadcastChannel ──────────────────
 const StandaloneWidget: React.FC = () => {
-  const [data, setData] = useState<WidgetPayload | null>(null);
-  const [connected, setConnected] = useState(false);
+  const [data, setData] = useState<WidgetPayload | null>(() => {
+    try {
+      const raw = storageGet('crypto_analyzer_widget_payload');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [connected, setConnected] = useState(() => Boolean(storageGet('crypto_analyzer_widget_payload')));
   const [liveTick, setLiveTick] = useState(false);
   const [isPinned, setIsPinned] = useState(() => storageGet('crypto_analyzer_widget_pinned') === 'true');
   const dragRef = useRef({ dragging: false, startX: 0, startY: 0, originLeft: 0, originTop: 0 });
