@@ -81,15 +81,26 @@ export async function launchWidgetWindow(
       const opts = buildPiPWindowOptions(345, 175);
       const pipWindow = await currentWin.documentPictureInPicture.requestWindow(opts);
 
-      if (pipWindow) {
-        // Navigate or set PiP window location
-        if (pipWindow.location) {
-          pipWindow.location.href = url;
-        }
+      if (pipWindow && pipWindow.document) {
+        if (pipWindow.document.body) {
+          pipWindow.document.body.style.margin = '0';
+          pipWindow.document.body.style.padding = '0';
+          pipWindow.document.body.style.background = '#070b14';
+          pipWindow.document.body.style.overflow = 'hidden';
 
-        // Copy styles if document is available
-        if (pipWindow.document && currentWin.document) {
-          copyStylesToWindow(pipWindow.document, currentWin.document);
+          const iframe = pipWindow.document.createElement('iframe');
+          iframe.src = url;
+          iframe.style.position = 'fixed';
+          iframe.style.top = '0';
+          iframe.style.left = '0';
+          iframe.style.width = '100%';
+          iframe.style.height = '100%';
+          iframe.style.border = 'none';
+          iframe.style.margin = '0';
+          iframe.style.padding = '0';
+          iframe.style.overflow = 'hidden';
+
+          pipWindow.document.body.appendChild(iframe);
         }
 
         return true;

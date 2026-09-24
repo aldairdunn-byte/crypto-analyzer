@@ -31,15 +31,18 @@ test('PIP-002: buildPiPWindowOptions constructs expected dimensions and flags', 
   assert.equal(customOpts.disallowReturnToOpener, true);
 });
 
-test('PIP-003: launchWidgetWindow invokes requestWindow when supported', async () => {
+test('PIP-003: launchWidgetWindow invokes requestWindow and embeds widget iframe', async () => {
   let requestedOptions = null;
+  let appendedElement = null;
   const mockPipWindow = {
     document: {
-      createElement: () => ({ rel: '', href: '' }),
+      createElement: (tag) => ({ tagName: tag.toUpperCase(), src: '', style: {} }),
       head: { appendChild: () => {} },
-      body: { style: {} },
+      body: {
+        style: {},
+        appendChild: (el) => { appendedElement = el; },
+      },
     },
-    location: { href: '' },
     close: () => {},
   };
 
@@ -62,7 +65,8 @@ test('PIP-003: launchWidgetWindow invokes requestWindow when supported', async (
   assert.equal(result, true);
   assert.equal(requestedOptions.width, 345);
   assert.equal(requestedOptions.height, 175);
-  assert.equal(mockPipWindow.location.href, 'https://frontend-two-lyart-49.vercel.app/?view=widget&standalone=1');
+  assert.equal(appendedElement.tagName, 'IFRAME');
+  assert.equal(appendedElement.src, 'https://frontend-two-lyart-49.vercel.app/?view=widget&standalone=1');
 });
 
 test('PIP-004: launchWidgetWindow executes fallback when unsupported', async () => {
