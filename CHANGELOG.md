@@ -4,6 +4,26 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
 
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [2.6.0] — 2026-09-24
+### ☁️ Blindaje del Worker 24/7 en Render Cloud & Purga de Activos Fantasma
+#### Corregido
+- **Resolución Universal de Símbolos Binance (`resolve_binance_symbol`):**
+  - Se eliminó el truncamiento defectuoso de 4 caracteres (`[:4]USDT`) en `telegram_bot.py` que provocaba que monedas como Injective (`INJ`), LayerZero (`ZRO`), Tron (`TRX`) y SuperVerse (`SUPER`) devolvieran precio `None` en la nube.
+  - Implementación de un motor de resolución dinámica de 4 niveles:
+    1. Extracción automática por Regex del ticker desde el nombre del bot (`Grid [TICKER]/USDT`).
+    2. Validación determinista contra el universo de pares activos de Binance en tiempo real (`binance_symbols_set`).
+    3. Heurística progresiva de detección de ticker con validación estricta de existencia.
+    4. Diccionario canónico extendido para alias y monedas con ticker no alfabético.
+- **Keep-Alive y Configuración de Infraestructura en Render:**
+  - Actualización de `Procfile` (`web: python telegram_bot.py`) y `render.yaml` (`type: web`) para garantizar que Render levante el proceso como Web Service con puerto HTTP abierto.
+  - Endpoint `/health` con respuesta `200 OK` enlazado activamente a UptimeRobot para mantener la ejecución 24/7 sin suspensiones (*spin down*).
+  - Corrección tipográfica en la documentación arquitectónica (`crypto-analyzer-bot-p1ri.onrender.com` con dígito `1`).
+- **Eliminación Definitiva de Activos Fantasma en Portafolio (`PortfolioContext` & `accountStorage`):**
+  - Se modificó `removeScopedItem` y `removeHolding` para purgar de raíz tanto la clave de usuario como la clave global/invitado legada (`crypto_analyzer_demo_holdings`), evitando que posiciones liquidadas (como Ethena/ENA) resuciten en memoria local o en el gráfico de torta.
+  - Sincronización estricta con Supabase (`isCloudPortfolioLoaded`): si el usuario está autenticado y la nube confirma 0 activos en custodia, el estado local se limpia automáticamente.
+
+---
+
 ## [2.5.2] — 2026-08-23
 ### 🚀 Rediseño Visual Completo de la Aplicación Web (UI/UX Pro Max)
 #### Agregado
