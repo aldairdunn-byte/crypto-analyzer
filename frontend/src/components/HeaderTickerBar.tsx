@@ -14,7 +14,7 @@ import {
   Bot,
   AppWindow,
 } from 'lucide-react';
-import { storageGet } from '../lib/storageAdapter';
+import { launchWidgetWindow } from '../lib/pipWidget.ts';
 import { COINS, getDynamicCoinInfo, formatDynamicPrice, type CoinInfo } from '../lib/marketData';
 import { CryptoIcon } from './CryptoIcon';
 import { SparklineChart } from './SparklineChart';
@@ -94,20 +94,9 @@ export const HeaderTickerBar = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<TickerSearchCategory>('ALL');
 
-  // Widget popup launcher — opens floating mini-window synced via BroadcastChannel
+  // Widget launcher — opens floating desktop window via Document Picture-in-Picture (frameless, no URL bar) with popup fallback
   const handleLaunchWidget = useCallback(() => {
-    const savedX = storageGet('crypto_analyzer_widget_x');
-    const savedY = storageGet('crypto_analyzer_widget_y');
-    const left = savedX ? parseInt(savedX) : Math.max(0, window.screenX + window.outerWidth - 380);
-    const top  = savedY ? parseInt(savedY) : Math.max(0, window.screenY + 60);
-    const popup = window.open(
-      `${window.location.origin}/?view=widget&standalone=1`,
-      'CryptoAnalyzerWidgetPopup',
-      `width=345,height=175,left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=no`
-    );
-    if (!popup) {
-      window.open(`${window.location.origin}/?view=widget`, '_blank');
-    }
+    launchWidgetWindow(typeof window !== 'undefined' ? window : null);
   }, []);
 
   const coin = getDynamicCoinInfo(activeCoin);

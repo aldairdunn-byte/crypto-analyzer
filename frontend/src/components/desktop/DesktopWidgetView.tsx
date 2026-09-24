@@ -5,6 +5,7 @@ import { useBotEngine } from '../../contexts/BotEngineContext';
 import { useMarketData } from '../../contexts/MarketDataContext';
 import { calculateRealisticPortfolioPerformance } from '../../lib/portfolioMath';
 import { storageGet, storageSet } from '../../lib/storageAdapter';
+import { launchWidgetWindow } from '../../lib/pipWidget.ts';
 import { formatTimeAgo } from '../../lib/notifications';
 import { getDynamicCoinInfo } from '../../lib/marketData';
 import {
@@ -428,15 +429,7 @@ const EmbeddedWidget: React.FC = () => {
   };
 
   const handleLaunchPopup = () => {
-    const savedX = storageGet('crypto_analyzer_widget_x');
-    const savedY = storageGet('crypto_analyzer_widget_y');
-    const left = savedX ? parseInt(savedX) : window.screenX + 20;
-    const top  = savedY ? parseInt(savedY) : window.screenY + 20;
-    window.open(
-      `${window.location.origin}/?view=widget&standalone=1`,
-      'CryptoAnalyzerWidgetPopup',
-      `width=345,height=175,left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=no`
-    );
+    launchWidgetWindow(typeof window !== 'undefined' ? window : null);
   };
 
   return (

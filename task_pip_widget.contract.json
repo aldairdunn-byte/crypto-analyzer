@@ -1,0 +1,68 @@
+{
+  "contract_version": "4.0",
+  "status": "PENDING",
+  "language": "typescript",
+
+  "task_id": "TSK-WIDGET-001",
+  "epic_id": "EPC-WIDGET",
+  "goal": "Implement Document Picture-in-Picture launcher for the widget from inside the header with fallback to standalone window popup",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/pipWidget.ts",
+      "frontend/src/components/HeaderTickerBar.tsx"
+    ],
+    "forbidden_files": [
+      "package.json",
+      "tsconfig.json",
+      "frontend/src/lib/supabase.ts",
+      "engine.py"
+    ]
+  },
+
+  "depends_on": [],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/pipWidget.ts",
+    "function_signatures": [
+      "export function isDocumentPiPSupported(win?: Window | null): boolean",
+      "export function buildPiPWindowOptions(width?: number, height?: number): { width: number; height: number; disallowReturnToOpener: boolean }",
+      "export function launchWidgetWindow(win?: Window | null, onFallback?: () => void): Promise<boolean>"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit test file frontend/src/__tests__/pip_widget.test.mjs testing isDocumentPiPSupported, buildPiPWindowOptions, and fallback branching",
+    "Execute commands.test to confirm failure before implementation (Red phase)",
+    "Implement isDocumentPiPSupported, buildPiPWindowOptions, and launchWidgetWindow in frontend/src/lib/pipWidget.ts",
+    "Integrate launchWidgetWindow into HeaderTickerBar.tsx handleLaunchWidget handler",
+    "Execute commands.test to confirm pass (Green phase)",
+    "Execute commands.typecheck to confirm compilation and zero TypeScript errors"
+  ],
+
+  "commands": {
+    "test": "node --test src/__tests__/pip_widget.test.mjs",
+    "lint": "node --test src/__tests__/desktop_widget.test.mjs",
+    "typecheck": "npm run build"
+  },
+
+  "acceptance_criteria": [
+    "buildPiPWindowOptions(345, 175) returns object with width: 345, height: 175, and disallowReturnToOpener: true",
+    "isDocumentPiPSupported returns boolean based on window.documentPictureInPicture existence",
+    "launchWidgetWindow executes requestWindow when documentPictureInPicture is supported",
+    "launchWidgetWindow calls fallback window.open when documentPictureInPicture is undefined"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.lint returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "git diff --name-only shows only target_files"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/pipWidget.ts frontend/src/components/HeaderTickerBar.tsx"
+  }
+}
