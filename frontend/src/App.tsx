@@ -209,38 +209,45 @@ const MainContent: React.FC = () => {
         trades, holdings, livePrices, allCoinsStats, totalMarkToMarketEquity, autoTraderUnrealizedPnl
       );
 
-      // 1. Identify latest sale / profit event from notifications or closed trades
-      const profitNotif = notifications.find((n) => n.category === 'PROFIT');
-      const closedSaleTrades = trades.filter(
-        (t) => t.status === 'CLOSED' && (t.side === 'SELL' || (typeof t.pnl_usd === 'number' && t.pnl_usd > 0))
-      );
+      // Clean up legacy/phantom genius bot from local cache if present
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('crypto_analyzer_bots');
+          if (raw && raw.toLowerCase().includes('genius')) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              localStorage.setItem('crypto_analyzer_bots', JSON.stringify(parsed.filter((b: any) => b.coin_id?.toLowerCase() !== 'genius')));
+            }
+          }
+        } catch {}
+      }
+
+      // 1. Identify latest sale / profit event from notifications or closed trades (chronological newest first)
+      const profitNotifs = notifications
+        .filter((n) => n.category === 'PROFIT' && n.coinId?.toLowerCase() !== 'genius')
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      const profitNotif = profitNotifs[0];
+
+      const closedSaleTrades = [...trades]
+        .filter((t) => t.status === 'CLOSED' && ((t.pnl_usd ?? 0) > 0 || t.side === 'SELL') && t.coin_id?.toLowerCase() !== 'genius')
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
       const latestClosedTrade = closedSaleTrades[0];
 
       let lastSale: {
         symbol: string;
+        coinId: string;
         profitUsd: number;
         price: number;
         timestamp: number;
         timeAgo: string;
       } | null = null;
 
-      if (profitNotif) {
-        const profitMatch = profitNotif.headline?.match(/\+\$([0-9.]+)/);
-        const parsedProfit = profitMatch ? parseFloat(profitMatch[1]) : 0;
-        const priceMatch = profitNotif.plainExplanation?.match(/\$([0-9.]+)/);
-        const parsedPrice = priceMatch ? parseFloat(priceMatch[1]) : (latestClosedTrade?.exit_price || 0);
-
-        lastSale = {
-          symbol: (profitNotif.coinSymbol || profitNotif.coinId || 'USDT').toUpperCase(),
-          profitUsd: parsedProfit || (latestClosedTrade?.pnl_usd || 0),
-          price: parsedPrice || (latestClosedTrade?.exit_price || 0),
-          timestamp: profitNotif.timestamp,
-          timeAgo: formatTimeAgo(profitNotif.timestamp),
-        };
-      } else if (latestClosedTrade) {
+      if (latestClosedTrade) {
         const ts = new Date(latestClosedTrade.created_at).getTime();
+        const coin = getDynamicCoinInfo(latestClosedTrade.coin_id);
         lastSale = {
-          symbol: (latestClosedTrade.coin_id || 'USDT').toUpperCase(),
+          symbol: coin.symbol || latestClosedTrade.coin_id.toUpperCase(),
+          coinId: latestClosedTrade.coin_id.toLowerCase(),
           profitUsd: latestClosedTrade.pnl_usd || 0,
           price: latestClosedTrade.exit_price || latestClosedTrade.entry_price || 0,
           timestamp: isNaN(ts) ? Date.now() : ts,
@@ -248,24 +255,30 @@ const MainContent: React.FC = () => {
         };
       }
 
-      if (profitNotif && latestClosedTrade) {
-        const tradeTs = new Date(latestClosedTrade.created_at).getTime();
-        if (!isNaN(tradeTs) && tradeTs > profitNotif.timestamp) {
+      if (profitNotif) {
+        const notifTs = profitNotif.timestamp;
+        if (!lastSale || notifTs >= lastSale.timestamp) {
+          const profitMatch = profitNotif.headline?.match(/\+\$([0-9.]+)/);
+          const parsedProfit = profitMatch ? parseFloat(profitMatch[1]) : (lastSale?.profitUsd || 0);
+          const priceMatch = profitNotif.plainExplanation?.match(/\$([0-9.]+)/);
+          const parsedPrice = priceMatch ? parseFloat(priceMatch[1]) : (lastSale?.price || 0);
+
           lastSale = {
-            symbol: (latestClosedTrade.coin_id || 'USDT').toUpperCase(),
-            profitUsd: latestClosedTrade.pnl_usd || 0,
-            price: latestClosedTrade.exit_price || latestClosedTrade.entry_price || 0,
-            timestamp: tradeTs,
-            timeAgo: formatTimeAgo(tradeTs),
+            symbol: (profitNotif.coinSymbol || profitNotif.coinId || 'USDT').toUpperCase(),
+            coinId: (profitNotif.coinId || profitNotif.coinSymbol || '').toLowerCase(),
+            profitUsd: parsedProfit,
+            price: parsedPrice,
+            timestamp: notifTs,
+            timeAgo: formatTimeAgo(notifTs),
           };
         }
       }
 
-      // 2. Select relevant bot (prioritizing the bot that made the latest trade or sale)
-      const activeGridBots = bots.filter((b) => b.status === 'ACTIVE');
-      const lastSaleCoin = lastSale?.symbol?.toLowerCase()?.replace('/usdt', '');
+      // 2. Select relevant bot / coin: strictly prioritize the last coin that won profit!
+      const activeGridBots = bots.filter((b) => b.status === 'ACTIVE' && b.coin_id?.toLowerCase() !== 'genius');
+      const winningCoinId = (lastSale?.coinId || lastSale?.symbol?.toLowerCase()?.replace('/usdt', '') || '').trim();
       const relevantGridBot =
-        (lastSaleCoin ? activeGridBots.find((b) => b.coin_id.toLowerCase() === lastSaleCoin) : null) ||
+        (winningCoinId ? activeGridBots.find((b) => b.coin_id.toLowerCase() === winningCoinId) : null) ||
         activeGridBots[0];
 
       const autoTraderPos = autoTrader.activePosition;
@@ -279,7 +292,9 @@ const MainContent: React.FC = () => {
         calculatedBotPnlPct = botCap > 0 ? (botRealizedPnl / botCap) * 100 : 0;
       }
 
+      // If a sale won recently, display that exact winning coin!
       const botSymbol = autoTraderPos?.symbol ||
+        (lastSale?.symbol ? `${lastSale.symbol.replace('/USDT', '')}/USDT` : null) ||
         (relevantGridBot ? `${relevantGridBot.coin_id.toUpperCase()}/USDT` : null);
 
       // 3. Ticker: Prioritize user's active bots and traded coins over generic fallbacks
