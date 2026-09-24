@@ -1,4 +1,4 @@
-import { getDynamicCoinInfo } from './marketData';
+import { getDynamicCoinInfo } from './marketData.ts';
 
 export interface PlainSpanishNotification {
   id: string;

@@ -5,6 +5,8 @@ import { useBotEngine } from '../../contexts/BotEngineContext';
 import { useMarketData } from '../../contexts/MarketDataContext';
 import { calculateRealisticPortfolioPerformance } from '../../lib/portfolioMath';
 import { storageGet, storageSet } from '../../lib/storageAdapter';
+import { formatTimeAgo } from '../../lib/notifications';
+import { getDynamicCoinInfo } from '../../lib/marketData';
 import {
   Pin,
   PinOff,
@@ -18,7 +20,15 @@ import {
 } from 'lucide-react';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
-interface WidgetPayload {
+export interface WidgetSaleInfo {
+  symbol: string;
+  profitUsd: number;
+  price: number;
+  timestamp: number;
+  timeAgo: string;
+}
+
+export interface WidgetPayload {
   totalBalance: number;
   pnlUsd: number;
   pnlPct: number;
@@ -27,6 +37,7 @@ interface WidgetPayload {
   botSymbol: string | null;
   botPnlPct: number;
   ticker: { sym: string; price: number; change: number }[];
+  lastSale?: WidgetSaleInfo | null;
   ts: number;
 }
 
@@ -87,6 +98,15 @@ const StandaloneWidget: React.FC = () => {
     return () => clearInterval(id);
   }, []);
 
+  // Auto-resize standalone window to ensure lastSale fits comfortably
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && window.outerHeight < 230) {
+        window.resizeTo(345, 235);
+      }
+    } catch {}
+  }, []);
+
   // Drag nativo del popup
   const onDragStart = useCallback((e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button')) return;
@@ -137,6 +157,7 @@ const StandaloneWidget: React.FC = () => {
   const hasBotActive = data?.hasBotActive ?? false;
   const botSymbol    = data?.botSymbol ?? null;
   const botPnlPct    = data?.botPnlPct ?? 0;
+  const lastSale     = data?.lastSale ?? null;
 
   return (
     <div
@@ -209,6 +230,49 @@ const StandaloneWidget: React.FC = () => {
         )}
       </div>
 
+      {/* ── Última Venta / Moneda Recién Vendida ─────────────────────── */}
+      {lastSale ? (
+        <div className="mx-3.5 mb-2 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-950/80 via-emerald-900/30 to-teal-950/50 border border-emerald-500/40 flex items-center justify-between shadow-[0_0_15px_rgba(16,185,129,0.18)]">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="flex h-2 w-2 relative shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00e676]"></span>
+            </span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[9px] font-black text-[#00e676] uppercase tracking-wider shrink-0">
+                VENDIÓ
+              </span>
+              <span className="text-[12px] font-extrabold text-white truncate">
+                {lastSale.symbol}
+              </span>
+              {lastSale.price > 0 && (
+                <span className="text-[10px] text-zinc-400 font-mono">
+                  ${fmtPrice(lastSale.price)}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0 pl-2">
+            <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-[#00e676] text-[11px] font-black tracking-tight">
+              +${lastSale.profitUsd >= 0.01 ? lastSale.profitUsd.toFixed(2) : lastSale.profitUsd.toFixed(4)}
+            </span>
+            {lastSale.timeAgo && (
+              <span className="text-[8px] text-zinc-400 font-medium">
+                {lastSale.timeAgo}
+              </span>
+            )}
+          </div>
+        </div>
+      ) : hasBotActive ? (
+        <div className="mx-3.5 mb-2 px-2.5 py-1 rounded-lg bg-zinc-900/50 border border-zinc-800/60 flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-sky-400/80 animate-pulse" />
+            <span className="text-[9px] text-zinc-400 font-medium">Malla activa monitoreando...</span>
+          </div>
+          <span className="text-[9px] text-zinc-400 font-mono font-medium">{botSymbol}</span>
+        </div>
+      ) : null}
+
       {/* ── Ticker de precios ────────────────────────────────────────── */}
       {ticker.length > 0 && (
         <div className="flex items-center gap-3 px-3.5 pb-2 overflow-x-auto scrollbar-none">
@@ -264,7 +328,7 @@ const StandaloneWidget: React.FC = () => {
 const EmbeddedWidget: React.FC = () => {
   const { holdings, availableUsdt, totalSpotValue, capitalInBots, capitalInAutoTrader, virtualUsdt } = usePortfolio();
   const { isRunning, activePosition } = useAutoTrader();
-  const { bots, trades } = useBotEngine();
+  const { bots, trades, notifications } = useBotEngine();
   const { livePrices, allCoinsStats } = useMarketData();
   const [isPinned, setIsPinned] = useState(() => storageGet('crypto_analyzer_widget_pinned') === 'true');
   const [liveTick, setLiveTick] = useState(false);
@@ -281,19 +345,92 @@ const EmbeddedWidget: React.FC = () => {
   const pnlPct = performance.pnl24hPct || 0;
   const isPositive = pnlUsd >= 0;
 
+  // 1. Identify latest sale / profit event from notifications or closed trades
+  const lastSale: WidgetSaleInfo | null = useMemo(() => {
+    const profitNotif = notifications.find((n) => n.category === 'PROFIT');
+    const closedSaleTrades = trades.filter(
+      (t) => t.status === 'CLOSED' && (t.side === 'SELL' || (typeof t.pnl_usd === 'number' && t.pnl_usd > 0))
+    );
+    const latestClosedTrade = closedSaleTrades[0];
+
+    if (profitNotif) {
+      const profitMatch = profitNotif.headline?.match(/\+\$([0-9.]+)/);
+      const parsedProfit = profitMatch ? parseFloat(profitMatch[1]) : 0;
+      const priceMatch = profitNotif.plainExplanation?.match(/\$([0-9.]+)/);
+      const parsedPrice = priceMatch ? parseFloat(priceMatch[1]) : (latestClosedTrade?.exit_price || 0);
+
+      const notifSale: WidgetSaleInfo = {
+        symbol: (profitNotif.coinSymbol || profitNotif.coinId || 'USDT').toUpperCase(),
+        profitUsd: parsedProfit || (latestClosedTrade?.pnl_usd || 0),
+        price: parsedPrice || (latestClosedTrade?.exit_price || 0),
+        timestamp: profitNotif.timestamp,
+        timeAgo: formatTimeAgo(profitNotif.timestamp),
+      };
+
+      if (latestClosedTrade) {
+        const tradeTs = new Date(latestClosedTrade.created_at).getTime();
+        if (!isNaN(tradeTs) && tradeTs > profitNotif.timestamp) {
+          return {
+            symbol: (latestClosedTrade.coin_id || 'USDT').toUpperCase(),
+            profitUsd: latestClosedTrade.pnl_usd || 0,
+            price: latestClosedTrade.exit_price || latestClosedTrade.entry_price || 0,
+            timestamp: tradeTs,
+            timeAgo: formatTimeAgo(tradeTs),
+          };
+        }
+      }
+      return notifSale;
+    }
+
+    if (latestClosedTrade) {
+      const ts = new Date(latestClosedTrade.created_at).getTime();
+      return {
+        symbol: (latestClosedTrade.coin_id || 'USDT').toUpperCase(),
+        profitUsd: latestClosedTrade.pnl_usd || 0,
+        price: latestClosedTrade.exit_price || latestClosedTrade.entry_price || 0,
+        timestamp: isNaN(ts) ? Date.now() : ts,
+        timeAgo: isNaN(ts) ? 'Recién' : formatTimeAgo(ts),
+      };
+    }
+    return null;
+  }, [notifications, trades]);
+
+  const activeGridBots = useMemo(() => bots.filter((b) => b.status === 'ACTIVE'), [bots]);
+  const lastSaleCoin = lastSale?.symbol?.toLowerCase()?.replace('/usdt', '');
+  const relevantGridBot = useMemo(() => {
+    return (lastSaleCoin ? activeGridBots.find((b) => b.coin_id.toLowerCase() === lastSaleCoin) : null) ||
+      activeGridBots[0];
+  }, [activeGridBots, lastSaleCoin]);
+
+  const botSymbol = activePosition?.symbol || (relevantGridBot ? `${relevantGridBot.coin_id.toUpperCase()}/USDT` : null);
+  const botPnlPct = useMemo(() => {
+    if (activePosition) return activePosition.unrealizedPnlPct || 0;
+    if (relevantGridBot) {
+      const botTrades = trades.filter((t) => t.status === 'CLOSED' && (t.bot_id === relevantGridBot.id || t.coin_id === relevantGridBot.coin_id));
+      const botRealized = botTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0);
+      const cap = relevantGridBot.capital_allocated_usd || 100;
+      return cap > 0 ? (botRealized / cap) * 100 : 0;
+    }
+    return 0;
+  }, [activePosition, relevantGridBot, trades]);
+
+  const hasBotActive = isRunning || !!relevantGridBot;
+
   const tickerCoins = useMemo(() => {
-    return ['btc','eth','sol','sui','link'].map(sym => {
-      const stat = allCoinsStats[sym] || allCoinsStats[`${sym}usdt`];
-      const price = livePrices[sym] || stat?.price || 0;
+    const candidateCoins = [
+      ...(lastSale ? [lastSale.symbol.toLowerCase().replace('/usdt', '')] : []),
+      ...activeGridBots.map((b) => b.coin_id.toLowerCase()),
+      ...trades.slice(0, 5).map((t) => t.coin_id.toLowerCase()),
+      'btc', 'eth', 'sol',
+    ];
+    const unique = Array.from(new Set(candidateCoins)).slice(0, 5);
+    return unique.map((sym) => {
+      const stat = allCoinsStats[sym] || allCoinsStats[`${sym}usdt`] || allCoinsStats[sym.toUpperCase()];
+      const price = livePrices[sym] || stat?.price || getDynamicCoinInfo(sym)?.basePrice || 0;
       const change = stat?.priceChangePercent ?? stat?.change24h ?? 0;
       return { sym: sym.toUpperCase(), price, change };
-    }).filter(c => c.price > 0);
-  }, [livePrices, allCoinsStats]);
-
-  const activeGridBot = useMemo(() => bots.find(b => b.status === 'ACTIVE'), [bots]);
-  const botSymbol  = activePosition?.symbol || (activeGridBot ? `${activeGridBot.coin_id.toUpperCase()}/USDT` : null);
-  const botPnlPct  = activePosition ? (activePosition.unrealizedPnlPct || 0) : 0;
-  const hasBotActive = isRunning || !!activeGridBot;
+    }).filter((c) => c.price > 0);
+  }, [lastSale, activeGridBots, trades, allCoinsStats, livePrices]);
 
   const togglePin = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -313,7 +450,7 @@ const EmbeddedWidget: React.FC = () => {
     window.open(
       `${window.location.origin}/?view=widget&standalone=1`,
       'CryptoAnalyzerWidgetPopup',
-      `width=345,height=195,left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=no`
+      `width=345,height=235,left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=no`
     );
   };
 
@@ -368,6 +505,49 @@ const EmbeddedWidget: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* ── Última Venta / Moneda Recién Vendida ─────────────────────── */}
+            {lastSale ? (
+              <div className="mx-3.5 mb-2 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-950/80 via-emerald-900/30 to-teal-950/50 border border-emerald-500/40 flex items-center justify-between shadow-[0_0_15px_rgba(16,185,129,0.18)]">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="flex h-2 w-2 relative shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00e676]"></span>
+                  </span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[9px] font-black text-[#00e676] uppercase tracking-wider shrink-0">
+                      VENDIÓ
+                    </span>
+                    <span className="text-[12px] font-extrabold text-white truncate">
+                      {lastSale.symbol}
+                    </span>
+                    {lastSale.price > 0 && (
+                      <span className="text-[10px] text-zinc-400 font-mono">
+                        ${fmtPrice(lastSale.price)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0 pl-2">
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-[#00e676] text-[11px] font-black tracking-tight">
+                    +${lastSale.profitUsd >= 0.01 ? lastSale.profitUsd.toFixed(2) : lastSale.profitUsd.toFixed(4)}
+                  </span>
+                  {lastSale.timeAgo && (
+                    <span className="text-[8px] text-zinc-400 font-medium">
+                      {lastSale.timeAgo}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : hasBotActive ? (
+              <div className="mx-3.5 mb-2 px-2.5 py-1 rounded-lg bg-zinc-900/50 border border-zinc-800/60 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400/80 animate-pulse" />
+                  <span className="text-[9px] text-zinc-400 font-medium">Malla activa monitoreando...</span>
+                </div>
+                <span className="text-[9px] text-zinc-400 font-mono font-medium">{botSymbol}</span>
+              </div>
+            ) : null}
 
             {/* Ticker */}
             {tickerCoins.length > 0 && (

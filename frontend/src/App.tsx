@@ -23,6 +23,8 @@ import { AuthModal } from './components/AuthModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { DesktopWidgetView } from './components/desktop/DesktopWidgetView';
 import { type StrategyRecommendation, evaluateStrategyForCoin } from './lib/strategyAdvisor';
+import { formatTimeAgo } from './lib/notifications';
+import { getDynamicCoinInfo } from './lib/marketData';
 import {
   Robot,
   ChartLineUp,
@@ -197,44 +199,133 @@ const MainContent: React.FC = () => {
     );
   }, [trades, holdings, livePrices, allCoinsStats, totalMarkToMarketEquity, autoTraderUnrealizedPnl]);
 
-  // ── BroadcastChannel: Emit live portfolio data to widget popup every 3s ──────
+  // ── BroadcastChannel: Emit live portfolio data & last sale info to widget popup ──────
   useEffect(() => {
     if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
     const ch = new BroadcastChannel('crypto_analyzer_widget_v1');
-    const activeGridBot = bots.find((b) => b.status === 'ACTIVE');
-    const autoTraderPos = autoTrader.activePosition;
-    const botPnlPct = autoTraderPos ? (autoTraderPos.unrealizedPnlPct || 0) : 0;
-    const botSymbol = autoTraderPos?.symbol ||
-      (activeGridBot ? `${activeGridBot.coin_id.toUpperCase()}/USDT` : null);
 
     const emit = () => {
       const perf = calculateRealisticPortfolioPerformance(
         trades, holdings, livePrices, allCoinsStats, totalMarkToMarketEquity, autoTraderUnrealizedPnl
       );
-      const tickerCoins = ['btc','eth','sol','sui','link'].map(sym => {
-        const stat = allCoinsStats[sym] || allCoinsStats[`${sym}usdt`];
-        const price = livePrices[sym] || stat?.price || 0;
+
+      // 1. Identify latest sale / profit event from notifications or closed trades
+      const profitNotif = notifications.find((n) => n.category === 'PROFIT');
+      const closedSaleTrades = trades.filter(
+        (t) => t.status === 'CLOSED' && (t.side === 'SELL' || (typeof t.pnl_usd === 'number' && t.pnl_usd > 0))
+      );
+      const latestClosedTrade = closedSaleTrades[0];
+
+      let lastSale: {
+        symbol: string;
+        profitUsd: number;
+        price: number;
+        timestamp: number;
+        timeAgo: string;
+      } | null = null;
+
+      if (profitNotif) {
+        const profitMatch = profitNotif.headline?.match(/\+\$([0-9.]+)/);
+        const parsedProfit = profitMatch ? parseFloat(profitMatch[1]) : 0;
+        const priceMatch = profitNotif.plainExplanation?.match(/\$([0-9.]+)/);
+        const parsedPrice = priceMatch ? parseFloat(priceMatch[1]) : (latestClosedTrade?.exit_price || 0);
+
+        lastSale = {
+          symbol: (profitNotif.coinSymbol || profitNotif.coinId || 'USDT').toUpperCase(),
+          profitUsd: parsedProfit || (latestClosedTrade?.pnl_usd || 0),
+          price: parsedPrice || (latestClosedTrade?.exit_price || 0),
+          timestamp: profitNotif.timestamp,
+          timeAgo: formatTimeAgo(profitNotif.timestamp),
+        };
+      } else if (latestClosedTrade) {
+        const ts = new Date(latestClosedTrade.created_at).getTime();
+        lastSale = {
+          symbol: (latestClosedTrade.coin_id || 'USDT').toUpperCase(),
+          profitUsd: latestClosedTrade.pnl_usd || 0,
+          price: latestClosedTrade.exit_price || latestClosedTrade.entry_price || 0,
+          timestamp: isNaN(ts) ? Date.now() : ts,
+          timeAgo: isNaN(ts) ? 'Recién' : formatTimeAgo(ts),
+        };
+      }
+
+      if (profitNotif && latestClosedTrade) {
+        const tradeTs = new Date(latestClosedTrade.created_at).getTime();
+        if (!isNaN(tradeTs) && tradeTs > profitNotif.timestamp) {
+          lastSale = {
+            symbol: (latestClosedTrade.coin_id || 'USDT').toUpperCase(),
+            profitUsd: latestClosedTrade.pnl_usd || 0,
+            price: latestClosedTrade.exit_price || latestClosedTrade.entry_price || 0,
+            timestamp: tradeTs,
+            timeAgo: formatTimeAgo(tradeTs),
+          };
+        }
+      }
+
+      // 2. Select relevant bot (prioritizing the bot that made the latest trade or sale)
+      const activeGridBots = bots.filter((b) => b.status === 'ACTIVE');
+      const lastSaleCoin = lastSale?.symbol?.toLowerCase()?.replace('/usdt', '');
+      const relevantGridBot =
+        (lastSaleCoin ? activeGridBots.find((b) => b.coin_id.toLowerCase() === lastSaleCoin) : null) ||
+        activeGridBots[0];
+
+      const autoTraderPos = autoTrader.activePosition;
+      let calculatedBotPnlPct = 0;
+      if (autoTraderPos) {
+        calculatedBotPnlPct = autoTraderPos.unrealizedPnlPct || 0;
+      } else if (relevantGridBot) {
+        const botClosedTrades = trades.filter((t) => (t.bot_id === relevantGridBot.id || t.coin_id === relevantGridBot.coin_id) && t.status === 'CLOSED');
+        const botRealizedPnl = botClosedTrades.reduce((acc, t) => acc + (t.pnl_usd || 0), 0);
+        const botCap = relevantGridBot.capital_allocated_usd || 100;
+        calculatedBotPnlPct = botCap > 0 ? (botRealizedPnl / botCap) * 100 : 0;
+      }
+
+      const botSymbol = autoTraderPos?.symbol ||
+        (relevantGridBot ? `${relevantGridBot.coin_id.toUpperCase()}/USDT` : null);
+
+      // 3. Ticker: Prioritize user's active bots and traded coins over generic fallbacks
+      const candidateCoins = [
+        ...(lastSale ? [lastSale.symbol.toLowerCase().replace('/usdt', '')] : []),
+        ...activeGridBots.map((b) => b.coin_id.toLowerCase()),
+        ...trades.slice(0, 5).map((t) => t.coin_id.toLowerCase()),
+        'btc', 'eth', 'sol',
+      ];
+      const uniqueCoinKeys = Array.from(new Set(candidateCoins)).slice(0, 5);
+
+      const tickerCoins = uniqueCoinKeys.map((sym) => {
+        const stat = allCoinsStats[sym] || allCoinsStats[`${sym}usdt`] || allCoinsStats[sym.toUpperCase()];
+        const price = livePrices[sym] || stat?.price || getDynamicCoinInfo(sym)?.basePrice || 0;
         const change = stat?.priceChangePercent ?? stat?.change24h ?? 0;
         return { sym: sym.toUpperCase(), price, change };
-      }).filter(c => c.price > 0);
+      }).filter((c) => c.price > 0);
 
       ch.postMessage({
         totalBalance: totalMarkToMarketEquity,
         pnlUsd: perf.pnl24hUsd || 0,
         pnlPct: perf.pnl24hPct || 0,
-        hasBotActive: autoTrader.isRunning || !!activeGridBot,
+        hasBotActive: autoTrader.isRunning || !!relevantGridBot,
         isAutoTrader: autoTrader.isRunning,
         botSymbol,
-        botPnlPct,
+        botPnlPct: calculatedBotPnlPct,
         ticker: tickerCoins,
+        lastSale,
         ts: Date.now(),
       });
     };
 
     emit();
-    const id = setInterval(emit, 3000);
-    return () => { clearInterval(id); ch.close(); };
-  }, [totalMarkToMarketEquity, autoTrader.isRunning, autoTrader.activePosition, bots, trades, holdings, livePrices, allCoinsStats, autoTraderUnrealizedPnl]);
+    const id = setInterval(emit, 2500);
+
+    const handleUpdate = () => emit();
+    window.addEventListener('crypto_analyzer_trades_updated', handleUpdate);
+    window.addEventListener('crypto_analyzer_notifications_updated', handleUpdate);
+
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('crypto_analyzer_trades_updated', handleUpdate);
+      window.removeEventListener('crypto_analyzer_notifications_updated', handleUpdate);
+      ch.close();
+    };
+  }, [totalMarkToMarketEquity, autoTrader.isRunning, autoTrader.activePosition, bots, trades, notifications, holdings, livePrices, allCoinsStats, autoTraderUnrealizedPnl]);
 
   return (
     <div className="h-screen w-screen bg-[#08090C] text-[#F8FAFC] flex flex-col font-sans overflow-hidden select-none">
