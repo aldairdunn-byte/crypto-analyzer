@@ -631,14 +631,21 @@ def evaluate_active_grid_bot_tick(
                 except Exception as e:
                     logger.warning(f"Error enviando alerta Telegram SELL: {e}")
 
-    # 4. Evaluar Nuevas Compras en niveles de soporte
+    # 4. Evaluar Nuevas Compras en niveles de soporte con control estricto de capital
+    current_open_cost = sum(float(t.get("amount_usd", 0.0)) for t in open_trades)
+    max_allowed_trades = len(levels)
+
     for lvl in levels:
         lvl_price = float(lvl.get("price", 0.0))
-        allocation = float(lvl.get("allocation") or (capital / max(len(levels), 1)))
+        allocation = float(lvl.get("allocation") or (capital / max(max_allowed_trades, 1)))
+
+        # Guardrail de Capital: No exceder el capital asignado ni el número de niveles
+        if len(open_trades) >= max_allowed_trades or (current_open_cost + allocation) > (capital * 1.05):
+            break
 
         if lvl_price > 0 and current_price <= lvl_price * 1.003:  # Tolerancia 0.3%
             has_nearby_open = any(
-                abs(float(t.get("entry_price", 0.0)) - lvl_price) / lvl_price < 0.008
+                abs(float(t.get("entry_price", 0.0)) - lvl_price) / lvl_price < 0.015
                 for t in open_trades
             )
             if not has_nearby_open and allocation > 0 and current_price > 0:
