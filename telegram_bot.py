@@ -11,7 +11,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, Tuple
 
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -1164,9 +1164,293 @@ def run_cloud_auto_trader_cycle(
     return actions
 
 
+_WORKER_DIAGNOSTICS: Dict[str, Any] = {
+    "last_tick_iso": None,
+    "last_source": "none",
+    "ticks_total": 0,
+    "active_bots_count": 0,
+    "open_trades_count": 0,
+    "active_sessions_count": 0,
+    "last_actions": [],
+    "last_error": None
+}
+
+
+def fetch_global_market_prices() -> Tuple[Dict[str, float], str, int]:
+    """
+    Obtiene los precios de mercado en vivo con fallback automatico:
+    1. Binance Global (api.binance.com)
+    2. Bybit Spot (api.bybit.com) - 100% tolerante a IPs de EE.UU. (Oregon)
+    3. Binance.US (api.binance.us)
+    """
+    # 1. Binance Global
+    try:
+        r = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=4)
+        if r.status_code == 200:
+            prices = {item["symbol"]: float(item["price"]) for item in r.json() if "symbol" in item and "price" in item}
+            if len(prices) > 100:
+                return prices, "binance_global", 200
+        logger.warning(f"Binance Global returned status {r.status_code}")
+    except Exception as e:
+        logger.warning(f"Binance Global connection failed: {e}")
+
+    # 2. Fallback: Bybit Spot
+    try:
+        r = requests.get("https://api.bybit.com/v5/market/tickers?category=spot", timeout=4)
+        if r.status_code == 200:
+            data = r.json()
+            items = data.get("result", {}).get("list", [])
+            prices = {item["symbol"]: float(item["lastPrice"]) for item in items if "symbol" in item and "lastPrice" in item and float(item.get("lastPrice") or 0) > 0}
+            if len(prices) > 50:
+                return prices, "bybit_spot", 200
+    except Exception as e:
+        logger.warning(f"Bybit fallback failed: {e}")
+
+    # 3. Fallback: Binance.US
+    try:
+        r = requests.get("https://api.binance.us/api/v3/ticker/price", timeout=4)
+        if r.status_code == 200:
+            prices = {item["symbol"]: float(item["price"]) for item in r.json() if "symbol" in item and "price" in item}
+            if len(prices) > 50:
+                return prices, "binance_us", 200
+    except Exception as e:
+        logger.warning(f"Binance.US fallback failed: {e}")
+
+    return {}, "none", 0
+
+
+def execute_market_evaluation_cycle(client=None, notifier=None, web_push=None, source="loop") -> Dict[str, Any]:
+    """
+    Ejecuta un ciclo completo de evaluacion de mercado para todos los bots y ordenes activas.
+    Invocable tanto desde el bucle worker 15s como directamente desde GET /health (Supabase/UptimeRobot pings).
+    """
+    global _WORKER_DIAGNOSTICS
+    from supabase_client import get_supabase_client
+    from bot_engine import evaluate_active_grid_bot_tick
+    from web_push import get_web_push_notifier
+
+    sb = client or get_supabase_client()
+    notifier = notifier or get_telegram_notifier()
+    web_push = web_push or get_web_push_notifier()
+
+    summary: Dict[str, Any] = {
+        "source": source,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "active_bots_count": 0,
+        "actions_executed": [],
+        "price_source": "none",
+        "error": None
+    }
+
+    if not sb.is_configured:
+        summary["error"] = "Supabase not configured"
+        return summary
+
+    try:
+        active_bots = sb.get_active_bots() or []
+        open_trades = sb.get_open_trades() or []
+        active_sessions = sb.get_active_auto_trader_sessions() or []
+
+        summary["active_bots_count"] = len(active_bots)
+        summary["open_trades_count"] = len(open_trades)
+        summary["active_sessions_count"] = len(active_sessions)
+
+        if not (active_bots or open_trades or active_sessions):
+            _WORKER_DIAGNOSTICS["last_tick_iso"] = summary["timestamp"]
+            _WORKER_DIAGNOSTICS["ticks_total"] += 1
+            return summary
+
+        market_map, price_src, code = fetch_global_market_prices()
+        summary["price_source"] = price_src
+
+        if not market_map:
+            summary["error"] = f"Failed to fetch market prices (last status {code})"
+            _WORKER_DIAGNOSTICS["last_error"] = summary["error"]
+            return summary
+
+        symbols_set = set(market_map.keys())
+
+        # 0. Evaluar Cloud Auto Trader Pro 24/7
+        if active_sessions:
+            try:
+                run_cloud_auto_trader_cycle(
+                    sb=sb,
+                    notifier=notifier,
+                    web_push=web_push,
+                    active_sessions=active_sessions,
+                    binance_map=market_map
+                )
+            except Exception as at_err:
+                logger.error(f"Error en ciclo Cloud Auto Trader: {at_err}")
+
+        # 1. Evaluar Grid Bots activos
+        actions = []
+        for bot in active_bots:
+            try:
+                coin_id = str(bot.get("coin_id") or "solana").lower()
+                bot_name = str(bot.get("name") or "")
+                b_symbol = resolve_binance_symbol(coin_id=coin_id, bot_name=bot_name, binance_symbols_set=symbols_set)
+                live_price = market_map.get(b_symbol)
+
+                if live_price and live_price > 0:
+                    pair = _format_pair(b_symbol)
+                    grid_result = evaluate_active_grid_bot_tick(
+                        bot=bot,
+                        current_price=live_price,
+                        client=sb,
+                        telegram_notifier=notifier
+                    )
+                    for action in grid_result.get("actions_executed", []):
+                        action_type = action.get("action", "GRID")
+                        actions.append(action)
+                        if action_type == "SELL":
+                            pnl_usd = float(action.get("pnl_usd", 0.0))
+                            title = f"GRID SELL · {pair}"
+                            body = f"PnL {pnl_usd:+,.2f} · Salida {_format_price(live_price)}"
+                        else:
+                            amount_usd = float(action.get("amount_usd", 0.0))
+                            level_price = float(action.get("level_price") or live_price)
+                            title = f"GRID BUY · {pair}"
+                            body = f"{_format_usd(amount_usd)} a {_format_price(live_price)} · Nivel {_format_price(level_price)}"
+                        web_push.send_to_user(
+                            user_id=bot.get("user_id"),
+                            title=title,
+                            body=body,
+                            data={
+                                "url": f"{notifier.app_url}/?coin={coin_id}",
+                                "coinId": coin_id,
+                                "symbol": b_symbol,
+                                "pair": pair,
+                                "botId": bot.get("id"),
+                                "eventType": f"GRID_{action_type}",
+                                "tag": f"grid-{bot.get('id')}-{action_type}-{int(time.time())}",
+                            },
+                        )
+            except Exception as bot_err:
+                logger.error(f"Error evaluando bot {bot.get('id')}: {bot_err}")
+
+        # 2. Evaluar Ordenes Spot Abiertas 24/7 (Auto TP / Stop Loss / Limite)
+        for trade in open_trades:
+            try:
+                coin_id = str(trade.get("coin_id") or "").lower()
+                b_symbol = resolve_binance_symbol(coin_id=coin_id, bot_name="", binance_symbols_set=symbols_set)
+                cur_p = market_map.get(b_symbol)
+                if not cur_p or cur_p <= 0:
+                    continue
+                pair = _format_pair(b_symbol)
+
+                raw_meta = trade.get("entry_reason") or ""
+                meta = {}
+                if isinstance(raw_meta, str) and raw_meta.startswith("{"):
+                    meta = json.loads(raw_meta)
+
+                # A. Orden Limite Pendiente
+                if meta.get("is_pending_limit"):
+                    limit_p = float(trade.get("entry_price") or 0.0)
+                    is_breakout = meta.get("strategy") == "SPOT_BREAKOUT"
+                    is_triggered = cur_p >= limit_p if is_breakout else cur_p <= limit_p
+                    if is_triggered and limit_p > 0:
+                        meta["is_pending_limit"] = False
+                        u_endpoint = f"{sb.url}/rest/v1/bot_trades?id=eq.{trade['id']}"
+                        requests.patch(u_endpoint, headers=sb._get_headers(), json={
+                            "status": "OPEN",
+                            "entry_price": cur_p,
+                            "entry_reason": json.dumps(meta),
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }, timeout=sb.timeout)
+
+                        notifier.send_spot_trade_alert(
+                            coin_id=coin_id,
+                            side="BUY",
+                            price=cur_p,
+                            amount_usd=float(trade.get("amount_usd", 0.0)),
+                            units=float(trade.get("units", 0.0))
+                        )
+                        continue
+
+                # B. Take Profit & Stop Loss
+                tp = float(meta.get("tp") or 0.0)
+                sl = float(meta.get("sl") or 0.0)
+                is_tp = tp > 0 and cur_p >= tp
+                is_sl = sl > 0 and cur_p <= sl
+
+                if is_tp or is_sl:
+                    units = float(trade.get("units") or 0.0)
+                    cost = float(trade.get("amount_usd") or 0.0)
+                    proceeds = units * cur_p
+                    fee = proceeds * 0.001
+                    net_proceeds = proceeds - fee
+                    net_pnl = net_proceeds - cost
+                    pnl_pct = (net_pnl / cost * 100) if cost > 0 else 0.0
+
+                    exit_reason = json.dumps({
+                        "fee_usd": round(fee, 4),
+                        "gross_pnl_usd": round(proceeds - cost, 2),
+                        "reason": "AUTO_TAKE_PROFIT" if is_tp else "AUTO_STOP_LOSS"
+                    })
+
+                    sb.close_trade(
+                        trade_id=trade["id"],
+                        exit_price=cur_p,
+                        exit_reason=exit_reason
+                    )
+
+                    notifier.send_spot_trade_alert(
+                        coin_id=coin_id,
+                        side="SELL",
+                        price=cur_p,
+                        amount_usd=proceeds,
+                        units=units,
+                        pnl_usd=round(net_pnl, 2),
+                        pnl_pct=round(pnl_pct, 2)
+                    )
+            except Exception as tr_err:
+                logger.debug(f"Error evaluando spot trade: {tr_err}")
+
+        summary["actions_executed"] = actions
+        _WORKER_DIAGNOSTICS["last_tick_iso"] = summary["timestamp"]
+        _WORKER_DIAGNOSTICS["last_source"] = price_src
+        _WORKER_DIAGNOSTICS["ticks_total"] += 1
+        _WORKER_DIAGNOSTICS["active_bots_count"] = len(active_bots)
+        _WORKER_DIAGNOSTICS["last_actions"] = actions
+        _WORKER_DIAGNOSTICS["last_error"] = None
+
+    except Exception as cycle_err:
+        summary["error"] = str(cycle_err)
+        _WORKER_DIAGNOSTICS["last_error"] = str(cycle_err)
+        logger.error(f"Error en execute_market_evaluation_cycle: {cycle_err}")
+
+    return summary
+
+
+_CYCLE_LOCK = threading.Lock()
+
+
+def trigger_async_evaluation(source: str = "http_health_ping") -> bool:
+    """
+    Dispara un ciclo de evaluacion en segundo plano sin bloquear peticiones HTTP.
+    Retorna True si se inicio la ejecucion, False si ya habia un ciclo en curso.
+    """
+    if _CYCLE_LOCK.locked():
+        logger.debug("Ciclo de evaluacion omitido: otro ciclo ya esta activo.")
+        return False
+
+    def _async_worker():
+        if _CYCLE_LOCK.acquire(blocking=False):
+            try:
+                execute_market_evaluation_cycle(source=source)
+            except Exception as e:
+                logger.error(f"Error en worker async de mercado ({source}): {e}")
+            finally:
+                _CYCLE_LOCK.release()
+
+    t = threading.Thread(target=_async_worker, daemon=True)
+    t.start()
+    return True
+
 
 class HealthHTTPRequestHandler(BaseHTTPRequestHandler):
-    """Manejador HTTP ligero para endpoints de salud y keep-alive de Render."""
+    """Manejador HTTP activo: responde al keep-alive y evalua el mercado de inmediato."""
 
     def log_message(self, format, *args):
         # Silenciar logs ruidosos de healthcheck
@@ -1178,12 +1462,26 @@ class HealthHTTPRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path in ("/health", "/", "/healthz", "/ping"):
-            payload = json.dumps({
+        if self.path in ("/health", "/", "/healthz", "/ping", "/status"):
+            # Disparar evaluacion en segundo plano de manera no bloqueante
+            trigger_async_evaluation(source="http_health_ping")
+
+            from supabase_client import get_supabase_client
+            sb = get_supabase_client()
+
+            response_data = {
                 "status": "ok",
                 "service": "Crypto Analyzer Pro 2.0 24/7 Service",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }).encode("utf-8")
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "supabase_configured": sb.is_configured,
+                "price_source": _WORKER_DIAGNOSTICS.get("last_source", "none"),
+                "active_bots_evaluated": _WORKER_DIAGNOSTICS.get("active_bots_count", 0),
+                "open_trades_count": _WORKER_DIAGNOSTICS.get("open_trades_count", 0),
+                "actions_executed_count": len(_WORKER_DIAGNOSTICS.get("last_actions", [])),
+                "diagnostics": _WORKER_DIAGNOSTICS
+            }
+
+            payload = json.dumps(response_data, indent=2).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
@@ -1199,7 +1497,10 @@ def start_health_server(port: int = 10000) -> HTTPServer:
     server = HTTPServer(("0.0.0.0", port), HealthHTTPRequestHandler)
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
-    print(f"🚀 Crypto Analyzer Pro Web Service iniciado en puerto {port} (Render Free Tier 24/7)")
+    try:
+        print(f"[OK] Crypto Analyzer Pro Web Service iniciado en puerto {port} (Render Free Tier 24/7)")
+    except Exception:
+        pass
     return server
 
 
@@ -1208,198 +1509,20 @@ if __name__ == "__main__":
     try:
         httpd = start_health_server(port)
     except Exception as e:
-        print(f"⚠️ Aviso del servidor HTTP: {e}")
+        print(f"Aviso del servidor HTTP: {e}")
 
     notifier = get_telegram_notifier()
-    print(f"✅ Bot de Telegram conectado: {notifier.is_configured}. Escaneando mercado 24/7...")
+    try:
+        print(f"[OK] Bot de Telegram conectado: {notifier.is_configured}. Escaneando mercado 24/7...")
+    except Exception:
+        pass
 
-    # Bucle continuo autónomo 24/7 en segundo plano
+    # Bucle continuo autonomo 24/7 en segundo plano
     def _run_worker_thread():
-        from supabase_client import get_supabase_client
-        from bot_engine import evaluate_active_grid_bot_tick
-        from web_push import get_web_push_notifier
-
-        sb = get_supabase_client()
-        web_push_notifier = get_web_push_notifier()
         logger.info("Worker 24/7 iniciado: evaluando bots activos cada 15 segundos...")
-
         while True:
             try:
-                if sb.is_configured:
-                    active_bots = sb.get_active_bots()
-                    open_trades = sb.get_open_trades()
-                    active_sessions = sb.get_active_auto_trader_sessions()
-
-                    if active_bots or open_trades or active_sessions:
-                        try:
-                            resp = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=4)
-                            if resp.status_code == 200:
-                                price_list = resp.json()
-                                binance_map = {item["symbol"]: float(item["price"]) for item in price_list if "symbol" in item and "price" in item}
-                                binance_symbols_set = set(binance_map.keys())
-
-                                # 0. Evaluar Cloud Auto Trader Pro 24/7
-                                if active_sessions:
-                                    try:
-                                        run_cloud_auto_trader_cycle(
-                                            sb=sb,
-                                            notifier=notifier,
-                                            web_push=web_push_notifier,
-                                            active_sessions=active_sessions,
-                                            binance_map=binance_map
-                                        )
-                                    except Exception as at_err:
-                                        logger.error(f"Error en ciclo Cloud Auto Trader: {at_err}")
-
-                                # 1. Evaluar Grid Bots activos
-                                for bot in (active_bots or []):
-                                    coin_id = str(bot.get("coin_id") or "solana").lower()
-                                    bot_name = str(bot.get("name") or "")
-                                    b_symbol = resolve_binance_symbol(coin_id=coin_id, bot_name=bot_name, binance_symbols_set=binance_symbols_set)
-                                    live_price = binance_map.get(b_symbol)
-
-                                    if live_price and live_price > 0:
-                                        pair = _format_pair(b_symbol)
-                                        grid_result = evaluate_active_grid_bot_tick(
-                                            bot=bot,
-                                            current_price=live_price,
-                                            client=sb,
-                                            telegram_notifier=notifier
-                                        )
-                                        for action in grid_result.get("actions_executed", []):
-                                            action_type = action.get("action", "GRID")
-                                            if action_type == "SELL":
-                                                pnl_usd = float(action.get("pnl_usd", 0.0))
-                                                title = f"GRID SELL · {pair}"
-                                                body = f"PnL {pnl_usd:+,.2f} · Salida {_format_price(live_price)}"
-                                            else:
-                                                amount_usd = float(action.get("amount_usd", 0.0))
-                                                level_price = float(action.get("level_price") or live_price)
-                                                title = f"GRID BUY · {pair}"
-                                                body = f"{_format_usd(amount_usd)} a {_format_price(live_price)} · Nivel {_format_price(level_price)}"
-                                            web_push_notifier.send_to_user(
-                                                user_id=bot.get("user_id"),
-                                                title=title,
-                                                body=body,
-                                                data={
-                                                    "url": f"{notifier.app_url}/?coin={coin_id}",
-                                                    "coinId": coin_id,
-                                                    "symbol": b_symbol,
-                                                    "pair": pair,
-                                                    "botId": bot.get("id"),
-                                                    "eventType": f"GRID_{action_type}",
-                                                    "tag": f"grid-{bot.get('id')}-{action_type}-{int(time.time())}",
-                                                },
-                                            )
-
-                                # 2. Evaluar Órdenes Spot Abiertas 24/7 (Auto TP / Stop Loss / Límite)
-                                for trade in (open_trades or []):
-                                    try:
-                                        coin_id = str(trade.get("coin_id") or "").lower()
-                                        b_symbol = resolve_binance_symbol(coin_id=coin_id, bot_name="", binance_symbols_set=binance_symbols_set)
-                                        cur_p = binance_map.get(b_symbol)
-                                        if not cur_p or cur_p <= 0:
-                                            continue
-                                        pair = _format_pair(b_symbol)
-
-                                        raw_meta = trade.get("entry_reason") or ""
-                                        meta = {}
-                                        if isinstance(raw_meta, str) and raw_meta.startswith("{"):
-                                            meta = json.loads(raw_meta)
-
-                                        # A. Orden Límite Pendiente (Llenado automático en la nube)
-                                        if meta.get("is_pending_limit"):
-                                            limit_p = float(trade.get("entry_price") or 0.0)
-                                            is_breakout = meta.get("strategy") == "SPOT_BREAKOUT"
-                                            is_triggered = cur_p >= limit_p if is_breakout else cur_p <= limit_p
-                                            if is_triggered and limit_p > 0:
-                                                meta["is_pending_limit"] = False
-                                                u_endpoint = f"{sb.url}/rest/v1/bot_trades?id=eq.{trade['id']}"
-                                                requests.patch(u_endpoint, headers=sb._get_headers(), json={
-                                                    "status": "OPEN",
-                                                    "entry_price": cur_p,
-                                                    "entry_reason": json.dumps(meta),
-                                                    "updated_at": datetime.now(timezone.utc).isoformat()
-                                                }, timeout=sb.timeout)
-
-                                                notifier.send_spot_trade_alert(
-                                                    coin_id=coin_id,
-                                                    side="BUY",
-                                                    price=cur_p,
-                                                    amount_usd=float(trade.get("amount_usd", 0.0)),
-                                                    units=float(trade.get("units", 0.0))
-                                                )
-                                                web_push_notifier.send_to_user(
-                                                    user_id=trade.get("user_id"),
-                                                    title=f"LIMIT BUY · {pair}",
-                                                    body=f"{_format_usd(float(trade.get('amount_usd', 0.0)))} a {_format_price(cur_p)}",
-                                                    data={
-                                                        "url": f"{notifier.app_url}/?coin={coin_id}",
-                                                        "coinId": coin_id,
-                                                        "symbol": b_symbol,
-                                                        "pair": pair,
-                                                        "tradeId": trade.get("id"),
-                                                        "eventType": "LIMIT_BUY",
-                                                        "tag": f"limit-fill-{trade.get('id')}",
-                                                    },
-                                                )
-                                                continue
-
-                                        # B. Take Profit & Stop Loss para posiciones activas
-                                        tp = float(meta.get("tp") or 0.0)
-                                        sl = float(meta.get("sl") or 0.0)
-                                        is_tp = tp > 0 and cur_p >= tp
-                                        is_sl = sl > 0 and cur_p <= sl
-
-                                        if is_tp or is_sl:
-                                            units = float(trade.get("units") or 0.0)
-                                            cost = float(trade.get("amount_usd") or 0.0)
-                                            proceeds = units * cur_p
-                                            fee = proceeds * 0.001
-                                            net_proceeds = proceeds - fee
-                                            net_pnl = net_proceeds - cost
-                                            pnl_pct = (net_pnl / cost * 100) if cost > 0 else 0.0
-
-                                            exit_reason = json.dumps({
-                                                "fee_usd": round(fee, 4),
-                                                "gross_pnl_usd": round(proceeds - cost, 2),
-                                                "reason": "AUTO_TAKE_PROFIT" if is_tp else "AUTO_STOP_LOSS"
-                                            })
-
-                                            sb.close_trade(
-                                                trade_id=trade["id"],
-                                                exit_price=cur_p,
-                                                exit_reason=exit_reason
-                                            )
-
-                                            notifier.send_spot_trade_alert(
-                                                coin_id=coin_id,
-                                                side="SELL",
-                                                price=cur_p,
-                                                amount_usd=proceeds,
-                                                units=units,
-                                                pnl_usd=round(net_pnl, 2),
-                                                pnl_pct=round(pnl_pct, 2)
-                                            )
-                                            web_push_notifier.send_to_user(
-                                                user_id=trade.get("user_id"),
-                                                title=f"{'TAKE PROFIT' if is_tp else 'STOP LOSS'} · {pair}",
-                                                body=f"PnL {net_pnl:+,.2f} ({pnl_pct:+.2f}%) · Salida {_format_price(cur_p)}",
-                                                data={
-                                                    "url": f"{notifier.app_url}/?coin={coin_id}",
-                                                    "coinId": coin_id,
-                                                    "symbol": b_symbol,
-                                                    "pair": pair,
-                                                    "tradeId": trade.get("id"),
-                                                    "eventType": "TAKE_PROFIT" if is_tp else "STOP_LOSS",
-                                                    "tag": f"spot-close-{trade.get('id')}",
-                                                },
-                                            )
-                                    except Exception as tr_err:
-                                        logger.debug(f"Error evaluando spot trade 24/7: {tr_err}")
-
-                        except Exception as net_err:
-                            logger.warning(f"Error consultando Binance Ticker: {net_err}")
+                trigger_async_evaluation(source="background_loop")
                 time.sleep(15)
             except Exception as e:
                 logger.error(f"Error en bucle worker 24/7: {e}")
@@ -1414,3 +1537,4 @@ if __name__ == "__main__":
         except (KeyboardInterrupt, SystemExit):
             print("🛑 Deteniendo servicio...")
             break
+

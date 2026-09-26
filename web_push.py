@@ -10,8 +10,12 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-import requests
-from pywebpush import WebPushException, webpush
+try:
+    from pywebpush import WebPushException, webpush
+except ImportError:
+    class WebPushException(Exception):
+        pass
+    webpush = None
 
 logger = logging.getLogger("WebPushNotifier")
 
@@ -33,7 +37,7 @@ class WebPushNotifier:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.supabase_url and self.supabase_key and self.vapid_private_key)
+        return bool(self.supabase_url and self.supabase_key and self.vapid_private_key and webpush is not None)
 
     def _headers(self) -> Dict[str, str]:
         return {

@@ -473,12 +473,6 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 const parsedTrades: TradeRow[] = JSON.parse(localSavedTrades);
                 if (Array.isArray(parsedTrades) && parsedTrades.length > 0) {
                   setTrades(parsedTrades);
-                  parsedTrades.forEach((t) => {
-                    void supabase.from('bot_trades').insert({
-                      ...t,
-                      user_id: user.id,
-                    });
-                  });
                   syncNotificationsForUser(user.id, parsedTrades);
                 } else {
                   setTrades([]);
