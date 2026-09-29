@@ -263,7 +263,7 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
 
   const totalPortfolioValueUsd = Number((usdtCash + totalBotsValUsd + totalSpotValueUsd).toFixed(2));
   const totalPortfolioValuePen = totalPortfolioValueUsd * penRate;
-  const maxDemoCashUsd = Math.max(0, Number((1000 - totalBotsCapitalUsd - totalSpotValueUsd).toFixed(2)));
+  const maxDemoCashUsd = 100000;
 
   const closedWinnerProfit = trades
     .filter((t) => t.status === 'CLOSED' && typeof t.pnl_usd === 'number' && t.pnl_usd > 0)
@@ -369,7 +369,7 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
       return;
     }
     if (inputCash > maxDemoCashUsd) {
-      alert(`Saldo máximo disponible: $${maxDemoCashUsd.toFixed(2)} USDT. Ya tienes $${totalBotsCapitalUsd.toFixed(2)} en bots y $${totalSpotValueUsd.toFixed(2)} en spot.`);
+      alert(`Saldo máximo permitido en demo: $${maxDemoCashUsd.toLocaleString()} USDT.`);
       return;
     }
     onSetUsdtCash(inputCash);

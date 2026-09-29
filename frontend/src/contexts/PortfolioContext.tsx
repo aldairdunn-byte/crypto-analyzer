@@ -290,11 +290,31 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [profile?.demo_usdt_balance, isLiveMode, user?.id]);
 
+  // Base bankroll: Defaults to $1,000.00 but can be dynamically adjusted by user via "Ajustar Saldo USDT"
+  const [baseBankroll, setBaseBankrollState] = useState<number>(() => {
+    const savedBankroll = getScopedItem('demo_base_bankroll', user?.id, { legacyFallback: true });
+    if (savedBankroll !== null) {
+      const parsed = parseFloat(savedBankroll);
+      if (!isNaN(parsed) && parsed >= 0) return parsed;
+    }
+    const savedCash = getScopedItem('demo_usdt_cash', user?.id, { legacyFallback: true });
+    if (savedCash !== null) {
+      const parsedCash = parseFloat(savedCash);
+      if (!isNaN(parsedCash) && parsedCash >= 0 && Math.abs(parsedCash - 1000) > 0.01) {
+        return parsedCash;
+      }
+    }
+    return 1000.0;
+  });
+
   // Ref to track the latest demo cash value for debounced cloud sync
   const demoBalanceSyncRef = useRef<number | null>(null);
 
   // Flag to prevent reconciler from interfering during an active reset sequence
   const isResettingRef = useRef<boolean>(false);
+
+  // Flag to indicate when an update to usdtCash is initiated by internal reconciler
+  const isReconcilingRef = useRef<boolean>(false);
 
   // Sync USDT cash to LocalStorage (cloud persistence handled by debounced useEffect below)
   const setUsdtCash: React.Dispatch<React.SetStateAction<number>> = (value) => {
@@ -305,6 +325,16 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       } else {
         setScopedItem('demo_usdt_cash', next.toString(), user?.id);
         demoBalanceSyncRef.current = next;
+
+        // When user explicitly sets cash to a specific target number (e.g. from AdjustCashModal),
+        // adjust the base bankroll so canonicalBankroll aligns with the new free cash.
+        if (typeof value === 'number' && !isReconcilingRef.current && !isResettingRef.current) {
+          const newBase = Number((next + capitalInGridBots + capitalInAutoTrader + totalSpotCostBasis - realizedTradesPnL).toFixed(2));
+          if (newBase >= 0 && Math.abs(newBase - baseBankroll) > 0.01) {
+            setBaseBankrollState(newBase);
+            setScopedItem('demo_base_bankroll', newBase.toString(), user?.id);
+          }
+        }
       }
       return next;
     });
@@ -702,14 +732,14 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [user?.id, usdtCash]);
 
-  const canonicalBankroll = Number((1000.0 + realizedTradesPnL).toFixed(2));
+  const canonicalBankroll = Number((baseBankroll + realizedTradesPnL).toFixed(2));
 
   useEffect(() => {
     // Skip reconciliation entirely during a reset sequence
     if (isResettingRef.current) return;
     if (isLiveMode) return;
 
-    // Use the mathematical canonical bankroll ($1,000 + realized PnL).
+    // Use the mathematical canonical bankroll (baseBankroll + realized PnL).
     // NEVER pass free cash into bankrollUsd, as that causes the catastrophic subtractive spiral.
     const reconciledCash = reconcileDemoFreeCash({
       bankrollUsd: canonicalBankroll,
@@ -719,14 +749,16 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
 
     if (Math.abs(usdtCash - reconciledCash) > 0.01) {
+      isReconcilingRef.current = true;
       setUsdtCash(reconciledCash);
+      isReconcilingRef.current = false;
     }
 
     // Auto-repair DB balance if clean account (0 bots, 0 spot, 0 trades)
     if (profile?.demo_usdt_balance !== undefined && profile.demo_usdt_balance <= 0 && capitalInBots === 0 && totalSpotCostBasis === 0 && user?.id) {
-      void updateDemoBalance(1000.0);
+      void updateDemoBalance(baseBankroll);
     }
-  }, [canonicalBankroll, capitalInGridBots, capitalInAutoTrader, capitalInBots, isLiveMode, setUsdtCash, totalSpotCostBasis, profile?.demo_usdt_balance, usdtCash, user?.id, updateDemoBalance]);
+  }, [canonicalBankroll, capitalInGridBots, capitalInAutoTrader, capitalInBots, isLiveMode, setUsdtCash, totalSpotCostBasis, profile?.demo_usdt_balance, usdtCash, user?.id, updateDemoBalance, baseBankroll]);
 
   // Total Portfolio Capital = USDT Cash + Grid Bots + Auto Trader + Spot Holdings Value (Mark-to-Market exact)
   const virtualUsdt = calculateMarkToMarketTotalEquity({
@@ -744,6 +776,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     isResettingRef.current = true;
 
     // 1. Atomically clear all React state
+    setBaseBankrollState(defaultAmount);
+    setScopedItem('demo_base_bankroll', '1000', user?.id);
     setUsdtCashState(defaultAmount);
     setCapitalInGridBots(0);
     setCapitalInAutoTrader(0);
