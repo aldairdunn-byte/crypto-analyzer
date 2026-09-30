@@ -47,6 +47,7 @@ class TelegramNotifier:
         token: Optional[str] = None,
         chat_id: Optional[str] = None,
         app_url: Optional[str] = None,
+        group_chat_id: Optional[str] = None,
         max_retries: int = 3,
         retry_delay: float = 1.0,
         timeout: float = 10.0,
@@ -55,6 +56,7 @@ class TelegramNotifier:
     ):
         self.token = token if token is not None else os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
         self.chat_id = chat_id if chat_id is not None else os.getenv("TELEGRAM_CHAT_ID", "").strip()
+        self.group_chat_id = group_chat_id if group_chat_id is not None else os.getenv("TELEGRAM_GROUP_CHAT_ID", "").strip()
         self.app_url = app_url if app_url is not None else os.getenv("APP_URL", "https://frontend-two-lyart-49.vercel.app").strip()
         self.max_retries = max_retries
         self.retry_delay = retry_delay
@@ -66,10 +68,19 @@ class TelegramNotifier:
         self._last_sent: Dict[str, float] = {}
         self._alert_buffer: List[Dict[str, Any]] = []
 
+    def get_active_chat_destinations(self) -> List[str]:
+        """Retorna la lista sin duplicados de los chat IDs activos para despacho dual."""
+        destinations = []
+        if self.chat_id and self.chat_id.strip():
+            destinations.append(self.chat_id.strip())
+        if self.group_chat_id and self.group_chat_id.strip() and self.group_chat_id.strip() not in destinations:
+            destinations.append(self.group_chat_id.strip())
+        return destinations
+
     @property
     def is_configured(self) -> bool:
-        """Verifica si el token y chat_id están disponibles para enviar mensajes."""
-        return bool(self.token and self.chat_id)
+        """Verifica si el token y al menos un chat_id están disponibles para enviar mensajes."""
+        return bool(self.token and (self.chat_id or self.group_chat_id))
 
     # =========================================================================
     # 1. ENVÍO BASE DE MENSAJES Y RESPUESTAS A CALLBACKS
@@ -79,44 +90,63 @@ class TelegramNotifier:
         self,
         text: str,
         parse_mode: str = "HTML",
-        reply_markup: Optional[Dict[str, Any]] = None
+        reply_markup: Optional[Dict[str, Any]] = None,
+        target_chat_id: Optional[str] = None
     ) -> bool:
         """
         Envía un mensaje de texto a Telegram mediante POST a la API oficial.
+        Si target_chat_id es None, despacha a todos los destinos configurados (privado + grupo).
         Implementa reintentos con retroceso exponencial.
         """
         if not self.is_configured:
-            logger.debug("TelegramNotifier no configurado (falta TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID). Mensaje omitido silenciosamente.")
+            logger.debug("TelegramNotifier no configurado (falta TELEGRAM_BOT_TOKEN o destinos de chat). Mensaje omitido.")
+            return False
+
+        if target_chat_id:
+            destinations = [target_chat_id]
+        else:
+            destinations = self.get_active_chat_destinations()
+
+        if not destinations:
+            logger.debug("No hay destinos de chat configurados en TelegramNotifier.")
             return False
 
         endpoint = f"https://api.telegram.org/bot{self.token}/sendMessage"
-        payload: Dict[str, Any] = {
-            "chat_id": self.chat_id,
-            "text": text,
-            "parse_mode": parse_mode,
-            "disable_web_page_preview": True
-        }
-        if reply_markup:
-            payload["reply_markup"] = reply_markup
+        any_success = False
 
-        last_error = None
-        for attempt in range(1, self.max_retries + 1):
-            try:
-                resp = requests.post(endpoint, json=payload, timeout=self.timeout)
-                if resp.status_code == 200:
-                    return True
-                else:
-                    logger.warning(f"Telegram API error {resp.status_code} (Intento {attempt}/{self.max_retries}): {resp.text}")
-                    last_error = f"HTTP {resp.status_code}: {resp.text}"
-            except Exception as e:
-                last_error = str(e)
-                logger.warning(f"Excepción enviando alerta Telegram (Intento {attempt}/{self.max_retries}): {e}")
+        for cid in destinations:
+            payload: Dict[str, Any] = {
+                "chat_id": cid,
+                "text": text,
+                "parse_mode": parse_mode,
+                "disable_web_page_preview": True
+            }
+            if reply_markup:
+                payload["reply_markup"] = reply_markup
 
-            if attempt < self.max_retries:
-                time.sleep(self.retry_delay * (2 ** (attempt - 1)))
+            delivered = False
+            last_error = None
+            for attempt in range(1, self.max_retries + 1):
+                try:
+                    resp = requests.post(endpoint, json=payload, timeout=self.timeout)
+                    if resp.status_code == 200:
+                        delivered = True
+                        any_success = True
+                        break
+                    else:
+                        logger.warning(f"Telegram API error {resp.status_code} para {cid} (Intento {attempt}/{self.max_retries}): {resp.text}")
+                        last_error = f"HTTP {resp.status_code}: {resp.text}"
+                except Exception as e:
+                    last_error = str(e)
+                    logger.warning(f"Excepción enviando alerta Telegram a {cid} (Intento {attempt}/{self.max_retries}): {e}")
 
-        logger.error(f"Fallo definitivo enviando alerta a Telegram tras {self.max_retries} intentos: {last_error}")
-        return False
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * (2 ** (attempt - 1)))
+
+            if not delivered:
+                logger.error(f"Fallo definitivo enviando alerta a {cid} tras {self.max_retries} intentos: {last_error}")
+
+        return any_success
 
     def answer_callback_query(
         self,

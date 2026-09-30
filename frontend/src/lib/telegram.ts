@@ -80,6 +80,26 @@ export function getUserDisplayName(): string {
   return 'Operador Demo';
 }
 
+/**
+ * TSK-CLOUD-018: Determina si el cliente debe delegar las alertas de trading a la nube (Render 24/7).
+ * Si hay una sesión activa de Supabase en localStorage, el cliente NO debe emitir alertas automatizadas
+ * para evitar doble notificación o spam al abrir el navegador.
+ */
+export function shouldDelegateToCloudBackend(): boolean {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return false;
+    const keys = Object.keys(localStorage);
+    const authKey = keys.find((k) => k.startsWith('sb-') && k.endsWith('-auth-token'));
+    if (!authKey) return false;
+    const raw = localStorage.getItem(authKey);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    return Boolean(parsed?.user?.id || parsed?.session?.user?.id);
+  } catch {
+    return false;
+  }
+}
+
 export interface TelegramSignalParams {
   coinId: string;
   coinSymbol: string;
@@ -276,7 +296,10 @@ function formatDualPrice(price: number, decimals: number = 2, penRate: number = 
  */
 export async function sendTelegramGridBotCreated(
   params: TelegramBotCreatedParams
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
+  if (shouldDelegateToCloudBackend()) {
+    return { success: true, skipped: true };
+  }
   const {
     botName,
     coinSymbol,
@@ -349,7 +372,10 @@ export async function sendTelegramGridBotCreated(
  */
 export async function sendTelegramGridOrderFilled(
   params: TelegramGridOrderFilledParams
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
+  if (shouldDelegateToCloudBackend()) {
+    return { success: true, skipped: true };
+  }
   const {
     botName,
     coinSymbol,
@@ -448,7 +474,10 @@ export async function sendTelegramGridOrderFilled(
  */
 export async function sendTelegramSignalAlert(
   params: TelegramSignalParams
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
+  if (shouldDelegateToCloudBackend()) {
+    return { success: true, skipped: true };
+  }
   const {
     coinSymbol,
     coinName,
@@ -527,7 +556,10 @@ export async function sendTelegramSignalAlert(
  */
 export async function sendTelegramSpotTrade(
   params: TelegramSpotTradeParams
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
+  if (shouldDelegateToCloudBackend()) {
+    return { success: true, skipped: true };
+  }
   const {
     coinSymbol,
     coinName,
@@ -589,7 +621,10 @@ export async function sendTelegramSpotTrade(
  */
 export async function sendTelegramBotStatusChange(
   params: TelegramBotStatusChangeParams
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
+  if (shouldDelegateToCloudBackend()) {
+    return { success: true, skipped: true };
+  }
   const { botName, coinSymbol, strategy, status, capitalUsd, penRate = 3.75 } = params;
 
   const statusMap = {
@@ -678,7 +713,10 @@ export interface TelegramAutoTraderStartParams {
 
 export async function sendTelegramAutoTraderSessionStart(
   params: TelegramAutoTraderStartParams
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
+  if (shouldDelegateToCloudBackend()) {
+    return { success: true, skipped: true };
+  }
   const { selectedCapital, durationMinutes, digestInterval, penRate = 3.75 } = params;
   const nowUtc = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
   const dualCapital = formatDualCurrency(selectedCapital, penRate);
@@ -730,7 +768,10 @@ export interface TelegramAutoTraderTokenEntryParams {
 
 export async function sendTelegramAutoTraderTokenEntry(
   params: TelegramAutoTraderTokenEntryParams
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
+  if (shouldDelegateToCloudBackend()) {
+    return { success: true, skipped: true };
+  }
   const {
     symbol,
     entryPrice,
@@ -796,7 +837,10 @@ export interface TelegramPeriodicDigestParams {
 
 export async function sendTelegramPeriodicDigest(
   params: TelegramPeriodicDigestParams
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
+  if (shouldDelegateToCloudBackend()) {
+    return { success: true, skipped: true };
+  }
   const {
     status,
     activePosition,

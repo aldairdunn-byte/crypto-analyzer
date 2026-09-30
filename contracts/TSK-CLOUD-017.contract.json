@@ -1,0 +1,71 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-CLOUD-017",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Implement dual-destination (private chat + group channel) delivery in TelegramNotifier on Render backend",
+
+  "scope": {
+    "target_files": [
+      "telegram_bot.py",
+      "render.yaml"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json"
+    ],
+    "authorized_global_files": [
+      "supabase_client.py"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-016"
+  ],
+
+  "contracts": {
+    "types_file": "telegram_bot.py",
+    "interfaces": "TelegramNotifier dual chat dispatching",
+    "function_signatures": [
+      "_send_message(self, text: str, parse_mode: str = 'HTML', reply_markup: Optional[Dict[str, Any]] = None, target_chat_id: Optional[str] = None) -> bool"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write verification tests in test_telegram_dual_delivery.py",
+    "Run python -m unittest test_telegram_dual_delivery.py to confirm red phase failure",
+    "Update TelegramNotifier.__init__ in telegram_bot.py to accept group_chat_id or resolve os.getenv('TELEGRAM_GROUP_CHAT_ID', '-1004384607143')",
+    "Update TelegramNotifier._send_message in telegram_bot.py to deliver to all unique configured chat IDs (private and group) when target_chat_id is None",
+    "Add TELEGRAM_GROUP_CHAT_ID to render.yaml environment variables with sync: false",
+    "Run python -m unittest test_telegram_dual_delivery.py to confirm green phase",
+    "Update contract status to PASSED and validate using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "python -m unittest test_telegram_dual_delivery.py",
+    "lint": "python -m py_compile telegram_bot.py",
+    "typecheck": "python -m py_compile telegram_bot.py"
+  },
+
+  "acceptance_criteria": [
+    "TelegramNotifier initializes group_chat_id from TELEGRAM_GROUP_CHAT_ID or default '-1004384607143'",
+    "TelegramNotifier._send_message sends to both chat_id and group_chat_id without duplicating if they are identical",
+    "render.yaml declares TELEGRAM_GROUP_CHAT_ID as sync: false",
+    "All unit tests pass with zero regressions"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-017.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- telegram_bot.py render.yaml; rm -f test_telegram_dual_delivery.py contracts/TSK-CLOUD-017.contract.json"
+  }
+}

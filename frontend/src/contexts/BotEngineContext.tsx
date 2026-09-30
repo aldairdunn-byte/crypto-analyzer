@@ -784,6 +784,9 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // 2. Real-time Simulation Engine & Continuous Grid Recycling (Tick Crossing)
   useEffect(() => {
+    // TSK-CLOUD-018: In cloud-first architecture, authenticated users have their bots executed 24/7 by the Render backend.
+    // Client-side grid crossing simulation must NOT execute to prevent duplicate orders and ghost Telegram alerts.
+    if (user?.id) return;
     if (activeGridOrders.length === 0) return;
 
     setActiveGridOrders((prevOrders) => {

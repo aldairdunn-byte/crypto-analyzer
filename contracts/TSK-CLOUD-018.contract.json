@@ -1,0 +1,71 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-CLOUD-018",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Enforce frontend passive mode: gate client-side grid matching and silence automated Telegram emissions for authenticated users",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/contexts/BotEngineContext.tsx",
+      "frontend/src/lib/telegram.ts"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json"
+    ],
+    "authorized_global_files": [
+      "frontend/src/lib/supabase.ts"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-017"
+  ],
+
+  "contracts": {
+    "types_file": "frontend/src/contexts/BotEngineContext.tsx",
+    "interfaces": "Gated client-side grid runner and silenced Telegram dispatchers",
+    "function_signatures": [
+      "sendTelegramGridOrderFilled: (params: any) => Promise<{ success: boolean; skipped?: boolean; error?: string }>"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write verification test in tests/verify_frontend_silence_and_gating.js",
+    "Run node tests/verify_frontend_silence_and_gating.js to confirm red phase failure",
+    "Add user?.id guard at the beginning of the client-side grid simulation useEffect in BotEngineContext.tsx",
+    "Update sendTelegramGridOrderFilled, sendTelegramSpotTrade, sendTelegramSignalAlert, and sendTelegramBotStatusChange in telegram.ts to skip dispatching when an authenticated session exists, delegating to 24/7 cloud backend",
+    "Run node tests/verify_frontend_silence_and_gating.js to confirm green phase",
+    "Run npm --prefix frontend run build to verify zero typescript/bundle errors",
+    "Update contract status to PASSED and validate using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "node tests/verify_frontend_silence_and_gating.js",
+    "lint": "npm --prefix frontend run build",
+    "typecheck": "npm --prefix frontend run build"
+  },
+
+  "acceptance_criteria": [
+    "BotEngineContext.tsx client-side grid matching useEffect explicitly exits if user?.id is truthy",
+    "Automated trading alerts in telegram.ts skip client-side fetch when user is logged in",
+    "sendTelegramTestMessage remains functional for explicit manual testing in settings",
+    "Vite build passes with zero errors"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-018.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/contexts/BotEngineContext.tsx frontend/src/lib/telegram.ts; rm -f tests/verify_frontend_silence_and_gating.js contracts/TSK-CLOUD-018.contract.json"
+  }
+}
