@@ -1,0 +1,79 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-CLOUD-009",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Migrate demo portfolio to Supabase user_portfolios as Single Source of Truth (SSOT), preventing localStorage race conditions on client mount, and implement backend user portfolio persistence in supabase_client.py",
+
+  "scope": {
+    "target_files": [
+      "supabase_client.py",
+      "frontend/src/contexts/PortfolioContext.tsx"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json",
+      "tsconfig.json"
+    ],
+    "authorized_global_files": [
+      "frontend/src/lib/supabase.ts"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-004",
+    "TSK-CLOUD-005",
+    "TSK-CLOUD-006",
+    "TSK-CLOUD-007",
+    "TSK-CLOUD-008"
+  ],
+
+  "contracts": {
+    "types_file": "supabase_client.py",
+    "interfaces": "get_user_portfolio, upsert_user_portfolio, delete_user_portfolio_holding in SupabaseClient and SSOT gating in PortfolioContext",
+    "function_signatures": [
+      "get_user_portfolio(self, user_id: str) -> List[Dict[str, Any]]",
+      "upsert_user_portfolio(self, user_id: str, symbol: str, asset: str, amount: float, avg_buy_price: float) -> Dict[str, Any]",
+      "delete_user_portfolio_holding(self, user_id: str, identifier: str) -> bool"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write test in test_portfolio_ssot.py verifying portfolio queries and SSOT hydration safety",
+    "Run python test_portfolio_ssot.py to verify failure (red phase)",
+    "Implement get_user_portfolio, upsert_user_portfolio, and delete_user_portfolio_holding in supabase_client.py",
+    "Update PortfolioContext.tsx to gate local-to-cloud sync with isCloudPortfolioLoaded and prioritize cloud holdings as SSOT",
+    "Run python test_portfolio_ssot.py to verify green phase",
+    "Run lint and typecheck verification commands",
+    "Validate contract using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "python test_portfolio_ssot.py",
+    "lint": "python -m py_compile supabase_client.py",
+    "typecheck": "python -m py_compile supabase_client.py"
+  },
+
+  "acceptance_criteria": [
+    "supabase_client.py provides get_user_portfolio querying user_portfolios table by user_id",
+    "supabase_client.py provides upsert_user_portfolio upserting row with on_conflict resolution",
+    "supabase_client.py provides delete_user_portfolio_holding deleting row by user_id and symbol/asset",
+    "PortfolioContext.tsx gates localHoldings sync with isCloudPortfolioLoaded so stale localStorage cannot wipe or overwrite cloud holdings on initial load",
+    "test_portfolio_ssot.py exits with code 0"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-009.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- supabase_client.py frontend/src/contexts/PortfolioContext.tsx; rm -f test_portfolio_ssot.py contracts/TSK-CLOUD-009.contract.json"
+  }
+}

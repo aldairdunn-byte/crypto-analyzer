@@ -1,0 +1,74 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-CLOUD-014",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Centralize periodic Telegram digest scheduler and integrate WebPushNotifier with service role key for 24/7 background notifications",
+
+  "scope": {
+    "target_files": [
+      "web_push.py",
+      "telegram_bot.py"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json"
+    ],
+    "authorized_global_files": [
+      "supabase_client.py"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-013"
+  ],
+
+  "contracts": {
+    "types_file": "web_push.py",
+    "interfaces": "WebPushNotifier and backend alert functions",
+    "function_signatures": [
+      "WebPushNotifier.__init__(self, supabase_url: Optional[str] = None, supabase_key: Optional[str] = None, vapid_private_key: Optional[str] = None, vapid_subject: Optional[str] = None, timeout: float = 8.0) -> None",
+      "send_autotrader_periodic_digest(session: Dict[str, Any], notifier: Optional[Any] = None) -> bool",
+      "dispatch_trade_web_push(user_id: Optional[str], event_type: str, symbol: str, pnl_usd: float = 0.0, pnl_pct: float = 0.0) -> int"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write verification tests in test_backend_alerts.py",
+    "Run python -m unittest test_backend_alerts.py to confirm red phase failures",
+    "Update web_push.py to import requests and prioritize SUPABASE_SERVICE_ROLE_KEY",
+    "Update telegram_bot.py with send_autotrader_periodic_digest, dispatch_trade_web_push, and periodic digest dispatch loop in worker thread",
+    "Run python -m unittest test_backend_alerts.py to confirm green phase",
+    "Run pytest to verify zero regressions across all test suites",
+    "Update contract status to PASSED and validate using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "python -m unittest test_backend_alerts.py",
+    "lint": "python -m py_compile web_push.py telegram_bot.py",
+    "typecheck": "python -m py_compile web_push.py telegram_bot.py"
+  },
+
+  "acceptance_criteria": [
+    "WebPushNotifier prioritizes SUPABASE_SERVICE_ROLE_KEY to bypass RLS when querying push_subscriptions",
+    "web_push.py imports requests safely and handles missing subscriptions without crashing",
+    "telegram_bot.py implements send_autotrader_periodic_digest to send formatted operational digests to Telegram",
+    "telegram_bot.py implements dispatch_trade_web_push to deliver push notifications on trading events",
+    "All test suites pass with zero regressions"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-014.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- web_push.py telegram_bot.py; rm -f test_backend_alerts.py contracts/TSK-CLOUD-014.contract.json"
+  }
+}

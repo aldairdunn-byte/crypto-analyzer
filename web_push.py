@@ -8,6 +8,7 @@ Supabase and sends native mobile/PWA notifications through the Web Push protocol
 import json
 import logging
 import os
+import requests
 from typing import Any, Dict, List, Optional
 
 try:
@@ -30,7 +31,11 @@ class WebPushNotifier:
         timeout: float = 8.0,
     ) -> None:
         self.supabase_url = (supabase_url or os.getenv("SUPABASE_URL", "")).rstrip("/")
-        self.supabase_key = supabase_key or os.getenv("SUPABASE_KEY", "")
+        self.supabase_key = (
+            supabase_key
+            or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            or os.getenv("SUPABASE_KEY", "")
+        )
         self.vapid_private_key = vapid_private_key or os.getenv("VAPID_PRIVATE_KEY", "")
         self.vapid_subject = vapid_subject or os.getenv("VAPID_SUBJECT", "mailto:admin@crypto-analyzer.local")
         self.timeout = timeout

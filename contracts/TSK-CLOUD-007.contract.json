@@ -1,0 +1,74 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-CLOUD-007",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Implement autonomous 24/7 DCA bot evaluation engine in bot_engine.py and integrate it into market cycle in telegram_bot.py",
+
+  "scope": {
+    "target_files": [
+      "bot_engine.py",
+      "telegram_bot.py"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json",
+      "tsconfig.json"
+    ],
+    "authorized_global_files": [
+      "supabase_client.py"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-004",
+    "TSK-CLOUD-005"
+  ],
+
+  "contracts": {
+    "types_file": "bot_engine.py",
+    "interfaces": "evaluate_active_dca_bot_tick function signature and return dictionary",
+    "function_signatures": [
+      "evaluate_active_dca_bot_tick(bot: Dict[str, Any], current_price: float, client: Optional[Any] = None, telegram_notifier: Optional[Any] = None) -> Dict[str, Any]"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit test in test_dca_bot_engine.py verifying interval check, buy execution, capital limit guardrail, and take profit exit",
+    "Run python test_dca_bot_engine.py to verify failure before implementation (red phase)",
+    "Implement evaluate_active_dca_bot_tick in bot_engine.py",
+    "Integrate DCA bot evaluation in execute_market_evaluation_cycle in telegram_bot.py",
+    "Run python test_dca_bot_engine.py to verify green phase",
+    "Run lint and typecheck verification commands",
+    "Validate contract using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "python test_dca_bot_engine.py",
+    "lint": "python -m py_compile bot_engine.py telegram_bot.py",
+    "typecheck": "python -m py_compile bot_engine.py telegram_bot.py"
+  },
+
+  "acceptance_criteria": [
+    "evaluate_active_dca_bot_tick executes BUY when interval elapsed or price drop triggered",
+    "evaluate_active_dca_bot_tick respects capital_allocated_usd and does not exceed limit",
+    "evaluate_active_dca_bot_tick closes open trades with SELL when average entry reaches take profit",
+    "telegram_bot.py invokes evaluate_active_dca_bot_tick for active bots with strategy DCA",
+    "test_dca_bot_engine.py exits with code 0"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-007.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- bot_engine.py telegram_bot.py; rm -f test_dca_bot_engine.py contracts/TSK-CLOUD-007.contract.json"
+  }
+}

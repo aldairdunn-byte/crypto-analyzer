@@ -1,0 +1,72 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-CLOUD-016",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Separate shallow /health (<5ms) from deep /deep-health (503 on worker freeze) and implement worker watchdog auto-recovery",
+
+  "scope": {
+    "target_files": [
+      "telegram_bot.py"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json"
+    ],
+    "authorized_global_files": [
+      "supabase_client.py"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-014",
+    "TSK-CLOUD-015"
+  ],
+
+  "contracts": {
+    "types_file": "telegram_bot.py",
+    "interfaces": "Health HTTP endpoints and Watchdog auto-recovery",
+    "function_signatures": [
+      "check_and_recover_stale_worker(stale_threshold_seconds: float = 180.0) -> bool"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write verification tests in test_observability_watchdog.py",
+    "Run python -m unittest test_observability_watchdog.py to confirm red phase failures",
+    "Update HealthHTTPRequestHandler in telegram_bot.py: shallow /health returns fast <5ms 200 OK without calling trigger_async_evaluation()",
+    "Update /deep-health in telegram_bot.py: returns HTTP 503 if worker tick is older than 90s, and serializes booleans cleanly",
+    "Implement check_and_recover_stale_worker and watchdog background thread in telegram_bot.py",
+    "Run python -m unittest test_observability_watchdog.py to confirm green phase",
+    "Run pytest to verify zero regressions across all test suites",
+    "Update contract status to PASSED and validate using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "python -m unittest test_observability_watchdog.py",
+    "lint": "python -m py_compile telegram_bot.py",
+    "typecheck": "python -m py_compile telegram_bot.py"
+  },
+
+  "acceptance_criteria": [
+    "/health responds immediately with HTTP 200 without triggering heavy async evaluation cycles",
+    "/deep-health returns HTTP 503 when worker tick is older than 90 seconds",
+    "check_and_recover_stale_worker restarts stalled worker thread if last_tick > 180s and dispatches Telegram alert",
+    "All unit tests pass with zero regressions"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-016.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- telegram_bot.py; rm -f test_observability_watchdog.py contracts/TSK-CLOUD-016.contract.json"
+  }
+}

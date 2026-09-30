@@ -54,7 +54,12 @@ class SupabaseClient:
         timeout: float = 15.0
     ) -> None:
         self.url: str = (url or os.getenv("SUPABASE_URL", "")).rstrip("/")
-        self.key: str = key or os.getenv("SUPABASE_KEY", "")
+        self.key: str = (
+            key
+            or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+            or os.getenv("SUPABASE_SERVICE_KEY", "")
+            or os.getenv("SUPABASE_KEY", "")
+        )
         self.max_retries: int = max_retries
         self.retry_delay: float = retry_delay
         self.timeout: float = timeout
@@ -64,6 +69,25 @@ class SupabaseClient:
     def is_configured(self) -> bool:
         """Indica si las credenciales de Supabase están configuradas."""
         return self._is_configured
+
+    @property
+    def is_service_role(self) -> bool:
+        """Indica si el cliente opera con credenciales privilegiadas de backend (service_role)."""
+        if not self.key or "." not in self.key:
+            return False
+        parts = self.key.split(".")
+        if len(parts) != 3:
+            return False
+        try:
+            import base64
+            import json
+            payload_b64 = parts[1]
+            padded = payload_b64 + "=" * (-len(payload_b64) % 4)
+            payload_bytes = base64.urlsafe_b64decode(padded.encode("ascii"))
+            payload = json.loads(payload_bytes.decode("utf-8"))
+            return payload.get("role") == "service_role"
+        except Exception:
+            return False
 
     def _get_headers(self, prefer: str = "return=representation") -> Dict[str, str]:
         """Genera los headers requeridos para la API REST de Supabase PostgREST."""
@@ -165,16 +189,21 @@ class SupabaseClient:
         units: float,
         amount_usd: float,
         entry_reason: Optional[str] = None,
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
+        status: str = "OPEN",
+        exit_price: Optional[float] = None,
+        exit_reason: Optional[str] = None,
+        pnl_usd: Optional[float] = None,
+        pnl_pct: Optional[float] = None
     ) -> Dict[str, Any]:
-        """Registra la apertura de una nueva operación de trading."""
+        """Registra una operación de trading en bot_trades (OPEN o CLOSED)."""
         payload = {
             "coin_id": coin_id,
             "side": side,
             "entry_price": entry_price,
             "units": units,
             "amount_usd": amount_usd,
-            "status": "OPEN",
+            "status": status,
             "entry_reason": entry_reason or "Señal de trading confirmada",
             "entry_time": datetime.now(timezone.utc).isoformat()
         }
@@ -182,6 +211,16 @@ class SupabaseClient:
             payload["bot_id"] = bot_id
         if user_id:
             payload["user_id"] = user_id
+        if exit_price is not None:
+            payload["exit_price"] = exit_price
+        if exit_reason is not None:
+            payload["exit_reason"] = exit_reason
+        if pnl_usd is not None:
+            payload["pnl_usd"] = pnl_usd
+        if pnl_pct is not None:
+            payload["pnl_pct"] = pnl_pct
+        if status == "CLOSED":
+            payload["exit_time"] = datetime.now(timezone.utc).isoformat()
 
         def _op():
             endpoint = f"{self.url}/rest/v1/bot_trades"
@@ -235,6 +274,27 @@ class SupabaseClient:
             return data[0] if isinstance(data, list) and data else update_payload
 
         return self._execute_with_retry("close_trade", _op)
+
+    def close_trade_and_credit_balance(
+        self,
+        trade_id: str,
+        exit_price: float,
+        exit_reason: Optional[str] = None,
+        user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Cierra una operación en bot_trades y concilia el saldo demo acreditando los proceeds."""
+        closed_trade = self.close_trade(trade_id=trade_id, exit_price=exit_price, exit_reason=exit_reason)
+        units = float(closed_trade.get("units", 0.0))
+        proceeds = round(units * exit_price, 2)
+        target_user = user_id or closed_trade.get("user_id")
+
+        if target_user and proceeds > 0:
+            try:
+                self.credit_user_balance(target_user, proceeds)
+            except Exception as e:
+                logger.warning(f"Aviso acreditando saldo demo tras cerrar trade {trade_id}: {e}")
+
+        return closed_trade
 
     def get_open_trades(self, bot_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Obtiene las operaciones abiertas (status='OPEN')."""
@@ -684,6 +744,57 @@ class SupabaseClient:
             return resp.status_code in (200, 204)
 
         return self._execute_with_retry("credit_user_balance", _op)
+
+    # =========================================================================
+    # 7. GESTIÓN DE PORTAFOLIO Y CUSTODIA VIRTUAL (user_portfolios)
+    # =========================================================================
+
+    def get_user_portfolio(self, user_id: str) -> List[Dict[str, Any]]:
+        """Obtiene las tenencias en custodia virtual de user_portfolios para un usuario."""
+        def _op():
+            endpoint = f"{self.url}/rest/v1/user_portfolios?user_id=eq.{user_id}&select=*"
+            resp = requests.get(endpoint, headers=self._get_headers(), timeout=self.timeout)
+            resp.raise_for_status()
+            return resp.json()
+
+        return self._execute_with_retry("get_user_portfolio", _op)
+
+    def upsert_user_portfolio(
+        self,
+        user_id: str,
+        symbol: str,
+        asset: str,
+        amount: float,
+        avg_buy_price: float
+    ) -> Dict[str, Any]:
+        """Inserta o actualiza una tenencia en user_portfolios."""
+        payload = {
+            "user_id": user_id,
+            "symbol": symbol.upper(),
+            "asset": asset.lower(),
+            "amount": round(float(amount), 8),
+            "avg_buy_price": round(float(avg_buy_price), 4),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        def _op():
+            endpoint = f"{self.url}/rest/v1/user_portfolios?on_conflict=user_id,symbol"
+            headers = self._get_headers()
+            headers["Prefer"] = "return=representation,resolution=merge-duplicates"
+            resp = requests.post(endpoint, headers=headers, json=payload, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            return data[0] if isinstance(data, list) and data else payload
+
+        return self._execute_with_retry("upsert_user_portfolio", _op)
+
+    def delete_user_portfolio_holding(self, user_id: str, identifier: str) -> bool:
+        """Elimina una tenencia en user_portfolios cuando su cantidad llega a 0."""
+        def _op():
+            endpoint = f"{self.url}/rest/v1/user_portfolios?user_id=eq.{user_id}&symbol=eq.{identifier.upper()}"
+            resp = requests.delete(endpoint, headers=self._get_headers(), timeout=self.timeout)
+            return resp.status_code in (200, 204)
+
+        return self._execute_with_retry("delete_user_portfolio_holding", _op)
 
 
 # Instancia singleton accesible globalmente

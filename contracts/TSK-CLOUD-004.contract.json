@@ -1,0 +1,73 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-CLOUD-004",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Configure service role key resolution in supabase_client.py and declare SUPABASE_SERVICE_ROLE_KEY environment variable in render.yaml",
+
+  "scope": {
+    "target_files": [
+      "supabase_client.py",
+      "render.yaml"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json",
+      "tsconfig.json"
+    ],
+    "authorized_global_files": [
+      "supabase_schema_v2.sql"
+    ]
+  },
+
+  "depends_on": [],
+
+  "contracts": {
+    "types_file": "supabase_client.py",
+    "interfaces": "class SupabaseClient",
+    "function_signatures": [
+      "__init__(self, url: Optional[str] = None, key: Optional[str] = None, max_retries: int = 3, retry_delay: float = 0.5, timeout: float = 15.0) -> None",
+      "is_service_role(self) -> bool"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write test in test_supabase_service_role.py verifying key precedence: SUPABASE_SERVICE_ROLE_KEY over SUPABASE_KEY and is_service_role boolean property",
+    "Run python test_supabase_service_role.py to verify red phase",
+    "Update supabase_client.py to resolve key from SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SERVICE_KEY or SUPABASE_KEY",
+    "Implement is_service_role property in SupabaseClient",
+    "Update render.yaml to include SUPABASE_SERVICE_ROLE_KEY in web service envVars with sync false",
+    "Run python test_supabase_service_role.py to verify green phase",
+    "Run lint and typecheck commands",
+    "Validate contract using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "python test_supabase_service_role.py",
+    "lint": "python -m py_compile supabase_client.py",
+    "typecheck": "python -m py_compile supabase_client.py"
+  },
+
+  "acceptance_criteria": [
+    "supabase_client.py resolves SUPABASE_SERVICE_ROLE_KEY when provided in environment",
+    "supabase_client.py provides is_service_role boolean property checking JWT role without leaking key value",
+    "render.yaml declares SUPABASE_SERVICE_ROLE_KEY in envVars",
+    "test_supabase_service_role.py exits with code 0",
+    "All pre-existing 72 pytest tests continue to pass"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-004.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- supabase_client.py render.yaml; rm -f test_supabase_service_role.py contracts/TSK-CLOUD-004.contract.json"
+  }
+}

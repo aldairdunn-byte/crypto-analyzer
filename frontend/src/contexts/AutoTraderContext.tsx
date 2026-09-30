@@ -24,7 +24,6 @@ import {
   sendTelegramSpotTrade,
   sendTelegramAutoTraderSessionStart,
   sendTelegramAutoTraderTokenEntry,
-  sendTelegramPeriodicDigest,
 } from '../lib/telegram';
 import { desktopNotifications } from '../lib/desktopNotifications';
 
@@ -114,7 +113,7 @@ export function normalizeActivePosition(raw: any, livePrice?: number): AutoTrade
 
 export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const { availableUsdt, capitalInBots, setUsdtCash, setCapitalInAutoTrader, setCapitalInBots, removeHolding } = usePortfolio();
+  const { availableUsdt, setUsdtCash, setCapitalInAutoTrader, setCapitalInBots, removeHolding } = usePortfolio();
   const { allCoinsStats, livePrices } = useMarketData();
   const { addToast, addNotification, recordExternalTrade } = useBotEngine();
 
@@ -995,26 +994,31 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     removeScopedItem('autotrader_is_paused');
     removeScopedItem('autotrader_active_position');
 
-    // Instantiate runner with live parameters
-    const runner = createAutoTraderRunner({
-      assignedCapital: selectedCapital,
-      tradingProfile: 'MOMENTUM_INTRADAY',
-      sessionDurationMinutes,
-      dailyTargetProfitPct: dailyTargetPct,
-      dailyMaxLossPct,
-      maxTradesPerDay,
-      feeRate: 0.001,
-      slippageRate: 0.0005,
-      spreadRate: 0.0005,
-      onAllocateCapital: (_amount) => {},
-      onReleaseCapital: (principal, netProfit) => {
-        setCapitalInAutoTrader((prev) => Math.max(0, prev - principal));
-        setUsdtCash((prev) => Number((prev + principal + netProfit).toFixed(2)));
-      },
-    });
+    // In cloud mode (user logged in), Render 24/7 worker has exclusive execution authority.
+    // Local runner and browser-side WebSocket trade monitors are ONLY instantiated in guest/offline mode.
+    if (!user?.id) {
+      const runner = createAutoTraderRunner({
+        assignedCapital: selectedCapital,
+        tradingProfile: 'MOMENTUM_INTRADAY',
+        sessionDurationMinutes,
+        dailyTargetProfitPct: dailyTargetPct,
+        dailyMaxLossPct,
+        maxTradesPerDay,
+        feeRate: 0.001,
+        slippageRate: 0.0005,
+        spreadRate: 0.0005,
+        onAllocateCapital: (_amount) => {},
+        onReleaseCapital: (principal, netProfit) => {
+          setCapitalInAutoTrader((prev) => Math.max(0, prev - principal));
+          setUsdtCash((prev) => Number((prev + principal + netProfit).toFixed(2)));
+        },
+      });
 
-    runner.startSession();
-    runnerRef.current = runner;
+      runner.startSession();
+      runnerRef.current = runner;
+    } else {
+      runnerRef.current = null;
+    }
 
     setIsRunning(true);
     setIsPaused(false);
@@ -1344,13 +1348,19 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
     };
 
+    // Cloud worker has exclusive execution authority when user is logged in
+    // Local scan disabled when cloud worker is active to prevent duplicate / desynced trades
+    if (user?.id) {
+      return;
+    }
+
     // Execute first scan immediately, then every 12 seconds
     performScan();
     const interval = setInterval(performScan, 12_000);
 
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRunning, isPaused, allCoinsStats, livePrices, selectedCapital, setCapitalInAutoTrader]);
+  }, [isRunning, isPaused, allCoinsStats, livePrices, selectedCapital, setCapitalInAutoTrader, user?.id]);
 
   // Real-time continuous position price and PnL synchronization with Binance WebSocket feeds
   useEffect(() => {
@@ -1392,49 +1402,11 @@ export const AutoTraderProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [livePrices, allCoinsStats, isRunning]);
 
   // Heartbeat periodic digest timer to Telegram (30 min / 1 hour / off)
+  // Delegated to Render 24/7 cloud worker to ensure alerts run without browser open
   useEffect(() => {
-    if (!isRunning || isPaused || telegramDigestInterval === 'off') return;
-
-    const intervalMinutes = telegramDigestInterval === '30m' ? 30 : 60;
-    const intervalMs = intervalMinutes * 60 * 1000;
-
-    const digestTimer = setInterval(() => {
-      const pos = runnerRef.current?.currentPosition;
-      const totalEquity = availableUsdt + capitalInBots;
-
-      void sendTelegramPeriodicDigest({
-        status: runnerRef.current?.status || status,
-        activePosition: pos
-          ? {
-              symbol: pos.symbol,
-              entryPrice: pos.entryPrice,
-              unrealizedPnlUsd: pos.unrealizedPnL || 0,
-              unrealizedPnlPct: pos.capitalInvested > 0 ? (pos.unrealizedPnL / pos.capitalInvested) * 100 : 0,
-              breakEvenArmed: pos.isBreakEvenArmed || false,
-            }
-          : null,
-        closedTradesToday,
-        winningTradesToday,
-        sessionPnlUsd: sessionRealizedPnlUsd,
-        sessionPnlPct: sessionRealizedPnlPct,
-        totalEquityUsd: totalEquity,
-        intervalLabel: intervalMinutes === 30 ? '30 Minutos' : '1 Hora',
-      });
-    }, intervalMs);
-
-    return () => clearInterval(digestTimer);
-  }, [
-    isRunning,
-    isPaused,
-    telegramDigestInterval,
-    availableUsdt,
-    capitalInBots,
-    status,
-    closedTradesToday,
-    winningTradesToday,
-    sessionRealizedPnlUsd,
-    sessionRealizedPnlPct,
-  ]);
+    // Delegated to Render 24/7 cloud worker
+    return;
+  }, [isRunning, isPaused, telegramDigestInterval]);
 
   const value = {
     isRunning,

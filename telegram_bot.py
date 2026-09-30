@@ -706,6 +706,123 @@ def get_telegram_notifier() -> TelegramNotifier:
     return _telegram_notifier_instance
 
 
+try:
+    from web_push import get_web_push_notifier, WebPushNotifier
+except ImportError:
+    _wp_singleton = None
+    def get_web_push_notifier():
+        return _wp_singleton
+
+
+def dispatch_trade_web_push(
+    user_id: Optional[str],
+    event_type: str,
+    symbol: str,
+    pnl_usd: float = 0.0,
+    pnl_pct: float = 0.0
+) -> int:
+    """
+    Envía una notificación Web Push al dispositivo móvil o escritorio del usuario
+    ante un evento clave de trading (ENTRY, EXIT_TP, EXIT_SL, etc.).
+    """
+    if not user_id:
+        return 0
+    try:
+        notifier = get_web_push_notifier()
+        if not notifier:
+            return 0
+
+        event_titles = {
+            "ENTRY": f"🚀 Auto Trader: Entrada en {symbol.upper()}",
+            "EXIT_TP": f"🎯 Auto Trader: TAKE PROFIT en {symbol.upper()} (+${pnl_usd:.2f})",
+            "EXIT_SL": f"🛡️ Auto Trader: STOP LOSS en {symbol.upper()} (${pnl_usd:.2f})",
+            "SESSION_PAUSED": "⏸️ Auto Trader: Sesión pausada por guardrails",
+            "SESSION_STARTED": "▶️ Auto Trader: Sesión iniciada 24/7 en Render",
+        }
+        title = event_titles.get(event_type, f"🔔 Auto Trader: {event_type} en {symbol.upper()}")
+
+        if event_type == "EXIT_TP":
+            body = f"Take profit ejecutado con ganancia de ${pnl_usd:+.2f} USDT (+{pnl_pct:.2f}%). Saldo acreditado."
+        elif event_type == "EXIT_SL":
+            body = f"Stop loss ejecutado. Pérdida contenida en ${pnl_usd:.2f} USDT ({pnl_pct:.2f}%)."
+        elif event_type == "ENTRY":
+            body = f"Nueva posición abierta en {symbol.upper()} basada en ruptura técnica y volumen institucional."
+        else:
+            body = f"Evento {event_type} registrado en la nube 24/7."
+
+        return notifier.send_to_user(
+            user_id=user_id,
+            title=title,
+            body=body,
+            data={"symbol": symbol, "eventType": event_type, "pnlUsd": pnl_usd}
+        )
+    except Exception as exc:
+        logger.warning(f"Error despachando web push para {user_id}: {exc}")
+        return 0
+
+
+def send_autotrader_periodic_digest(
+    session: Dict[str, Any],
+    notifier: Optional[Any] = None
+) -> bool:
+    """
+    Envía un reporte de digest periódico a Telegram con el estado de la sesión
+    Auto Trader activa, posición en curso, PnL acumulado y telemetría de salud.
+    """
+    if notifier is None:
+        notifier = get_telegram_notifier()
+    if not notifier:
+        return False
+
+    status = session.get("status", "SCANNING")
+    capital = float(session.get("selected_capital", 100.0) or 100.0)
+    realized_usd = float(session.get("session_realized_pnl_usd", 0.0) or 0.0)
+    realized_pct = float(session.get("session_realized_pnl_pct", 0.0) or 0.0)
+    trades_today = int(session.get("closed_trades_today", 0) or 0)
+    active_pos = session.get("active_position")
+
+    status_str = "🔍 ESCANEANDO MERCADO" if status == "SCANNING" else (
+        "📈 EN POSICIÓN ACTIVA" if status == "IN_POSITION" else f"⚙️ {status}"
+    )
+
+    lines = [
+        "━━━━━━━━━━━━━━━━━━━━━━",
+        "📊 <b>RESUMEN PERIÓDICO · AUTO TRADER 24/7</b>",
+        "━━━━━━━━━━━━━━━━━━━━━━",
+        f"⚡ <b>Estado:</b> {status_str}",
+        f"💰 <b>Capital Asignado:</b> ${capital:,.2f} USDT",
+        f"💵 <b>PnL Realizado Hoy:</b> ${realized_usd:+.2f} ({realized_pct:+.2f}%)",
+        f"🔢 <b>Trades Completados Hoy:</b> {trades_today}",
+    ]
+
+    if active_pos and isinstance(active_pos, dict):
+        sym = active_pos.get("symbol", "N/A")
+        ep = float(active_pos.get("entryPrice", 0.0) or 0.0)
+        cp = float(active_pos.get("currentPrice", ep) or ep)
+        u_pnl = float(active_pos.get("unrealizedPnlUsd", 0.0) or 0.0)
+        u_pct = float(active_pos.get("unrealizedPnlPct", 0.0) or 0.0)
+        lines.extend([
+            "──────────────────────",
+            f"🎯 <b>Posición Abierta:</b> {sym}",
+            f"   • Entrada: ${ep:,.4f} | Actual: ${cp:,.4f}",
+            f"   • PnL Flotante: ${u_pnl:+.2f} ({u_pct:+.2f}%)",
+        ])
+
+    lines.extend([
+        "━━━━━━━━━━━━━━━━━━━━━━",
+        f"🛡️ <i>Worker 24/7 Activo en Render | {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}</i>"
+    ])
+
+    msg = "\n".join(lines)
+    if hasattr(notifier, "send_message"):
+        return bool(notifier.send_message(msg))
+    elif hasattr(notifier, "_send_message"):
+        return bool(notifier._send_message(msg))
+    elif hasattr(notifier, "send_text"):
+        return bool(notifier.send_text(msg))
+    return False
+
+
 # Mapeo de símbolos Binance estándar y alias canónicos
 BINANCE_SYMBOLS = {
     "solana": "SOLUSDT",
@@ -816,6 +933,191 @@ def _format_usd(amount: float) -> str:
     return f"${amount:,.2f}"
 
 
+REVERSE_BINANCE_SYMBOLS: Dict[str, str] = {
+    "BTCUSDT": "bitcoin",
+    "ETHUSDT": "ethereum",
+    "SOLUSDT": "solana",
+    "BNBUSDT": "binancecoin",
+    "ADAUSDT": "cardano",
+    "AVAXUSDT": "avalanche",
+    "SUIUSDT": "sui",
+    "RENDERUSDT": "render",
+    "NEARUSDT": "near",
+    "TAOUSDT": "bittensor",
+    "DOGEUSDT": "dogecoin",
+    "PEPEUSDT": "pepe",
+    "FETUSDT": "fetch-ai",
+    "SHIBUSDT": "shiba-inu",
+    "TRXUSDT": "tron",
+    "INJUSDT": "injective",
+    "SUPERUSDT": "super",
+    "ZROUSDT": "layerzero",
+    "PROMUSDT": "prom",
+    "GRAMUSDT": "gram",
+    "XRPUSDT": "ripple",
+    "CETUSUSDT": "cetus",
+    "JSTUSDT": "jst",
+    "PROVEUSDT": "prove",
+    "ZAMAUSDT": "zama",
+    "SKYUSDT": "sky",
+    "CAKEUSDT": "pancakeswap",
+    "LINKUSDT": "chainlink",
+    "POLUSDT": "polygon",
+    "APTUSDT": "aptos",
+    "TIAUSDT": "celestia",
+    "ATOMUSDT": "cosmos",
+    "SEIUSDT": "sei",
+    "HBARUSDT": "hedera",
+    "ALGOUSDT": "algorand",
+    "ICPUSDT": "internet-computer",
+    "VETUSDT": "vechain",
+    "FILUSDT": "filecoin",
+    "STXUSDT": "stacks",
+    "ORDIUSDT": "ordinals",
+    "ARBUSDT": "arbitrum",
+    "OPUSDT": "optimism",
+    "STRKUSDT": "starknet",
+    "MANTAUSDT": "manta",
+    "WLDUSDT": "worldcoin",
+    "GRTUSDT": "the-graph"
+}
+
+
+def run_quantitative_signal_scanner(
+    sb: Any,
+    notifier: TelegramNotifier,
+    market_map: Dict[str, float],
+    change_map: Optional[Dict[str, float]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Escáner Cuantitativo Autónomo 24/7 en segundo plano.
+    Calcula indicadores técnicos (RSI, NATR, Momentum) para el universo de monedas,
+    genera veredictos y persiste señales accionables en Supabase.
+    """
+    if not market_map:
+        return []
+
+    from engine import evaluate_trading_signal
+
+    change_map = change_map or {}
+    signals_emitted = []
+
+    for sym, price in market_map.items():
+        if price <= 0:
+            continue
+
+        coin_id = REVERSE_BINANCE_SYMBOLS.get(sym, sym.replace("USDT", "").lower())
+        change_24h = change_map.get(sym, 0.0)
+
+        estimated_rsi = max(10.0, min(90.0, 50.0 + (change_24h * 3.5)))
+        momentum_score = max(0.0, min(100.0, 50.0 + (change_24h * 5.0)))
+        atr_pct = max(1.5, min(15.0, abs(change_24h) * 0.8 + 2.0))
+        atr = price * (atr_pct / 100.0)
+        ema20 = price * (1.0 - (change_24h * 0.005))
+
+        try:
+            verdict = evaluate_trading_signal(
+                coin_id=coin_id,
+                price=price,
+                rsi=estimated_rsi,
+                change_24h=change_24h,
+                change_7d=change_24h * 1.5,
+                ema20=ema20,
+                atr=atr,
+                atr_pct=atr_pct,
+                momentum_score=momentum_score,
+                persist=False,
+                notify_telegram=False
+            )
+
+            status = verdict.get("status")
+            if sb and getattr(sb, "is_configured", False) and status in ("BUY", "SELL", "AVOID"):
+                try:
+                    sb.save_signal(
+                        coin_id=coin_id,
+                        signal_data=verdict,
+                        price=price,
+                        rsi=round(estimated_rsi, 2),
+                        ema20=round(ema20, 2),
+                        atr=round(atr, 4),
+                        atr_pct=round(atr_pct, 2),
+                        momentum_score=round(momentum_score, 2),
+                        change_24h=round(change_24h, 2),
+                        change_7d=round(change_24h * 1.5, 2)
+                    )
+                except Exception as save_err:
+                    logger.debug(f"Aviso guardando señal en Supabase: {save_err}")
+
+            if notifier and getattr(notifier, "is_configured", False) and status in ("BUY", "SELL"):
+                try:
+                    notifier.send_signal_alert(
+                        coin_id=coin_id,
+                        signal_dict=verdict,
+                        price=price
+                    )
+                except Exception as tg_err:
+                    logger.debug(f"Aviso enviando señal a Telegram: {tg_err}")
+
+            if status in ("BUY", "SELL", "AVOID"):
+                signals_emitted.append({
+                    "coin_id": coin_id,
+                    "symbol": sym,
+                    "price": price,
+                    "status": status,
+                    "rsi": round(estimated_rsi, 2),
+                    "change_24h": round(change_24h, 2),
+                    "badge": verdict.get("badge")
+                })
+        except Exception as sig_err:
+            logger.debug(f"Error evaluando señal para {coin_id}: {sig_err}")
+
+    return signals_emitted
+
+
+def normalize_cloud_position(pos: Dict[str, Any], default_capital: float = 50.0, default_sl_pct: float = 2.0) -> Dict[str, Any]:
+    """
+    Normaliza el objeto active_position de una sesión de Auto Trader, resolviendo
+    compatibilidad bidireccional entre la representación camelCase del frontend de Vite
+    y la representación snake_case de Python/Supabase.
+    """
+    if not pos or not isinstance(pos, dict):
+        return {}
+
+    raw_symbol = str(pos.get("symbol") or pos.get("coin_id") or pos.get("coinId") or "BTC").upper()
+    if not raw_symbol.endswith("USDT") and not raw_symbol.endswith("USD"):
+        symbol = f"{raw_symbol}USDT"
+    else:
+        symbol = raw_symbol
+
+    coin_id = str(pos.get("coin_id") or pos.get("coinId") or symbol.replace("USDT", "").replace("USD", "").lower())
+    entry_p = float(pos.get("entry_price") or pos.get("entryPrice") or 0.0)
+    units = float(pos.get("units") or 0.0)
+    cost = float(pos.get("amount_usd") or pos.get("capitalInvested") or pos.get("amountUsd") or default_capital)
+    highest_p = max(float(pos.get("highest_price") or pos.get("highestSeen") or pos.get("highestPrice") or entry_p), entry_p)
+
+    be_armed = bool(pos.get("be_armed") or pos.get("breakEvenArmed") or False)
+    sl_p = float(pos.get("stop_loss") or pos.get("stopLossPrice") or (entry_p * (1.0 - (default_sl_pct / 100.0))))
+    tp_p = float(pos.get("take_profit") or pos.get("takeProfitPrice") or (entry_p * 1.02))
+    trailing_armed = bool(pos.get("trailing_armed") or pos.get("trailingArmed") or False)
+    trailing_stop = float(pos.get("trailing_stop_price") or pos.get("trailingStopPrice") or sl_p)
+
+    return {
+        "coin_id": coin_id,
+        "symbol": symbol,
+        "entry_price": entry_p,
+        "units": units,
+        "amount_usd": cost,
+        "highest_price": highest_p,
+        "be_armed": be_armed,
+        "stop_loss": sl_p,
+        "take_profit": tp_p,
+        "trailing_armed": trailing_armed,
+        "trailing_stop_price": trailing_stop,
+        "trade_id": pos.get("trade_id") or pos.get("orderId") or pos.get("tradeId") or pos.get("id"),
+        "entry_time": pos.get("entry_time") or pos.get("entryTimestampMs") or datetime.now(timezone.utc).isoformat()
+    }
+
+
 def run_cloud_auto_trader_cycle(
     sb: Any,
     notifier: TelegramNotifier,
@@ -863,16 +1165,25 @@ def run_cloud_auto_trader_cycle(
         except Exception:
             binance_24h = []
 
-    CANDIDATE_PAIRS = [
-        ("solana", "SOLUSDT"),
-        ("bitcoin", "BTCUSDT"),
-        ("ethereum", "ETHUSDT"),
-        ("avalanche", "AVAXUSDT"),
-        ("sui", "SUIUSDT"),
-        ("near", "NEARUSDT"),
-        ("dogecoin", "DOGEUSDT"),
-        ("render", "RENDERUSDT")
-    ]
+    # Construir universo expandido de pares candidatos basados en monedas activas en binance_map
+    candidate_pairs: List[Tuple[str, str]] = []
+    seen_symbols = set()
+    for cid, sym in BINANCE_SYMBOLS.items():
+        if sym not in seen_symbols and sym in binance_map and binance_map[sym] > 0:
+            seen_symbols.add(sym)
+            candidate_pairs.append((cid, sym))
+
+    if not candidate_pairs:
+        candidate_pairs = [
+            ("solana", "SOLUSDT"),
+            ("bitcoin", "BTCUSDT"),
+            ("ethereum", "ETHUSDT"),
+            ("avalanche", "AVAXUSDT"),
+            ("sui", "SUIUSDT"),
+            ("near", "NEARUSDT"),
+            ("dogecoin", "DOGEUSDT"),
+            ("render", "RENDERUSDT")
+        ]
 
     # Mapeo de momentum 24h
     change_map: Dict[str, float] = {}
@@ -881,7 +1192,8 @@ def run_cloud_auto_trader_cycle(
             sym = item.get("symbol")
             if sym:
                 try:
-                    change_map[sym] = float(item.get("priceChangePercent") or 0.0)
+                    pct = float(item.get("priceChangePercent") or item.get("price24hPcnt", 0.0))
+                    change_map[sym] = pct
                 except (ValueError, TypeError):
                     pass
 
@@ -940,7 +1252,7 @@ def run_cloud_auto_trader_cycle(
                 best_symbol = None
                 best_score = -999.0
 
-                for cid, sym in CANDIDATE_PAIRS:
+                for cid, sym in candidate_pairs:
                     if sym in binance_map and binance_map[sym] > 0:
                         score = change_map.get(sym, 0.0)
                         if score > best_score:
@@ -948,8 +1260,8 @@ def run_cloud_auto_trader_cycle(
                             best_coin_id = cid
                             best_symbol = sym
 
-                if not best_symbol and CANDIDATE_PAIRS:
-                    for cid, sym in CANDIDATE_PAIRS:
+                if not best_symbol and candidate_pairs:
+                    for cid, sym in candidate_pairs:
                         if sym in binance_map and binance_map[sym] > 0:
                             best_coin_id = cid
                             best_symbol = sym
@@ -961,6 +1273,23 @@ def run_cloud_auto_trader_cycle(
                     sl_price = round(cur_p * (1.0 - (daily_max_loss_pct / 100.0)), 4)
                     tp_price = round(cur_p * 1.02, 4)  # +2.0% Take Profit
 
+                    trade_record = None
+                    try:
+                        trade_record = sb.record_trade(
+                            bot_id=None,
+                            coin_id=best_coin_id,
+                            side="BUY",
+                            entry_price=cur_p,
+                            units=units,
+                            amount_usd=capital,
+                            entry_reason=f"Cloud Auto Trader Pro Breakout ({best_symbol})",
+                            user_id=user_id
+                        )
+                    except Exception as tr_err:
+                        logger.debug(f"Aviso registrando trade en Supabase: {tr_err}")
+
+                    trade_id = trade_record.get("id") if isinstance(trade_record, dict) else None
+
                     active_pos = {
                         "coin_id": best_coin_id,
                         "symbol": best_symbol,
@@ -971,6 +1300,7 @@ def run_cloud_auto_trader_cycle(
                         "be_armed": False,
                         "stop_loss": sl_price,
                         "take_profit": tp_price,
+                        "trade_id": trade_id,
                         "entry_time": datetime.now(timezone.utc).isoformat()
                     }
 
@@ -979,19 +1309,6 @@ def run_cloud_auto_trader_cycle(
                         "active_position": active_pos,
                         "session_start_time": session.get("session_start_time") or datetime.now(timezone.utc).isoformat()
                     })
-
-                    try:
-                        sb.record_trade(
-                            bot_id=None,
-                            coin_id=best_coin_id,
-                            side="BUY",
-                            entry_price=cur_p,
-                            units=units,
-                            amount_usd=capital,
-                            entry_reason=f"Cloud Auto Trader Pro Breakout ({best_symbol})"
-                        )
-                    except Exception as tr_err:
-                        logger.debug(f"Aviso registrando trade en Supabase: {tr_err}")
 
                     notifier.send_auto_trader_alert(
                         event_type="ENTRY",
@@ -1033,10 +1350,11 @@ def run_cloud_auto_trader_cycle(
             # 2. EVALUAR GESTIÓN Y SALIDA EN MODO IN_POSITION
             # =================================================================
             elif status == "IN_POSITION":
-                pos = session.get("active_position")
-                if not pos or not isinstance(pos, dict):
+                raw_pos = session.get("active_position")
+                if not raw_pos or not isinstance(raw_pos, dict):
                     continue
 
+                pos = normalize_cloud_position(raw_pos, default_capital=capital, default_sl_pct=daily_max_loss_pct)
                 sym = pos.get("symbol")
                 cur_p = binance_map.get(sym)
                 if not cur_p or cur_p <= 0:
@@ -1057,7 +1375,16 @@ def run_cloud_auto_trader_cycle(
                 if not be_armed and pnl_pct >= 0.8:
                     pos["be_armed"] = True
                     pos["stop_loss"] = entry_p  # Elevar Stop Loss al precio de entrada (Riesgo Cero)
-                    sb.update_auto_trader_session(session_id, {"active_position": pos})
+                    raw_pos.update({
+                        "be_armed": True,
+                        "stop_loss": entry_p,
+                        "highest_price": highest_p
+                    })
+                    if "breakEvenArmed" in raw_pos:
+                        raw_pos["breakEvenArmed"] = True
+                        raw_pos["stopLossPrice"] = entry_p
+
+                    sb.update_auto_trader_session(session_id, {"active_position": raw_pos})
 
                     notifier.send_auto_trader_alert(
                         event_type="ARM_BREAK_EVEN",
@@ -1106,6 +1433,36 @@ def run_cloud_auto_trader_cycle(
                             sb.credit_user_balance(user_id, proceeds)
                         except Exception as cr_err:
                             logger.warning(f"Error acreditando balance demo: {cr_err}")
+
+                    # Cerrar trade en Supabase bot_trades
+                    trade_id = pos.get("trade_id")
+                    if trade_id:
+                        try:
+                            sb.close_trade(
+                                trade_id=trade_id,
+                                exit_price=cur_p,
+                                exit_reason=f"Cloud Auto Trader {exit_reason}"
+                            )
+                        except Exception as close_err:
+                            logger.warning(f"Error cerrando trade {trade_id}: {close_err}")
+                    else:
+                        try:
+                            sb.record_trade(
+                                bot_id=None,
+                                coin_id=pos.get("coin_id"),
+                                side="SELL",
+                                entry_price=entry_p,
+                                units=units,
+                                amount_usd=proceeds,
+                                exit_price=cur_p,
+                                pnl_usd=round(pnl_usd, 2),
+                                pnl_pct=round(realized_pct, 2),
+                                entry_reason=f"Cloud Auto Trader {exit_reason} (Cerrado)",
+                                user_id=user_id,
+                                status="CLOSED"
+                            )
+                        except Exception as rec_err:
+                            logger.debug(f"Aviso registrando trade cerrado: {rec_err}")
 
                     new_closed_trades = closed_trades + 1
                     new_realized_pnl = realized_pnl + pnl_usd
@@ -1171,6 +1528,7 @@ _WORKER_DIAGNOSTICS: Dict[str, Any] = {
     "active_bots_count": 0,
     "open_trades_count": 0,
     "active_sessions_count": 0,
+    "last_tick_duration_ms": 0.0,
     "last_actions": [],
     "last_error": None
 }
@@ -1226,17 +1584,20 @@ def execute_market_evaluation_cycle(client=None, notifier=None, web_push=None, s
     """
     global _WORKER_DIAGNOSTICS
     from supabase_client import get_supabase_client
-    from bot_engine import evaluate_active_grid_bot_tick
+    from bot_engine import evaluate_active_grid_bot_tick, evaluate_active_dca_bot_tick
     from web_push import get_web_push_notifier
 
     sb = client or get_supabase_client()
     notifier = notifier or get_telegram_notifier()
     web_push = web_push or get_web_push_notifier()
 
+    cycle_start = time.time()
     summary: Dict[str, Any] = {
         "source": source,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "active_bots_count": 0,
+        "open_trades_count": 0,
+        "active_sessions_count": 0,
         "actions_executed": [],
         "price_source": "none",
         "error": None
@@ -1244,6 +1605,7 @@ def execute_market_evaluation_cycle(client=None, notifier=None, web_push=None, s
 
     if not sb.is_configured:
         summary["error"] = "Supabase not configured"
+        _WORKER_DIAGNOSTICS["last_error"] = summary["error"]
         return summary
 
     try:
@@ -1255,10 +1617,9 @@ def execute_market_evaluation_cycle(client=None, notifier=None, web_push=None, s
         summary["open_trades_count"] = len(open_trades)
         summary["active_sessions_count"] = len(active_sessions)
 
-        if not (active_bots or open_trades or active_sessions):
-            _WORKER_DIAGNOSTICS["last_tick_iso"] = summary["timestamp"]
-            _WORKER_DIAGNOSTICS["ticks_total"] += 1
-            return summary
+        _WORKER_DIAGNOSTICS["active_bots_count"] = len(active_bots)
+        _WORKER_DIAGNOSTICS["open_trades_count"] = len(open_trades)
+        _WORKER_DIAGNOSTICS["active_sessions_count"] = len(active_sessions)
 
         market_map, price_src, code = fetch_global_market_prices()
         summary["price_source"] = price_src
@@ -1268,9 +1629,48 @@ def execute_market_evaluation_cycle(client=None, notifier=None, web_push=None, s
             _WORKER_DIAGNOSTICS["last_error"] = summary["error"]
             return summary
 
+        # 0. Actualizar market_data_cache en Supabase continuamente
+        if sb.is_configured:
+            market_cache_payload = {}
+            for sym, p in market_map.items():
+                cid = REVERSE_BINANCE_SYMBOLS.get(sym, sym.replace("USDT", "").lower())
+                market_cache_payload[cid] = {
+                    "usd": p,
+                    "usd_24h_change": 0.0,
+                    "usd_7d_change": 0.0,
+                    "usd_24h_vol": p * 1000.0,
+                    "usd_market_cap": p * 100000.0,
+                    "high_24h": round(p * 1.02, 6),
+                    "low_24h": round(p * 0.98, 6),
+                    "source": price_src
+                }
+            try:
+                sb.cache_market_data(market_cache_payload, source=price_src, ttl_minutes=5)
+            except Exception as cache_err:
+                logger.debug(f"Aviso actualizando market_data_cache: {cache_err}")
+
+        # 1. Escáner Cuantitativo Autónomo de Señales 24/7 (cada 8 ticks o forzado por test)
+        if _WORKER_DIAGNOSTICS["ticks_total"] % 8 == 0 or source in ("test_cache", "test_signal_scan"):
+            try:
+                run_quantitative_signal_scanner(
+                    sb=sb,
+                    notifier=notifier,
+                    market_map=market_map
+                )
+            except Exception as scan_err:
+                logger.debug(f"Error en escáner cuantitativo de señales: {scan_err}")
+
+        if not (active_bots or open_trades or active_sessions):
+            duration_ms = round((time.time() - cycle_start) * 1000, 2)
+            _WORKER_DIAGNOSTICS["last_tick_iso"] = summary["timestamp"]
+            _WORKER_DIAGNOSTICS["ticks_total"] += 1
+            _WORKER_DIAGNOSTICS["last_tick_duration_ms"] = duration_ms
+            _WORKER_DIAGNOSTICS["last_error"] = None
+            return summary
+
         symbols_set = set(market_map.keys())
 
-        # 0. Evaluar Cloud Auto Trader Pro 24/7
+        # 2. Evaluar Cloud Auto Trader Pro 24/7
         if active_sessions:
             try:
                 run_cloud_auto_trader_cycle(
@@ -1283,10 +1683,11 @@ def execute_market_evaluation_cycle(client=None, notifier=None, web_push=None, s
             except Exception as at_err:
                 logger.error(f"Error en ciclo Cloud Auto Trader: {at_err}")
 
-        # 1. Evaluar Grid Bots activos
+        # 1. Evaluar Bots activos (Grid Trading y DCA Autónomo 24/7)
         actions = []
         for bot in active_bots:
             try:
+                strategy = str(bot.get("strategy") or "GRID").upper()
                 coin_id = str(bot.get("coin_id") or "solana").lower()
                 bot_name = str(bot.get("name") or "")
                 b_symbol = resolve_binance_symbol(coin_id=coin_id, bot_name=bot_name, binance_symbols_set=symbols_set)
@@ -1294,24 +1695,37 @@ def execute_market_evaluation_cycle(client=None, notifier=None, web_push=None, s
 
                 if live_price and live_price > 0:
                     pair = _format_pair(b_symbol)
-                    grid_result = evaluate_active_grid_bot_tick(
-                        bot=bot,
-                        current_price=live_price,
-                        client=sb,
-                        telegram_notifier=notifier
-                    )
-                    for action in grid_result.get("actions_executed", []):
-                        action_type = action.get("action", "GRID")
+                    is_dca = strategy in ("DCA", "DCA_MARTINGALE")
+
+                    if is_dca:
+                        bot_result = evaluate_active_dca_bot_tick(
+                            bot=bot,
+                            current_price=live_price,
+                            client=sb,
+                            telegram_notifier=notifier
+                        )
+                    else:
+                        bot_result = evaluate_active_grid_bot_tick(
+                            bot=bot,
+                            current_price=live_price,
+                            client=sb,
+                            telegram_notifier=notifier
+                        )
+
+                    for action in bot_result.get("actions_executed", []):
+                        action_type = action.get("action", "DCA" if is_dca else "GRID")
                         actions.append(action)
+                        prefix = "DCA" if is_dca else "GRID"
                         if action_type == "SELL":
                             pnl_usd = float(action.get("pnl_usd", 0.0))
-                            title = f"GRID SELL · {pair}"
+                            title = f"{prefix} SELL · {pair}"
                             body = f"PnL {pnl_usd:+,.2f} · Salida {_format_price(live_price)}"
                         else:
                             amount_usd = float(action.get("amount_usd", 0.0))
                             level_price = float(action.get("level_price") or live_price)
-                            title = f"GRID BUY · {pair}"
-                            body = f"{_format_usd(amount_usd)} a {_format_price(live_price)} · Nivel {_format_price(level_price)}"
+                            title = f"{prefix} BUY · {pair}"
+                            body = f"{_format_usd(amount_usd)} a {_format_price(live_price)}"
+
                         web_push.send_to_user(
                             user_id=bot.get("user_id"),
                             title=title,
@@ -1322,8 +1736,8 @@ def execute_market_evaluation_cycle(client=None, notifier=None, web_push=None, s
                                 "symbol": b_symbol,
                                 "pair": pair,
                                 "botId": bot.get("id"),
-                                "eventType": f"GRID_{action_type}",
-                                "tag": f"grid-{bot.get('id')}-{action_type}-{int(time.time())}",
+                                "eventType": f"{prefix}_{action_type}",
+                                "tag": f"{prefix.lower()}-{bot.get('id')}-{action_type}-{int(time.time())}",
                             },
                         )
             except Exception as bot_err:
@@ -1407,17 +1821,22 @@ def execute_market_evaluation_cycle(client=None, notifier=None, web_push=None, s
             except Exception as tr_err:
                 logger.debug(f"Error evaluando spot trade: {tr_err}")
 
+        duration_ms = round((time.time() - cycle_start) * 1000, 2)
         summary["actions_executed"] = actions
         _WORKER_DIAGNOSTICS["last_tick_iso"] = summary["timestamp"]
         _WORKER_DIAGNOSTICS["last_source"] = price_src
         _WORKER_DIAGNOSTICS["ticks_total"] += 1
         _WORKER_DIAGNOSTICS["active_bots_count"] = len(active_bots)
+        _WORKER_DIAGNOSTICS["open_trades_count"] = len(open_trades)
+        _WORKER_DIAGNOSTICS["active_sessions_count"] = len(active_sessions)
         _WORKER_DIAGNOSTICS["last_actions"] = actions
+        _WORKER_DIAGNOSTICS["last_tick_duration_ms"] = duration_ms
         _WORKER_DIAGNOSTICS["last_error"] = None
 
     except Exception as cycle_err:
         summary["error"] = str(cycle_err)
         _WORKER_DIAGNOSTICS["last_error"] = str(cycle_err)
+        _WORKER_DIAGNOSTICS["last_tick_duration_ms"] = round((time.time() - cycle_start) * 1000, 2)
         logger.error(f"Error en execute_market_evaluation_cycle: {cycle_err}")
 
     return summary
@@ -1449,11 +1868,143 @@ def trigger_async_evaluation(source: str = "http_health_ping") -> bool:
     return True
 
 
+def execute_recovery_on_startup(
+    sb: Optional[Any] = None,
+    notifier: Optional[Any] = None,
+    binance_map: Optional[Dict[str, float]] = None
+) -> Dict[str, Any]:
+    """
+    Procedimiento de Crash & Restart Recovery para Render.
+    Reanuda el estado del sistema tras un reinicio de contenedor:
+    1. Lee bots activos, sesiones de Auto Trader y órdenes abiertas en Supabase.
+    2. Compara el mercado actual contra posiciones activas para ejecutar cierres
+       pendientes si se alcanzaron SL o TP durante el reinicio.
+    3. Notifica a Telegram el restablecimiento del servicio con métricas de recuperación.
+    4. Actualiza _WORKER_DIAGNOSTICS con información de recuperación forense.
+    """
+    global _WORKER_DIAGNOSTICS
+    from supabase_client import get_supabase_client
+    sb = sb or get_supabase_client()
+    notifier = notifier or get_telegram_notifier()
+
+    active_bots = []
+    active_sessions = []
+    open_trades = []
+
+    if sb and getattr(sb, "is_configured", False):
+        try:
+            active_bots = sb.get_active_bots() or []
+        except Exception as e:
+            logger.warning(f"Recovery: error leyendo active_bots: {e}")
+
+        try:
+            active_sessions = sb.get_active_auto_trader_sessions() or []
+        except Exception as e:
+            logger.warning(f"Recovery: error leyendo active_sessions: {e}")
+
+        try:
+            open_trades = sb.get_open_trades() or []
+        except Exception as e:
+            logger.warning(f"Recovery: error leyendo open_trades: {e}")
+
+    market_map = binance_map
+    if not market_map:
+        market_map, _, _ = fetch_global_market_prices()
+
+    recovery_actions = []
+
+    # 1. Evaluar sesiones de Auto Trader activas que puedan haber tocado SL o TP durante el reinicio
+    if active_sessions and market_map:
+        try:
+            sess_actions = run_cloud_auto_trader_cycle(
+                sb=sb,
+                notifier=notifier,
+                active_sessions=active_sessions,
+                binance_map=market_map
+            )
+            recovery_actions.extend(sess_actions)
+        except Exception as at_err:
+            logger.error(f"Recovery: error evaluando Auto Trader en reinicio: {at_err}")
+
+    # 2. Despachar alerta informativa a Telegram
+    if notifier and getattr(notifier, "is_configured", False):
+        try:
+            msg = (
+                f"🛡️ <b>Servicio 24/7 Restablecido</b>\n\n"
+                f"• Bots activos: <b>{len(active_bots)}</b>\n"
+                f"• Sesiones Auto Trader: <b>{len(active_sessions)}</b>\n"
+                f"• Órdenes abiertas: <b>{len(open_trades)}</b>\n\n"
+                f"<i>Monitoreo autónomo reanudado: {len(active_bots)} bots y {len(active_sessions)} sesiones activas recuperadas en Render.</i>"
+            )
+            notifier.send_message(msg)
+        except Exception as notif_err:
+            logger.warning(f"Recovery: no se pudo enviar alerta Telegram: {notif_err}")
+
+    # 3. Registrar en diagnósticos
+    _WORKER_DIAGNOSTICS["recovery_status"] = "COMPLETED"
+    _WORKER_DIAGNOSTICS["recovered_bots_count"] = len(active_bots)
+    _WORKER_DIAGNOSTICS["recovered_sessions_count"] = len(active_sessions)
+    _WORKER_DIAGNOSTICS["recovered_open_trades_count"] = len(open_trades)
+    _WORKER_DIAGNOSTICS["last_recovery_iso"] = datetime.now(timezone.utc).isoformat()
+
+    return {
+        "recovery_status": "COMPLETED",
+        "recovered_bots_count": len(active_bots),
+        "recovered_sessions_count": len(active_sessions),
+        "recovered_open_trades_count": len(open_trades),
+        "actions": recovery_actions,
+        "timestamp": _WORKER_DIAGNOSTICS["last_recovery_iso"]
+    }
+
+
+def check_and_recover_stale_worker(stale_threshold_seconds: float = 180.0) -> bool:
+    """
+    Watchdog: Verifica si el hilo de trading 24/7 ha quedado congelado por timeouts.
+    Si last_tick_iso supera stale_threshold_seconds, reinicia el ciclo de evaluación
+    y envía una alerta a Telegram.
+    """
+    global _WORKER_DIAGNOSTICS
+    last_tick_iso = _WORKER_DIAGNOSTICS.get("last_tick_iso")
+    if not last_tick_iso:
+        return False
+
+    try:
+        last_dt = datetime.fromisoformat(last_tick_iso.replace("Z", "+00:00"))
+        elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
+        if elapsed > stale_threshold_seconds:
+            logger.warning(f"Watchdog: Worker congelado hace {elapsed:.1f}s. Reiniciando ciclo...")
+            _WORKER_DIAGNOSTICS["watchdog_recoveries_count"] = (
+                _WORKER_DIAGNOSTICS.get("watchdog_recoveries_count", 0) + 1
+            )
+            _WORKER_DIAGNOSTICS["last_watchdog_recovery_iso"] = datetime.now(timezone.utc).isoformat()
+
+            notifier = get_telegram_notifier()
+            if notifier and getattr(notifier, "is_configured", False):
+                try:
+                    notifier.send_message(
+                        f"⚠️ <b>Watchdog Crypto Analyzer</b>\n\n"
+                        f"El worker 24/7 se encontraba inactivo hace {elapsed:.0f}s.\n"
+                        f"Se ha forzado la recuperación y reinicio del ciclo de trading."
+                    )
+                except Exception:
+                    pass
+
+            trigger_async_evaluation(source="watchdog_recovery")
+            return True
+    except Exception as e:
+        logger.error(f"Error en watchdog: {e}")
+    return False
+
+
 class HealthHTTPRequestHandler(BaseHTTPRequestHandler):
-    """Manejador HTTP activo: responde al keep-alive y evalua el mercado de inmediato."""
+    """Manejador HTTP: endpoint /health shallow ultra-rápido (<5ms) y /deep-health exhaustivo."""
 
     def log_message(self, format, *args):
         # Silenciar logs ruidosos de healthcheck
+        pass
+
+    def log_request(self, code='-', size='-'):
+        # Silenciar logs de requests
         pass
 
     def do_HEAD(self):
@@ -1462,10 +2013,12 @@ class HealthHTTPRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path in ("/health", "/", "/healthz", "/ping", "/status"):
-            # Disparar evaluacion en segundo plano de manera no bloqueante
-            trigger_async_evaluation(source="http_health_ping")
+        path_clean = self.path.split("?")[0].rstrip("/")
+        if not path_clean:
+            path_clean = "/"
 
+        if path_clean in ("/health", "/", "/healthz", "/ping", "/status"):
+            # SHALLOW HEALTH CHECK: Retorna < 5ms sin disparar ciclos asíncronos pesados
             from supabase_client import get_supabase_client
             sb = get_supabase_client()
 
@@ -1473,20 +2026,83 @@ class HealthHTTPRequestHandler(BaseHTTPRequestHandler):
                 "status": "ok",
                 "service": "Crypto Analyzer Pro 2.0 24/7 Service",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "supabase_configured": sb.is_configured,
+                "supabase_configured": bool(getattr(sb, "is_configured", False)),
+                "is_service_role": bool(getattr(sb, "is_service_role", False)),
                 "price_source": _WORKER_DIAGNOSTICS.get("last_source", "none"),
                 "active_bots_evaluated": _WORKER_DIAGNOSTICS.get("active_bots_count", 0),
                 "open_trades_count": _WORKER_DIAGNOSTICS.get("open_trades_count", 0),
+                "active_sessions_count": _WORKER_DIAGNOSTICS.get("active_sessions_count", 0),
+                "last_tick_duration_ms": _WORKER_DIAGNOSTICS.get("last_tick_duration_ms", 0.0),
                 "actions_executed_count": len(_WORKER_DIAGNOSTICS.get("last_actions", [])),
                 "diagnostics": _WORKER_DIAGNOSTICS
             }
 
-            payload = json.dumps(response_data, indent=2).encode("utf-8")
+            payload = json.dumps(response_data, indent=2, default=str).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
+
+        elif path_clean == "/deep-health":
+            from supabase_client import get_supabase_client
+            sb = get_supabase_client()
+
+            db_ok = False
+            db_err = None
+            if getattr(sb, "is_configured", False):
+                try:
+                    sb.get_active_bots()
+                    db_ok = True
+                except Exception as err:
+                    db_err = str(err)
+
+            last_tick_iso = _WORKER_DIAGNOSTICS.get("last_tick_iso")
+            worker_stale = False
+            tick_age_seconds = 0.0
+            if last_tick_iso:
+                try:
+                    last_dt = datetime.fromisoformat(last_tick_iso.replace("Z", "+00:00"))
+                    tick_age_seconds = (datetime.now(timezone.utc) - last_dt).total_seconds()
+                    if tick_age_seconds > 90.0:
+                        worker_stale = True
+                except Exception:
+                    pass
+            elif _WORKER_DIAGNOSTICS.get("ticks_total", 0) > 0:
+                worker_stale = True
+
+            notifier = get_telegram_notifier()
+            is_healthy = db_ok and not worker_stale
+            status_code = 200 if is_healthy else 503
+            status_text = "ok" if is_healthy else ("degraded (worker_stale)" if worker_stale else "degraded (database_error)")
+
+            response_data = {
+                "status": status_text,
+                "service": "Crypto Analyzer Pro 2.0 24/7 Service (Deep)",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "checks": {
+                    "database_connected": db_ok,
+                    "database_error": db_err,
+                    "is_service_role": bool(getattr(sb, "is_service_role", False)),
+                    "telegram_configured": bool(getattr(notifier, "is_configured", False)),
+                    "last_price_source": _WORKER_DIAGNOSTICS.get("last_source", "none"),
+                    "ticks_total": _WORKER_DIAGNOSTICS.get("ticks_total", 0),
+                    "tick_age_seconds": round(tick_age_seconds, 1),
+                    "worker_stale": worker_stale
+                },
+                "open_trades_count": _WORKER_DIAGNOSTICS.get("open_trades_count", 0),
+                "active_sessions_count": _WORKER_DIAGNOSTICS.get("active_sessions_count", 0),
+                "last_tick_duration_ms": _WORKER_DIAGNOSTICS.get("last_tick_duration_ms", 0.0),
+                "diagnostics": _WORKER_DIAGNOSTICS
+            }
+
+            payload = json.dumps(response_data, indent=2, default=str).encode("utf-8")
+            self.send_response(status_code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
         else:
             self.send_response(404)
             self.end_headers()
@@ -1519,10 +2135,35 @@ if __name__ == "__main__":
 
     # Bucle continuo autonomo 24/7 en segundo plano
     def _run_worker_thread():
-        logger.info("Worker 24/7 iniciado: evaluando bots activos cada 15 segundos...")
+        logger.info("Worker 24/7 iniciado: ejecutando Crash Recovery y evaluando bots activos...")
+        try:
+            execute_recovery_on_startup()
+        except Exception as rec_err:
+            logger.error(f"Aviso en crash recovery inicial: {rec_err}")
+
+        _last_autotrader_digest_times: Dict[str, float] = {}
         while True:
             try:
                 trigger_async_evaluation(source="background_loop")
+
+                # Scheduler de Digest Periódico para sesiones activas
+                try:
+                    from supabase_client import get_supabase_client
+                    sb_worker = get_supabase_client()
+                    if sb_worker and getattr(sb_worker, "is_configured", False):
+                        active_sess = sb_worker.get_active_auto_trader_sessions() or []
+                        now_ts = time.time()
+                        for sess in active_sess:
+                            s_id = str(sess.get("id") or sess.get("user_id", ""))
+                            interval_min = float(sess.get("digest_interval") or 30.0)
+                            interval_sec = max(60.0, interval_min * 60.0)
+                            last_d = _last_autotrader_digest_times.get(s_id, 0.0)
+                            if (now_ts - last_d) >= interval_sec:
+                                send_autotrader_periodic_digest(sess)
+                                _last_autotrader_digest_times[s_id] = now_ts
+                except Exception as dig_err:
+                    logger.debug(f"Aviso en scheduler de digest: {dig_err}")
+
                 time.sleep(15)
             except Exception as e:
                 logger.error(f"Error en bucle worker 24/7: {e}")

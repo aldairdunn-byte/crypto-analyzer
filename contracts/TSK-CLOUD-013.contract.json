@@ -1,0 +1,72 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-CLOUD-013",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Decouple browser order execution from client WebSockets and complete Supabase Realtime synchronization for trades and market signals",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/contexts/AutoTraderContext.tsx",
+      "frontend/src/contexts/BotEngineContext.tsx"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json",
+      "tsconfig.json"
+    ],
+    "authorized_global_files": [
+      "frontend/src/lib/supabase.ts"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-012"
+  ],
+
+  "contracts": {
+    "types_file": "frontend/src/contexts/AutoTraderContext.tsx",
+    "interfaces": "Supabase Realtime event listeners and conditional cloud runner gating",
+    "function_signatures": [
+      "startSession: () => boolean"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write verification test in tests/verify_realtime_and_ws_decoupling.js",
+    "Run node tests/verify_realtime_and_ws_decoupling.js to confirm red phase failure",
+    "Gate createAutoTraderRunner in AutoTraderContext.tsx startSession so cloud users execute solely via Render 24/7 worker",
+    "Add bot_trades:UPDATE and signals:INSERT postgres_changes listeners in BotEngineContext.tsx",
+    "Run node tests/verify_realtime_and_ws_decoupling.js to confirm green phase",
+    "Run npm --prefix frontend run build to verify zero typescript/bundle errors",
+    "Update contract status to PASSED and validate using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "node tests/verify_realtime_and_ws_decoupling.js",
+    "lint": "npm --prefix frontend run build",
+    "typecheck": "npm --prefix frontend run build"
+  },
+
+  "acceptance_criteria": [
+    "AutoTraderContext.tsx does not instantiate createAutoTraderRunner or WebSocket monitors when user is logged in",
+    "BotEngineContext.tsx subscribes to UPDATE events on bot_trades to reflect cloud trade closures in real time",
+    "BotEngineContext.tsx subscribes to INSERT events on signals to display cloud-generated technical signals without page reload",
+    "Frontend TypeScript build compiles cleanly with zero errors"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-013.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/contexts/AutoTraderContext.tsx frontend/src/contexts/BotEngineContext.tsx; rm -f tests/verify_realtime_and_ws_decoupling.js contracts/TSK-CLOUD-013.contract.json"
+  }
+}

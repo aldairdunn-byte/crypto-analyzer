@@ -8,9 +8,18 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Tuple, List, Optional
 
+import math
 import requests
-import pandas as pd
-import numpy as np
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 logger = logging.getLogger("Engine")
 
@@ -165,13 +174,13 @@ def calculate_momentum_score(change_24h: float, change_7d: float, vol_24h: float
     # Sanity check: limitar vol_ratio al 50.0% para evitar distorsiones causadas por anomalías de mcap en micro-caps
     vol_ratio = min(vol_ratio, 50.0)
     # Normalización no lineal para evitar que microcaps inflen artificialmente el score
-    vol_component = min(max(np.log1p(vol_ratio) * 6.0, 0.0), 20.0)
+    vol_component = min(max(math.log1p(vol_ratio) * 6.0, 0.0), 20.0)
     
     c24_component = max(min((change_24h * 1.6) * volatility_weight, 40.0), -40.0)
     c7d_component = max(min((c7d_pure * 1.1) * volatility_weight, 30.0), -30.0)
     
     raw_score = 50.0 + c24_component + c7d_component + (vol_component - 6.0)
-    return round(float(np.clip(raw_score, 0.0, 100.0)), 1)
+    return round(float(max(0.0, min(100.0, raw_score))), 1)
 
 def calculate_dynamic_levels(current_price: float, rsi: float, change_24h: float, atr: Optional[float] = None) -> Dict[str, float]:
     """

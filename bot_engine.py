@@ -599,11 +599,16 @@ def evaluate_active_grid_bot_tick(
             
             if sb.is_configured:
                 try:
+                    target_user = user_id or trade.get("user_id")
                     sb.close_trade(
                         trade_id=trade_id,
                         exit_price=current_price,
                         exit_reason=f"Grid TP ejecutado (+{pnl_pct:.2f}%)"
                     )
+                    if target_user and hasattr(sb, "credit_user_balance"):
+                        proceeds = round(units * current_price, 2)
+                        if proceeds > 0:
+                            sb.credit_user_balance(target_user, proceeds)
                 except Exception as e:
                     logger.error(f"Error cerrando trade {trade_id} en Supabase: {e}")
 
@@ -693,4 +698,181 @@ def evaluate_active_grid_bot_tick(
         "current_price": current_price,
         "actions_executed": executed_actions
     }
+
+
+# =============================================================================
+# 4. LIVE 24/7 BACKGROUND DCA EVALUATOR
+# =============================================================================
+
+def evaluate_active_dca_bot_tick(
+    bot: Dict[str, Any],
+    current_price: float,
+    client: Optional[Any] = None,
+    telegram_notifier: Optional[Any] = None
+) -> Dict[str, Any]:
+    """
+    Evalúa un tick de precio en vivo para un DCA Bot activo.
+    Calcula intervalos temporales, aceleración anti-capitulación, control de capital
+    y Take Profit colectivo sobre el precio promedio de entrada.
+    Registra operaciones en Supabase y notifica a Telegram en tiempo real 24/7.
+    """
+    import json
+    bot_id = bot.get("id")
+    user_id = bot.get("user_id")
+    coin_id = str(bot.get("coin_id") or "bitcoin").lower()
+    capital = float(bot.get("capital_allocated_usd") or 100.0)
+
+    # 1. Parsear configuración del bot DCA
+    raw_config = bot.get("config") or bot.get("config_json") or {}
+    if isinstance(raw_config, str):
+        try:
+            config = json.loads(raw_config)
+        except Exception:
+            config = {}
+    else:
+        config = raw_config if isinstance(raw_config, dict) else {}
+
+    amount_per_trade = float(config.get("amount_per_trade") or config.get("base_order_usd") or 25.0)
+    interval_seconds = float(config.get("interval_seconds") or (float(config.get("interval_minutes") or 5.0) * 60.0))
+    take_profit_pct = float(config.get("take_profit_pct") or 3.0)
+    last_buy_iso = config.get("last_buy_iso") or config.get("last_buy_time")
+
+    sb = client or get_supabase_client()
+    executed_actions = []
+
+    # 2. Consultar trades abiertos para este bot
+    open_trades = []
+    if sb.is_configured and bot_id:
+        try:
+            open_trades = sb.get_open_trades(bot_id=bot_id)
+        except Exception as e:
+            logger.warning(f"No se pudieron cargar open_trades de DCA bot de Supabase: {e}")
+
+    # 3. Evaluar Take Profit si existen trades abiertos
+    if open_trades and current_price > 0:
+        total_units = sum(float(t.get("units", 0.0)) for t in open_trades)
+        total_cost = sum(float(t.get("amount_usd", 0.0)) for t in open_trades)
+        if total_units > 0 and total_cost > 0:
+            avg_entry_price = total_cost / total_units
+            pnl_pct = ((current_price - avg_entry_price) / avg_entry_price) * 100.0
+            pnl_usd = (current_price - avg_entry_price) * total_units
+
+            if pnl_pct >= take_profit_pct:
+                for trade in open_trades:
+                    trade_id = str(trade.get("id") or "")
+                    if trade_id and sb.is_configured:
+                        try:
+                            target_user = user_id or trade.get("user_id")
+                            sb.close_trade(
+                                trade_id=trade_id,
+                                exit_price=current_price,
+                                exit_reason=f"DCA Take Profit ejecutado (+{pnl_pct:.2f}%)"
+                            )
+                            if target_user and hasattr(sb, "credit_user_balance"):
+                                trade_units = float(trade.get("units", 0.0))
+                                proceeds = round(trade_units * current_price, 2)
+                                if proceeds > 0:
+                                    sb.credit_user_balance(target_user, proceeds)
+                        except Exception as e:
+                            logger.error(f"Error cerrando trade DCA {trade_id}: {e}")
+
+                executed_actions.append({
+                    "action": "SELL",
+                    "price": current_price,
+                    "units": total_units,
+                    "amount_usd": round(total_units * current_price, 2),
+                    "pnl_usd": round(pnl_usd, 4),
+                    "pnl_pct": round(pnl_pct, 2),
+                    "user_id": user_id
+                })
+
+                if telegram_notifier and getattr(telegram_notifier, "is_configured", False):
+                    try:
+                        telegram_notifier.send_spot_trade_alert(
+                            coin_id=coin_id,
+                            side="SELL",
+                            price=current_price,
+                            amount_usd=round(total_units * current_price, 2),
+                            units=total_units,
+                            pnl_usd=pnl_usd,
+                            pnl_pct=pnl_pct
+                        )
+                    except Exception as e:
+                        logger.warning(f"Error enviando alerta Telegram DCA SELL: {e}")
+
+                return {
+                    "bot_id": bot_id,
+                    "coin_id": coin_id,
+                    "current_price": current_price,
+                    "actions_executed": executed_actions
+                }
+
+    # 4. Evaluar Nueva Compra Periódica DCA
+    total_cost_invested = sum(float(t.get("amount_usd", 0.0)) for t in open_trades)
+    if (total_cost_invested + amount_per_trade) <= (capital * 1.05) and current_price > 0:
+        should_buy = False
+        if not last_buy_iso:
+            should_buy = True
+        else:
+            try:
+                clean_iso = last_buy_iso.replace("Z", "+00:00")
+                last_dt = datetime.fromisoformat(clean_iso)
+                elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
+                if elapsed >= interval_seconds:
+                    should_buy = True
+            except Exception:
+                should_buy = True
+
+        if should_buy:
+            units = amount_per_trade / current_price
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            if sb.is_configured and bot_id:
+                try:
+                    sb.record_trade(
+                        bot_id=bot_id,
+                        coin_id=coin_id,
+                        side="BUY",
+                        entry_price=current_price,
+                        units=units,
+                        amount_usd=amount_per_trade,
+                        entry_reason=f"DCA Buy ${amount_per_trade:.2f} USDT",
+                        user_id=user_id
+                    )
+                    config["last_buy_iso"] = now_iso
+                    if hasattr(sb, "update_bot"):
+                        try:
+                            sb.update_bot(bot_id, {"config": config})
+                        except Exception:
+                            pass
+                except Exception as e:
+                    logger.error(f"Error registrando compra DCA en Supabase: {e}")
+
+            executed_actions.append({
+                "action": "BUY",
+                "price": current_price,
+                "units": units,
+                "amount_usd": amount_per_trade,
+                "user_id": user_id
+            })
+
+            if telegram_notifier and getattr(telegram_notifier, "is_configured", False):
+                try:
+                    telegram_notifier.send_spot_trade_alert(
+                        coin_id=coin_id,
+                        side="BUY",
+                        price=current_price,
+                        amount_usd=amount_per_trade,
+                        units=units
+                    )
+                except Exception as e:
+                    logger.warning(f"Error enviando alerta Telegram DCA BUY: {e}")
+
+    return {
+        "bot_id": bot_id,
+        "coin_id": coin_id,
+        "current_price": current_price,
+        "actions_executed": executed_actions
+    }
+
 

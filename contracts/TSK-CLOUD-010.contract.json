@@ -1,0 +1,78 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-CLOUD-010",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Ensure transactional balance reconciliation and provide close_trade_and_credit_balance in SupabaseClient and bot engines",
+
+  "scope": {
+    "target_files": [
+      "supabase_client.py",
+      "bot_engine.py"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json",
+      "tsconfig.json"
+    ],
+    "authorized_global_files": [
+      "supabase/close_trade_and_credit_balance.sql"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-004",
+    "TSK-CLOUD-005",
+    "TSK-CLOUD-006",
+    "TSK-CLOUD-007",
+    "TSK-CLOUD-008",
+    "TSK-CLOUD-009"
+  ],
+
+  "contracts": {
+    "types_file": "supabase_client.py",
+    "interfaces": "close_trade_and_credit_balance function signature and balance credit integration",
+    "function_signatures": [
+      "close_trade_and_credit_balance(self, trade_id: str, exit_price: float, exit_reason: Optional[str] = None, user_id: Optional[str] = None) -> Dict[str, Any]"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write test in test_balance_reconciliation.py verifying close_trade_and_credit_balance updates trade and credits user balance",
+    "Run python test_balance_reconciliation.py to verify failure (red phase)",
+    "Implement close_trade_and_credit_balance in supabase_client.py",
+    "Connect close_trade_and_credit_balance in bot_engine.py for Grid and DCA bot TP exits",
+    "Create supabase/close_trade_and_credit_balance.sql RPC procedure",
+    "Run python test_balance_reconciliation.py to verify green phase",
+    "Run lint and typecheck verification commands",
+    "Validate contract using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "python test_balance_reconciliation.py",
+    "lint": "python -m py_compile supabase_client.py bot_engine.py",
+    "typecheck": "python -m py_compile supabase_client.py bot_engine.py"
+  },
+
+  "acceptance_criteria": [
+    "supabase_client.py provides close_trade_and_credit_balance closing the trade and crediting proceeds to demo_usdt_balance",
+    "bot_engine.py calls close_trade_and_credit_balance upon Grid Bot and DCA Bot TP sales, ensuring proceeds return to demo_usdt_balance",
+    "test_balance_reconciliation.py exits with code 0",
+    "All existing unit tests pass without regressions"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-010.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- supabase_client.py bot_engine.py; rm -f test_balance_reconciliation.py supabase/close_trade_and_credit_balance.sql contracts/TSK-CLOUD-010.contract.json"
+  }
+}

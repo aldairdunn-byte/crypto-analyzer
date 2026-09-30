@@ -1,0 +1,81 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-CLOUD-012",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Transform frontend into passive UI layer: decouple browser-side Auto Trader runner, eliminate redundant DCA and signal timers in React",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/contexts/AutoTraderContext.tsx",
+      "frontend/src/contexts/BotEngineContext.tsx"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json",
+      "tsconfig.json"
+    ],
+    "authorized_global_files": [
+      "frontend/src/lib/supabase.ts"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-004",
+    "TSK-CLOUD-005",
+    "TSK-CLOUD-006",
+    "TSK-CLOUD-007",
+    "TSK-CLOUD-008",
+    "TSK-CLOUD-009",
+    "TSK-CLOUD-010",
+    "TSK-CLOUD-011"
+  ],
+
+  "contracts": {
+    "types_file": "frontend/src/contexts/AutoTraderContext.tsx",
+    "interfaces": "Passive AutoTraderContext and BotEngineContext execution mode",
+    "function_signatures": [
+      "startSession: () => Promise<boolean>",
+      "stopSession: (reason?: string) => Promise<void>"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write verification test in tests/verify_frontend_passive_mode.js checking neutralization of local trading intervals",
+    "Run node tests/verify_frontend_passive_mode.js to verify failure (red phase)",
+    "Update AutoTraderContext.tsx to delegate session lifecycle to Supabase and disable local runner intervals when cloud is active",
+    "Update BotEngineContext.tsx to remove local DCA buying interval and local signal dispatcher",
+    "Run node tests/verify_frontend_passive_mode.js to verify green phase",
+    "Run npm --prefix frontend run build to verify zero typescript or bundle errors",
+    "Validate contract using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "node tests/verify_frontend_passive_mode.js",
+    "lint": "npm --prefix frontend run build",
+    "typecheck": "npm --prefix frontend run build"
+  },
+
+  "acceptance_criteria": [
+    "AutoTraderContext.tsx startSession and stopSession control session state via Supabase and do not run competing local scan loop when cloud-connected",
+    "AutoTraderContext.tsx removes browser-side periodic Telegram digest timer",
+    "BotEngineContext.tsx removes the 45s DCA browser-side buying interval",
+    "BotEngineContext.tsx removes browser-side signal calculation and Telegram alert dispatch",
+    "Frontend TypeScript build compiles cleanly with zero errors"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-012.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/contexts/AutoTraderContext.tsx frontend/src/contexts/BotEngineContext.tsx; rm -f tests/verify_frontend_passive_mode.js contracts/TSK-CLOUD-012.contract.json"
+  }
+}

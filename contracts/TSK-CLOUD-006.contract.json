@@ -1,0 +1,76 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-CLOUD-006",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Implement autonomous 24/7 Cloud Auto Trader execution engine with position normalization, multi-coin scanning, and trade closing in telegram_bot.py and supabase_client.py",
+
+  "scope": {
+    "target_files": [
+      "telegram_bot.py",
+      "supabase_client.py"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json",
+      "tsconfig.json"
+    ],
+    "authorized_global_files": [
+      "bot_engine.py"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-004",
+    "TSK-CLOUD-005"
+  ],
+
+  "contracts": {
+    "types_file": "telegram_bot.py",
+    "interfaces": "run_cloud_auto_trader_cycle function interface",
+    "function_signatures": [
+      "run_cloud_auto_trader_cycle(sb: Any, notifier: TelegramNotifier, web_push: Optional[Any] = None, active_sessions: Optional[List[Dict[str, Any]]] = None, binance_map: Optional[Dict[str, float]] = None, binance_24h: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]",
+      "normalize_cloud_position(pos: Dict[str, Any], default_capital: float = 50.0, default_sl_pct: float = 2.0) -> Dict[str, Any]"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write unit and integration tests in test_cloud_auto_trader.py verifying position normalization, breakout candidate selection, break-even arming, and trade closure",
+    "Run python test_cloud_auto_trader.py to verify failure of unhandled camelCase properties and trade closure tracking (red phase)",
+    "Implement normalize_cloud_position in telegram_bot.py supporting both camelCase and snake_case representations",
+    "Expand run_cloud_auto_trader_cycle in telegram_bot.py to evaluate all available symbols from BINANCE_SYMBOLS and record closed trades in bot_trades",
+    "Enhance supabase_client.py to support recording completed trades with closed status",
+    "Run python test_cloud_auto_trader.py to verify green phase",
+    "Run lint and typecheck verification commands",
+    "Validate contract using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "python test_cloud_auto_trader.py",
+    "lint": "python -m py_compile telegram_bot.py supabase_client.py",
+    "typecheck": "python -m py_compile telegram_bot.py supabase_client.py"
+  },
+
+  "acceptance_criteria": [
+    "normalize_cloud_position correctly parses positions formatted with camelCase and snake_case keys",
+    "run_cloud_auto_trader_cycle evaluates candidates from all active coins with live prices",
+    "run_cloud_auto_trader_cycle arms break-even when profit reaches +0.8%",
+    "run_cloud_auto_trader_cycle closes position and records trade when take profit (+2.0%) or stop loss (-2.0%) triggers",
+    "test_cloud_auto_trader.py passes with exit code 0"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-006.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- telegram_bot.py supabase_client.py; rm -f test_cloud_auto_trader.py contracts/TSK-CLOUD-006.contract.json"
+  }
+}

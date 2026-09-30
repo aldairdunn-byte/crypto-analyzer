@@ -1,0 +1,75 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-CLOUD-008",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Implement autonomous 24/7 Quantitative Signal Scanner and Market Data Cache Refresher in telegram_bot.py and engine.py",
+
+  "scope": {
+    "target_files": [
+      "telegram_bot.py",
+      "engine.py"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json",
+      "tsconfig.json"
+    ],
+    "authorized_global_files": [
+      "supabase_client.py"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-004",
+    "TSK-CLOUD-005",
+    "TSK-CLOUD-006",
+    "TSK-CLOUD-007"
+  ],
+
+  "contracts": {
+    "types_file": "telegram_bot.py",
+    "interfaces": "run_quantitative_signal_scanner function signature and market_data_cache sync",
+    "function_signatures": [
+      "run_quantitative_signal_scanner(sb: Any, notifier: TelegramNotifier, market_map: Dict[str, float], change_map: Optional[Dict[str, float]] = None) -> List[Dict[str, Any]]"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write test in test_signal_scanner_worker.py verifying quantitative scanner evaluates coins, persists signals to Supabase, and cache_market_data is invoked",
+    "Run python test_signal_scanner_worker.py to verify failure (red phase)",
+    "Implement run_quantitative_signal_scanner in telegram_bot.py and link to engine.py evaluation",
+    "Add periodic market_data_cache refresh in telegram_bot.py market cycle",
+    "Run python test_signal_scanner_worker.py to verify green phase",
+    "Run lint and typecheck verification commands",
+    "Validate contract using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "python test_signal_scanner_worker.py",
+    "lint": "python -m py_compile telegram_bot.py engine.py",
+    "typecheck": "python -m py_compile telegram_bot.py engine.py"
+  },
+
+  "acceptance_criteria": [
+    "run_quantitative_signal_scanner evaluates market tickers and produces structured signals",
+    "BUY/SELL signals are persisted to Supabase signals table via sb.save_signal or persist_signal_to_supabase",
+    "Market data is cached to market_data_cache in Supabase with valid TTL",
+    "test_signal_scanner_worker.py exits with code 0"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-008.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- telegram_bot.py engine.py; rm -f test_signal_scanner_worker.py contracts/TSK-CLOUD-008.contract.json"
+  }
+}

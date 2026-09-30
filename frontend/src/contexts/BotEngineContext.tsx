@@ -6,10 +6,6 @@ import {
   getDynamicCoinInfo,
   type GridLevelItem,
   formatDynamicPrice,
-  COINS,
-  type CoinInfo,
-  TOP_SPOT_SIGNAL_COIN_IDS,
-  isValidSpotCrypto,
   isTradeableBinanceSpot,
 } from '../lib/marketData';
 import {
@@ -34,7 +30,6 @@ import {
   sendTelegramGridBotCreated,
   sendTelegramGridOrderFilled,
   sendTelegramBotStatusChange,
-  sendTelegramSignalAlert,
   sendTelegramSpotTrade,
 } from '../lib/telegram';
 import { soundFx } from '../lib/soundFx';
@@ -600,12 +595,38 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           }
         }
       )
+      // ── bot_trades: UPDATE (cloud trade closures & SL/TP adjustments) ──
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'bot_trades', filter: 'user_id=eq.' + userId },
+        (payload) => {
+          setTrades((prev) => {
+            const incoming = parseSupabaseTradeRow(payload.new as any);
+            return prev.map((t) => (t.id === incoming.id ? incoming : t));
+          });
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('crypto_analyzer_trades_updated'));
+          }
+        }
+      )
       // ── bot_trades: DELETE ─────────────────────────────────────────
       .on(
         'postgres_changes',
         { event: 'DELETE', schema: 'public', table: 'bot_trades', filter: 'user_id=eq.' + userId },
         (payload) => {
           setTrades((prev) => prev.filter((t) => t.id !== (payload.old as TradeRow).id));
+        }
+      )
+      // ── signals: INSERT (24/7 technical scanner signals) ────────────
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'signals' },
+        (payload) => {
+          setSignals((prev) => {
+            const incoming = payload.new as SignalRow;
+            if (prev.find((s) => s.id === incoming.id)) return prev;
+            return [incoming, ...prev].slice(0, 20);
+          });
         }
       )
       .subscribe();
@@ -2159,46 +2180,11 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       isRead: false,
     });
   }, [trades, setUsdtCash, addToast, pushNotification, user]);
+  // 24/7 DCA Execution: Delegated exclusively to Render backend worker (evaluate_active_dca_bot_tick)
+  // Local browser interval neutralized to prevent race conditions and duplicate order placement.
   useEffect(() => {
-    const activeDcaBots = bots.filter((b) => b.status === 'ACTIVE' && b.strategy === 'DCA');
-    if (activeDcaBots.length === 0) return;
-
-    const interval = setInterval(() => {
-      activeDcaBots.forEach((dcaBot) => {
-        const cfg = dcaBot.config_json || (dcaBot as any).config || {};
-        const amountPerTrade = cfg.amount_per_trade || 25;
-        const targetCoin = getDynamicCoinInfo(dcaBot.coin_id);
-        const p = livePrices[dcaBot.coin_id] || currentPrice || targetCoin.basePrice;
-        const units = p > 0 ? amountPerTrade / p : 0;
-
-        updateHoldingFromTrade(dcaBot.coin_id, 'BUY', units, p);
-        setUsdtCash((prev) => Math.max(0, Number((prev - amountPerTrade).toFixed(2))));
-
-        const dcaTrade: TradeRow = {
-          id: crypto.randomUUID(),
-          user_id: user?.id,
-          bot_id: dcaBot.id,
-          coin_id: dcaBot.coin_id,
-          side: 'BUY',
-          entry_price: p,
-          amount_usd: amountPerTrade,
-          units: Number(units.toFixed(6)),
-          status: 'OPEN',
-          created_at: new Date().toISOString(),
-        };
-        setTrades((prev) => [dcaTrade, ...prev]);
-        persistTradeToSupabase(dcaTrade, user?.id);
-
-        addToast({
-          type: 'BUY',
-          title: `DCA Ejecutado: ${targetCoin.symbol}`,
-          message: `Compra programada de $${amountPerTrade.toFixed(2)} USDT a $${p.toFixed(targetCoin.decimals)}.`,
-        });
-      });
-    }, 45_000);
-
-    return () => clearInterval(interval);
-  }, [bots, livePrices, currentPrice, user, updateHoldingFromTrade, setUsdtCash, addToast]);
+    // DCA orders are executed continuously in cloud 24/7 by Render
+  }, [bots]);
 
   const resetAllBotEngine = useCallback(async () => {
     isResettingRef.current = true;
@@ -2326,184 +2312,43 @@ export const BotEngineProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   }, [user, storageOwnerId, addToast]);
 
-  // 5. Autonomous Proactive Market Scanner (Strict Top-15 Spot Only + Persistent Cooldown + Warmup Guard)
-  const mountTimeRef = useRef<number>(Date.now());
-  const lastSignalDispatchRef = useRef<Record<string, number>>((() => {
-    try {
-      const saved = localStorage.getItem('crypto_analyzer_last_signals_dispatched');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  })());
-
+  // 5. Reactive Signal Notifications (Consumes signals synced from Supabase 24/7 cloud worker)
+  // Browser signal generation delegated to Render 24/7 cloud worker (run_quantitative_signal_scanner)
   useEffect(() => {
-    const shouldNotifySignals = localStorage.getItem('crypto_analyzer_notify_signals') !== 'false';
-    if (!shouldNotifySignals || !allCoinsStats || Object.keys(allCoinsStats).length === 0) return;
-
+    if (!signals || signals.length === 0) return;
     const now = Date.now();
+    for (const s of signals.slice(0, 5)) {
+      if (!s.coin_id) continue;
+      const coin = getDynamicCoinInfo(s.coin_id);
+      const signalTime = s.created_at ? new Date(s.created_at).getTime() : now;
+      if (now - signalTime > 90 * 60 * 1000) continue;
 
-    // 1. COLD-START GRACE PERIOD: Ignore automated scanner signals for the first 12 seconds after mount.
-    // This allows WebSocket prices to connect and Supabase data to load cleanly, eliminating mount storms.
-    if (now - mountTimeRef.current < 12_000) return;
-
-    // 2. GLOBAL TELEGRAM THROTTLE: Maximum 1 automated signal alert per 15 minutes to avoid spamming the channel.
-    const lastGlobalTelegram = Number(localStorage.getItem('crypto_analyzer_last_global_telegram_time') || '0');
-    const canSendGlobalTelegram = now - lastGlobalTelegram >= 15 * 60 * 1000;
-
-    // Scan all curated spot majors and high-liquidity spot tokens
-    const targetCoins: CoinInfo[] = Object.values(COINS).filter((c) => {
-      const stat = allCoinsStats[c.id];
-      const vol = stat?.vol24h || 0;
-      return TOP_SPOT_SIGNAL_COIN_IDS.has(c.id) || (vol >= 20_000_000 && isValidSpotCrypto(c.symbol, vol, true));
-    });
-
-    let dispatchedInThisCycle = false;
-
-    for (const targetCoin of targetCoins) {
-      if (dispatchedInThisCycle) break;
-
-      const stat = allCoinsStats[targetCoin.id];
-      if (!stat || !stat.price || stat.price <= 0) continue;
-
-      const rsi = stat.rsi || 50;
-      const change24h = stat.change24h || 0;
-      const momentum = stat.momentum || 50;
-      const price = stat.price;
-      const vol24h = stat.vol24h || 0;
-
-      // High-Conviction Technical Signal Criteria:
-      // 1. Extreme Oversold on Major: RSI <= 33.0
-      // 2. Strong pullback into Key Support: 24h drop <= -5.0% with RSI <= 38.0
-      // 3. Strong Bullish Breakout / Rally: 24h gain >= +4.0%, vol24h >= $20M, and (momentum >= 60 or rsi >= 56)
-      const isOversold = rsi <= 33.0;
-      const isSupportDip = change24h <= -5.0 && rsi <= 38.0;
-      const isBullishBreakout = change24h >= 4.0 && vol24h >= 20_000_000 && (momentum >= 60 || rsi >= 56);
-
-      if (isOversold || isSupportDip || isBullishBreakout) {
-        // 1. Persistent Browser Cooldown (90 minutes across reloads & sessions)
-        const lastSent = lastSignalDispatchRef.current[targetCoin.id] || 0;
-        if (now - lastSent < 90 * 60 * 1000) continue;
-
-        // 2. Cloud Mutex: Check if ANY client already persisted this signal in Supabase in last 90 minutes
-        const recentCloudSignal = signals.some(
-          (s) => s.coin_id === targetCoin.id && s.created_at && (now - new Date(s.created_at).getTime()) < 90 * 60 * 1000
-        );
-        if (recentCloudSignal) {
-          lastSignalDispatchRef.current[targetCoin.id] = now;
-          localStorage.setItem(
-            'crypto_analyzer_last_signals_dispatched',
-            JSON.stringify(lastSignalDispatchRef.current)
-          );
-          continue;
-        }
-
-        // Save cooldown timestamp in persistent memory
-        lastSignalDispatchRef.current[targetCoin.id] = now;
-        localStorage.setItem(
-          'crypto_analyzer_last_signals_dispatched',
-          JSON.stringify(lastSignalDispatchRef.current)
-        );
-        dispatchedInThisCycle = true;
-
-        const decimals = targetCoin.decimals || 2;
-        const entryLimit = Number((price * (isBullishBreakout ? 1.002 : 0.99)).toFixed(decimals));
-        const tp1 = Number((entryLimit * (isBullishBreakout ? 1.035 : 1.022)).toFixed(decimals));
-        const tp2 = Number((entryLimit * (isBullishBreakout ? 1.070 : 1.045)).toFixed(decimals));
-        const tp3 = Number((entryLimit * (isBullishBreakout ? 1.120 : 1.080)).toFixed(decimals));
-        const sl = Number((entryLimit * (isBullishBreakout ? 0.965 : 0.970)).toFixed(decimals));
-
-        const badge = isBullishBreakout
-          ? '🚀 RALLY EN CURSO · RUPTURA ALCISTA'
-          : isOversold
-          ? 'SOBREVENTA · REBOTE INMINENTE'
-          : 'SOPORTE CLAVE · OPORTUNIDAD';
-
-        const explanation = isBullishBreakout
-          ? `Fuerte presión compradora (+${change24h.toFixed(2)}%) con volumen institucional de $${((vol24h) / 1_000_000).toFixed(1)}M. Rompiendo resistencias técnicas con momentum sólido.`
-          : isOversold
-          ? `RSI en nivel de sobreventa extrema (${rsi.toFixed(1)}) en zona de soporte institucional. Alta probabilidad de rebote técnico.`
-          : `Corrección del ${change24h.toFixed(2)}% alcanzando piso técnico principal con volumen de absorción.`;
-
-        // Persist signal to Supabase Cloud
-        try {
-          supabase.from('signals').insert({
-            coin_id: targetCoin.id,
-            status: 'BUY',
-            badge,
-            risk_level: 'BAJO',
-            can_buy_now: true,
-            price,
-            rsi,
-            atr_pct: 2.8,
-            momentum_score: momentum,
-            plain_explanation: explanation,
-          }).then(({ error }) => {
-            if (error) console.info('Supabase signal note:', error.message);
-          });
-        } catch {}
-
-        // Dispatch to Telegram Channel (throttled globally to max 1 alert per 15 minutes)
-        if (canSendGlobalTelegram) {
-          localStorage.setItem('crypto_analyzer_last_global_telegram_time', String(now));
-          sendTelegramSignalAlert({
-            coinId: targetCoin.id,
-            coinSymbol: targetCoin.symbol,
-            coinName: targetCoin.name,
-            signalType: 'BUY',
-            badge,
-            price,
-            rsi,
-            atrPercent: 2.8,
-            momentumScore: momentum,
-            confidenceScore: Math.round(momentum),
-            explanation,
-            currencyMode,
-            penRate,
-            levels: {
-              entryLimit,
-              takeProfit1: tp1,
-              takeProfit1Pct: isBullishBreakout ? 3.50 : 2.20,
-              takeProfit2: tp2,
-              takeProfit2Pct: isBullishBreakout ? 7.00 : 4.50,
-              takeProfit3: tp3,
-              takeProfit3Pct: isBullishBreakout ? 12.00 : 8.00,
-              stopLoss: sl,
-              stopLossPct: -3.00,
-              riskRewardRatio: 2.45,
-            },
-          });
-        }
-
-        // Push to in-app Notification Drawer only if not already recently added for this coin
-        const alreadyInDrawer = notifications.some(
-          (n) => n.coinId === targetCoin.id && (now - n.timestamp) < 90 * 60 * 1000
-        );
-
-        if (!alreadyInDrawer) {
-          pushNotification({
-            id: crypto.randomUUID(),
-            coinId: targetCoin.id,
-            category: 'BUY_OPPORTUNITY',
-            actionCoinId: targetCoin.id,
-            coinSymbol: targetCoin.symbol,
-            coinName: targetCoin.name,
-            badge,
-            badgeColor: '#0ECB81',
-            badgeBg: 'rgba(14, 203, 129, 0.15)',
-            badgeBorder: 'rgba(14, 203, 129, 0.3)',
-            headline: `${targetCoin.name} (${targetCoin.symbol}): ${badge}`,
-            plainExplanation: explanation,
-            highlightText: `RSI en ${rsi.toFixed(1)} · Entrada sugerida en $${entryLimit.toFixed(decimals)} USDT`,
-            actionText: `Operar ${targetCoin.symbol}`,
-            timeAgo: 'Hace un momento',
-            timestamp: now,
-            isRead: false,
-          });
-        }
+      const alreadyInDrawer = notifications.some(
+        (n) => n.coinId === s.coin_id && (now - n.timestamp) < 90 * 60 * 1000
+      );
+      if (!alreadyInDrawer) {
+        pushNotification({
+          id: s.id || crypto.randomUUID(),
+          coinId: s.coin_id,
+          category: 'BUY_OPPORTUNITY',
+          actionCoinId: s.coin_id,
+          coinSymbol: coin.symbol,
+          coinName: coin.name,
+          badge: s.badge || 'OPORTUNIDAD DETECTADA',
+          badgeColor: '#0ECB81',
+          badgeBg: 'rgba(14, 203, 129, 0.15)',
+          badgeBorder: 'rgba(14, 203, 129, 0.3)',
+          headline: `${coin.name} (${coin.symbol}): ${s.badge || 'Señal Cloud'}`,
+          plainExplanation: s.explanation || 'Señal cuantitativa generada por el motor cloud 24/7.',
+          highlightText: `Precio: $${s.price?.toFixed(2) || '0.00'}`,
+          actionText: `Operar ${coin.symbol}`,
+          timeAgo: 'Hace un momento',
+          timestamp: signalTime,
+          isRead: false,
+        });
       }
     }
-  }, [allCoinsStats, currencyMode, penRate, pushNotification, signals, notifications]);
+  }, [signals, notifications, pushNotification]);
 
   // Update timeAgo every 30 seconds
   useEffect(() => {

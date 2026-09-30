@@ -1,0 +1,66 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "typescript",
+
+  "task_id": "TSK-CLOUD-015",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Remove hardcoded Telegram bot token from client bundle and protect credentials",
+
+  "scope": {
+    "target_files": [
+      "frontend/src/lib/telegram.ts"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json"
+    ],
+    "authorized_global_files": []
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-014"
+  ],
+
+  "contracts": {
+    "types_file": "frontend/src/lib/telegram.ts",
+    "interfaces": "Telegram configuration interface",
+    "function_signatures": [
+      "getTelegramBotToken: () => string"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write verification test in tests/verify_frontend_telegram_security.js",
+    "Run node tests/verify_frontend_telegram_security.js to confirm red phase failure",
+    "Update frontend/src/lib/telegram.ts to remove hardcoded bot token and rely on environment variable or localStorage user config",
+    "Run node tests/verify_frontend_telegram_security.js to confirm green phase",
+    "Run npm --prefix frontend run build to verify zero typescript/bundle errors",
+    "Update contract status to PASSED and validate using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "node tests/verify_frontend_telegram_security.js",
+    "lint": "npm --prefix frontend run build",
+    "typecheck": "npm --prefix frontend run build"
+  },
+
+  "acceptance_criteria": [
+    "telegram.ts does not contain plain text hardcoded bot token",
+    "getTelegramBotToken falls back safely to VITE_TELEGRAM_BOT_TOKEN or empty string",
+    "Frontend TypeScript build compiles cleanly without errors"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-015.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- frontend/src/lib/telegram.ts; rm -f tests/verify_frontend_telegram_security.js contracts/TSK-CLOUD-015.contract.json"
+  }
+}

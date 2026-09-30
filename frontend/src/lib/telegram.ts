@@ -1,4 +1,4 @@
-export const DEFAULT_TELEGRAM_BOT_TOKEN = '8897887741:AAFPzheKMItIIa6xNwn_ipd_pqZd_rLx9vU';
+export const DEFAULT_TELEGRAM_BOT_TOKEN = (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_TELEGRAM_BOT_TOKEN) || '';
 export const DEFAULT_TELEGRAM_CHAT_ID = '-1004384607143'; // Canal: CryptoAnalyzer Alerts (global para todos los usuarios)
 
 export function getTelegramBotToken(): string {
@@ -6,7 +6,7 @@ export function getTelegramBotToken(): string {
     const custom = localStorage.getItem('crypto_analyzer_telegram_bot_token');
     if (custom && custom.trim().length > 0) return custom.trim();
   } catch {}
-  return (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_TELEGRAM_BOT_TOKEN) || DEFAULT_TELEGRAM_BOT_TOKEN;
+  return DEFAULT_TELEGRAM_BOT_TOKEN;
 }
 
 export function getTelegramChatId(): string {

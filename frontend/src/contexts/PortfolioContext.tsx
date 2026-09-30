@@ -429,7 +429,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Cross-device SSOT Sync: Synchronize local holdings to Supabase user_portfolios
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !isCloudPortfolioLoaded) return;
     Object.entries(localHoldings).forEach(([coinId, h]) => {
       if (h && h.units > 0.000001) {
         const coin = getDynamicCoinInfo(coinId);
@@ -446,7 +446,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
       }
     });
-  }, [user?.id, localHoldings, supabasePortfolio]);
+  }, [user?.id, isCloudPortfolioLoaded, localHoldings, supabasePortfolio]);
 
   // Cross-device SSOT Sync: Hydrate and reconcile localHoldings from Supabase portfolio
   useEffect(() => {
