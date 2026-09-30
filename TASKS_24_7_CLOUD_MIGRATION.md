@@ -779,3 +779,10 @@ El proyecto se considerará plenamente transformado y operativo 24/7 **únicamen
 12. [x] **Telegram Centralizado:** Las notificaciones llegan al celular con sonido enriquecido directamente desde Render.
 13. [x] **Recuperación tras Reinicio:** Si Render se reinicia, el servicio lee la base de datos y retoma la operación en menos de 10 segundos sin duplicar órdenes.
 14. [x] **Reconexión Pacífica:** Al abrir la web tras horas de ausencia, el frontend se limita a pintar el estado sin disparar operaciones viejas en bloque.
+
+---
+
+## 8. Extensiones Arquitectónicas Implementadas (Engineering-OS v4.1 RC)
+
+- **TSK-CLOUD-017:** ✅ APROBADO (Tests: `test_telegram_dual_delivery.py`). Implementación de despacho dual en `TelegramNotifier` hacia chat privado (`TELEGRAM_CHAT_ID`) y canal/grupo comunitario (`TELEGRAM_GROUP_CHAT_ID`: `-1004384607143`) de forma simultánea y resiliente desde Render.
+- **TSK-CLOUD-018:** ✅ APROBADO (Tests: `tests/verify_frontend_silence_and_gating.js`). Neutralización de la simulación de mallas en React (`BotEngineContext.tsx`) con guardas de usuario cloud (`if (user?.id) return;`) y silenciamiento de emisiones automáticas desde el cliente en `telegram.ts`, garantizando una arquitectura *Thin Client* libre de *Split-Brain*.

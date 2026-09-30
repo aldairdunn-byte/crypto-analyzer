@@ -4,6 +4,29 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
 
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [2.7.0] — 2026-09-30
+### ☁️ Transformación Arquitectónica Cloud Autónoma 24/7 & Despacho Dual Telegram (Engineering-OS v4.1 RC)
+#### Agregado
+- **Motor Autónomo 24/7 en Render Backend (`telegram_bot.py`, `bot_engine.py`):**
+  - Migración completa de la lógica de evaluación y ejecución de bots (Grid, DCA y Auto Trader) desde el navegador hacia el worker backend en Render.
+  - Integración de `SUPABASE_SERVICE_ROLE_KEY` en `supabase_client.py` y `web_push.py` para operar transacciones multi-usuario con privilegios seguros sin exponer credenciales al cliente.
+  - Reconciliación atómica transaccional de órdenes cerradas y acreditación de saldo en PostgreSQL mediante función `close_trade_and_credit_balance(UUID, NUMERIC, TEXT, UUID)`.
+  - Persistencia periódica en `market_data_cache` con fallback multi-exchange (Binance US / Bybit) para alimentar el sistema aun cuando los exchanges principales limiten cuotas.
+  - Separación de `/health` ultra-rápido (<5ms) para keep-alive de UptimeRobot y `/deep-health` con monitoreo de estancamiento del worker (<90s).
+  - Watchdog de autorrecuperación (`check_and_recover_stale_worker`) para reiniciar automáticamente el hilo en caso de congelamiento.
+- **Despacho Dual de Notificaciones Telegram (`TSK-CLOUD-017`):**
+  - Soporte de despacho simultáneo en `TelegramNotifier` hacia el chat privado del operador (`TELEGRAM_CHAT_ID`) y el canal/supergrupo de alertas (`TELEGRAM_GROUP_CHAT_ID`: `-1004384607143`).
+  - Configuración declarada en `render.yaml` con `sync: false`.
+
+#### Corregido & Optimizado
+- **Frontend 100% Pasivo (Thin Client) (`TSK-CLOUD-012`, `TSK-CLOUD-013`, `TSK-CLOUD-018`):**
+  - Desacoplamiento total del simulador de mallas en React (`BotEngineContext.tsx`): guarda estricta `if (user?.id) return;` que neutraliza el cruce de mallas en el cliente para usuarios registrados.
+  - Eliminación definitiva del problema de "Doble Cerebro" (*Split-Brain*): se eliminaron emisiones directas a Telegram desde el navegador al detectar cruces en memoria local.
+  - Silenciamiento inteligente en [`frontend/src/lib/telegram.ts`](frontend/src/lib/telegram.ts) (`shouldDelegateToCloudBackend()`): las alertas automáticas son delegadas al 100% a la nube, erradicando alertas fantasma con operadores pasados (`aldairdunn1`).
+  - Sincronización reactiva inmediata mediante Supabase Realtime (`bot_trades: UPDATE` y `signals: INSERT`).
+
+---
+
 ## [2.6.0] — 2026-09-24
 ### ☁️ Blindaje del Worker 24/7 en Render Cloud & Purga de Activos Fantasma
 #### Corregido
