@@ -31,6 +31,20 @@ def resolve_user_operator_alias(user_id: Optional[str], sb_client: Optional[Any]
 
     if sb and getattr(sb, "is_configured", False):
         try:
+            # 1. Método nativo de SupabaseClient en producción
+            if hasattr(sb, "get_user_profile") and callable(getattr(sb, "get_user_profile")):
+                profile = sb.get_user_profile(user_id)
+                if profile and isinstance(profile, dict):
+                    email = profile.get("email") or ""
+                    full_name = profile.get("full_name") or ""
+                    if email:
+                        alias = email.split("@")[0]
+                    elif full_name:
+                        alias = full_name.strip()
+                    _USER_ALIAS_CACHE[user_id] = alias
+                    return alias
+
+            # 2. SDK cliente o Mocks con interfaz fluida
             client_inst = getattr(sb, "client", None)
             if client_inst and hasattr(client_inst, "from_"):
                 res = client_inst.from_("user_profiles").select("id, email, full_name").eq("id", user_id).execute()
@@ -42,6 +56,8 @@ def resolve_user_operator_alias(user_id: Optional[str], sb_client: Optional[Any]
                         alias = email.split("@")[0]
                     elif full_name:
                         alias = full_name.strip()
+                    _USER_ALIAS_CACHE[user_id] = alias
+                    return alias
         except Exception as e:
             logger.debug(f"No se pudo resolver alias de operador para {user_id}: {e}")
 

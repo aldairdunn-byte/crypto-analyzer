@@ -74,6 +74,18 @@ class TestOperatorAttribution(unittest.TestCase):
         alias2 = resolve_user_operator_alias("user-uuid-1", mock_sb)
         self.assertEqual(alias2, "hypedrops.pe")
 
+    def test_resolve_user_operator_alias_via_get_user_profile(self):
+        mock_sb = MagicMock()
+        mock_sb.is_configured = True
+        del mock_sb.client  # ensure no client attribute
+        mock_sb.get_user_profile.return_value = {
+            "id": "user-uuid-2",
+            "email": "aldairdunn1@gmail.com"
+        }
+
+        alias = resolve_user_operator_alias("user-uuid-2", mock_sb)
+        self.assertEqual(alias, "aldairdunn1")
+
 
 if __name__ == "__main__":
     unittest.main()
