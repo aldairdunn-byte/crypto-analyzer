@@ -12,6 +12,9 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
   - Inclusión de encabezados visuales `👤 Operador: <alias>` y `🤖 Bot: <nombre_bot>` en cada alerta de compra y venta (TP).
   - Función de resolución `resolve_user_operator_alias(user_id, sb_client)` con caché en memoria (`_USER_ALIAS_CACHE`) que consulta `user_profiles` en Supabase una sola vez por usuario, eliminando sobrecarga en la base de datos durante los ciclos 24/7.
   - Soporte de método público `send_message` en `TelegramNotifier` garantizando compatibilidad total entre componentes internos y tests automatizados.
+- **Zona Horaria de Perú (UTC-5) en Alertas Telegram:**
+  - Conversión nativa de timestamps de UTC a hora de Perú (`PERU_TZ = timezone(timedelta(hours=-5))`) en todas las plantillas de alertas de señales, trades de malla, Auto Trader y reportes de portafolio.
+  - Pie de página formateado en estándar 24h: `⏱️ YYYY-MM-DD HH:MM:SS (PE / UTC-5) | Crypto Analyzer Pro 24/7`.
 
 ---
 

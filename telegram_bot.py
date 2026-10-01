@@ -19,6 +19,13 @@ import requests
 
 logger = logging.getLogger("TelegramNotifier")
 
+PERU_TZ = timezone(timedelta(hours=-5))
+
+
+def format_peru_timestamp() -> str:
+    """Retorna la fecha y hora formateada en zona horaria de Perú (UTC-5): YYYY-MM-DD HH:MM:SS (PE / UTC-5)."""
+    return datetime.now(PERU_TZ).strftime("%Y-%m-%d %H:%M:%S (PE / UTC-5)")
+
 # Cargar variables de entorno desde .env
 try:
     from dotenv import load_dotenv
@@ -257,7 +264,7 @@ class TelegramNotifier:
         risk_level = signal_dict.get("risk_level", "No especificado")
         current_price = price if price is not None else float(signal_dict.get("price", 0.0))
         ema20 = signal_dict.get("ema20")
-        timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp_str = format_peru_timestamp()
 
         # Emojis semánticos
         emoji_map = {
@@ -306,7 +313,7 @@ class TelegramNotifier:
 
         lines.extend([
             "━━━━━━━━━━━━━━━━━━━━━━",
-            f"<i>⏱️ {timestamp_utc} | Crypto Analyzer Pro v2.5.1</i>"
+            f"<i>⏱️ {timestamp_str} | Crypto Analyzer Pro v2.5.1</i>"
         ])
 
         # Inline Keyboard
@@ -345,7 +352,7 @@ class TelegramNotifier:
         amount = float(trade_dict.get("amount_usd") or trade_dict.get("amount") or (price * units))
         pnl = float(trade_dict.get("pnl") or trade_dict.get("pnl_usd") or 0.0)
         trade_id = str(trade_dict.get("trade_id") or trade_dict.get("id") or "SIM-PAPER")
-        timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp_str = format_peru_timestamp()
 
         trade_emoji = "🟢" if side == "BUY" else "🟠"
 
@@ -360,7 +367,7 @@ class TelegramNotifier:
             f"📈 <b>PnL:</b> ${pnl:+.2f}",
             f"🆔 <b>Trade ID:</b> <code>{trade_id}</code>",
             "━━━━━━━━━━━━━━━━━━━━━━",
-            f"<i>⏱️ {timestamp_utc} | Crypto Analyzer Pro v2.5.1</i>"
+            f"<i>⏱️ {timestamp_str} | Crypto Analyzer Pro v2.5.1</i>"
         ]
 
         reply_markup = {
@@ -392,7 +399,7 @@ class TelegramNotifier:
         """
         Envía notificación de orden Spot / Grid ejecutada en vivo por el motor 24/7.
         """
-        timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp_str = format_peru_timestamp()
         side_upper = side.upper()
         emoji = "🟢" if side_upper == "BUY" else "🔴"
         action_name = "COMPRA GRID SPOT" if side_upper == "BUY" else "VENTA GRID SPOT (TP)"
@@ -421,7 +428,7 @@ class TelegramNotifier:
 
         lines.extend([
             "━━━━━━━━━━━━━━━━━━━━━━",
-            f"<i>⏱️ {timestamp_utc} | Crypto Analyzer Pro 24/7</i>"
+            f"<i>⏱️ {timestamp_str} | Crypto Analyzer Pro 24/7</i>"
         ])
 
         reply_markup = {
@@ -450,7 +457,7 @@ class TelegramNotifier:
         """
         Envía alertas del motor Auto Trader Pro 24/7 en la nube con atribución de usuario.
         """
-        timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp_str = format_peru_timestamp()
         operator_label = user_name or "Operador Cuantitativo"
 
         title_map = {
@@ -487,7 +494,7 @@ class TelegramNotifier:
 
         lines.extend([
             "━━━━━━━━━━━━━━━━━━━━━━",
-            f"<i>⏱️ {timestamp_utc} | Render Cloud Worker 24/7</i>"
+            f"<i>⏱️ {timestamp_str} | Render Cloud Worker 24/7</i>"
         ])
 
         reply_markup = {
@@ -510,7 +517,7 @@ class TelegramNotifier:
         """
         Envía un reporte diario de la cartera de Paper Trading.
         """
-        timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp_str = format_peru_timestamp()
         total_usd = total_valuation_usd if total_valuation_usd is not None else sum(float(p.get("total_usd", 0.0)) for p in portfolio_list)
 
         lines = [
@@ -533,7 +540,7 @@ class TelegramNotifier:
 
         lines.extend([
             "━━━━━━━━━━━━━━━━━━━━━━",
-            f"<i>⏱️ {timestamp_utc} | Crypto Analyzer Pro v2.5.1</i>"
+            f"<i>⏱️ {timestamp_str} | Crypto Analyzer Pro v2.5.1</i>"
         ])
 
         reply_markup = {
@@ -557,7 +564,7 @@ class TelegramNotifier:
         status = bot_dict.get("status", "ACTIVE")
         capital = float(bot_dict.get("capital_allocated_usd", 0.0))
         bot_pnl = float(bot_dict.get("pnl_total_usd", 0.0))
-        timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp_str = format_peru_timestamp()
 
         status_emoji = "🟢" if status == "ACTIVE" else ("🟡" if status == "PAUSED" else "🔴")
 
@@ -570,7 +577,7 @@ class TelegramNotifier:
             f"💰 <b>Capital:</b> ${capital:,.2f}",
             f"📊 <b>PnL Bot:</b> ${bot_pnl:+.2f}",
             "━━━━━━━━━━━━━━━━━━━━━━",
-            f"<i>⏱️ {timestamp_utc} | Crypto Analyzer Pro v2.5.1</i>"
+            f"<i>⏱️ {timestamp_str} | Crypto Analyzer Pro v2.5.1</i>"
         ]
 
         reply_markup = {
@@ -635,7 +642,7 @@ class TelegramNotifier:
             )
 
         # Mensaje Agrupado
-        timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp_str = format_peru_timestamp()
         lines = [
             "━━━━━━━━━━━━━━━━━━━━━━",
             f"<b>📊 ALERTAS MÚLTIPLES ({len(buffer_items)}) — Crypto Analyzer Pro</b>",
@@ -654,7 +661,7 @@ class TelegramNotifier:
         lines.extend([
             "",
             "━━━━━━━━━━━━━━━━━━━━━━",
-            f"<i>⏱️ {timestamp_utc} | Crypto Analyzer Pro v2.5.1</i>"
+            f"<i>⏱️ {timestamp_str} | Crypto Analyzer Pro v2.5.1</i>"
         ])
 
         reply_markup = {
@@ -860,7 +867,7 @@ def send_autotrader_periodic_digest(
 
     lines.extend([
         "━━━━━━━━━━━━━━━━━━━━━━",
-        f"🛡️ <i>Worker 24/7 Activo en Render | {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}</i>"
+        f"🛡️ <i>Worker 24/7 Activo en Render | {datetime.now(PERU_TZ).strftime('%H:%M:%S (PE / UTC-5)')}</i>"
     ])
 
     msg = "\n".join(lines)
