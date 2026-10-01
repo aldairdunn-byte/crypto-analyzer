@@ -4,6 +4,17 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
 
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [2.7.1] — 2026-10-01
+### 👤 Atribución de Operador & Nombre de Bot en Alertas Telegram (Engineering-OS v4.1 RC — TSK-CLOUD-019)
+#### Agregado
+- **Atribución de Operador y Bot en Alertas de Trading (`telegram_bot.py`, `bot_engine.py`):**
+  - Parámetros opcionales `operator` y `bot_name` en `TelegramNotifier.send_spot_trade_alert`.
+  - Inclusión de encabezados visuales `👤 Operador: <alias>` y `🤖 Bot: <nombre_bot>` en cada alerta de compra y venta (TP).
+  - Función de resolución `resolve_user_operator_alias(user_id, sb_client)` con caché en memoria (`_USER_ALIAS_CACHE`) que consulta `user_profiles` en Supabase una sola vez por usuario, eliminando sobrecarga en la base de datos durante los ciclos 24/7.
+  - Soporte de método público `send_message` en `TelegramNotifier` garantizando compatibilidad total entre componentes internos y tests automatizados.
+
+---
+
 ## [2.7.0] — 2026-09-30
 ### ☁️ Transformación Arquitectónica Cloud Autónoma 24/7 & Despacho Dual Telegram (Engineering-OS v4.1 RC)
 #### Agregado

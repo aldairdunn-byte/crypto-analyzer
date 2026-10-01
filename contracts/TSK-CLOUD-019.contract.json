@@ -1,0 +1,73 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-CLOUD-019",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Attribute cloud trading alerts to specific operators and bot names with cached user resolution in TelegramNotifier",
+
+  "scope": {
+    "target_files": [
+      "telegram_bot.py",
+      "bot_engine.py"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json"
+    ],
+    "authorized_global_files": [
+      "supabase_client.py"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-017",
+    "TSK-CLOUD-018"
+  ],
+
+  "contracts": {
+    "types_file": "telegram_bot.py",
+    "interfaces": "TelegramNotifier operator attribution",
+    "function_signatures": [
+      "send_spot_trade_alert(self, coin_id: str, side: str, price: float, amount_usd: float, units: float, pnl_usd: Optional[float] = None, pnl_pct: Optional[float] = None, operator: Optional[str] = None, bot_name: Optional[str] = None) -> bool"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Write verification tests in test_operator_attribution.py",
+    "Run python -m unittest test_operator_attribution.py to confirm red phase failure",
+    "Update send_spot_trade_alert in telegram_bot.py to accept operator and bot_name parameters and include them in the Telegram message HTML format",
+    "Add user alias cache and operator resolution helper in bot_engine.py so user_id resolves to email prefix or display name",
+    "Pass operator and bot_name in bot_engine.py grid and DCA execution calls to send_spot_trade_alert",
+    "Run python -m unittest test_operator_attribution.py to confirm green phase",
+    "Run full pytest test suite to verify zero regressions across all 95 tests",
+    "Update contract status to PASSED and validate using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "python -m unittest test_operator_attribution.py",
+    "lint": "python -m py_compile telegram_bot.py",
+    "typecheck": "python -m py_compile telegram_bot.py"
+  },
+
+  "acceptance_criteria": [
+    "send_spot_trade_alert formats operator line when operator is provided",
+    "send_spot_trade_alert formats bot_name line when bot_name is provided",
+    "bot_engine.py resolves user_id to operator alias (email prefix) from user_profiles with caching",
+    "All unit tests pass with zero regressions"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-019.contract.json"
+  ],
+
+  "rollback": {
+    "command": "git checkout HEAD -- telegram_bot.py bot_engine.py; rm -f test_operator_attribution.py contracts/TSK-CLOUD-019.contract.json"
+  }
+}

@@ -148,6 +148,16 @@ class TelegramNotifier:
 
         return any_success
 
+    def send_message(
+        self,
+        text: str,
+        parse_mode: str = "HTML",
+        reply_markup: Optional[Dict[str, Any]] = None,
+        target_chat_id: Optional[str] = None
+    ) -> bool:
+        """Alias público de _send_message para compatibilidad con llamadas externas."""
+        return self._send_message(text, parse_mode=parse_mode, reply_markup=reply_markup, target_chat_id=target_chat_id)
+
     def answer_callback_query(
         self,
         callback_query_id: str,
@@ -375,7 +385,9 @@ class TelegramNotifier:
         amount_usd: float,
         units: float,
         pnl_usd: Optional[float] = None,
-        pnl_pct: Optional[float] = None
+        pnl_pct: Optional[float] = None,
+        operator: Optional[str] = None,
+        bot_name: Optional[str] = None
     ) -> bool:
         """
         Envía notificación de orden Spot / Grid ejecutada en vivo por el motor 24/7.
@@ -389,11 +401,19 @@ class TelegramNotifier:
             "━━━━━━━━━━━━━━━━━━━━━━",
             f"<b>{emoji} {action_name} — {coin_id.upper()}</b>",
             "━━━━━━━━━━━━━━━━━━━━━━",
+        ]
+
+        if operator:
+            lines.append(f"👤 <b>Operador:</b> {operator}")
+        if bot_name:
+            lines.append(f"🤖 <b>Bot:</b> {bot_name}")
+
+        lines.extend([
             f"📌 <b>Operación:</b> {side_upper}",
             f"💰 <b>Precio:</b> ${price:,.4f}",
             f"🔢 <b>Unidades:</b> {units:.6f} {coin_id.upper()[:4]}",
             f"💵 <b>Monto Total:</b> ${amount_usd:,.2f} USDT",
-        ]
+        ])
 
         if pnl_usd is not None and side_upper == "SELL":
             pnl_sign = "+" if pnl_usd >= 0 else ""

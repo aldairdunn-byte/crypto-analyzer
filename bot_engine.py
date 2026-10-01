@@ -12,6 +12,42 @@ from supabase_client import get_supabase_client, SupabaseClient
 
 logger = logging.getLogger("BotEngine")
 
+_USER_ALIAS_CACHE: Dict[str, str] = {}
+
+
+def resolve_user_operator_alias(user_id: Optional[str], sb_client: Optional[Any] = None) -> str:
+    """
+    Resuelve el alias del operador (ej. 'hypedrops.pe', 'aldairdunn1') a partir del user_id.
+    Utiliza una caché en memoria para no penalizar el ciclo de evaluación 24/7 con consultas repetitivas.
+    """
+    if not user_id:
+        return "Demo Global"
+
+    if user_id in _USER_ALIAS_CACHE:
+        return _USER_ALIAS_CACHE[user_id]
+
+    sb = sb_client or get_supabase_client()
+    alias = user_id[:8] if len(user_id) >= 8 else str(user_id)
+
+    if sb and getattr(sb, "is_configured", False):
+        try:
+            client_inst = getattr(sb, "client", None)
+            if client_inst and hasattr(client_inst, "from_"):
+                res = client_inst.from_("user_profiles").select("id, email, full_name").eq("id", user_id).execute()
+                if res and getattr(res, "data", None) and len(res.data) > 0:
+                    profile = res.data[0]
+                    email = profile.get("email") or ""
+                    full_name = profile.get("full_name") or ""
+                    if email:
+                        alias = email.split("@")[0]
+                    elif full_name:
+                        alias = full_name.strip()
+        except Exception as e:
+            logger.debug(f"No se pudo resolver alias de operador para {user_id}: {e}")
+
+    _USER_ALIAS_CACHE[user_id] = alias
+    return alias
+
 
 # =============================================================================
 # 1. GRID BOT ENGINE
@@ -631,7 +667,9 @@ def evaluate_active_grid_bot_tick(
                         amount_usd=round(units * current_price, 2),
                         units=units,
                         pnl_usd=pnl_usd,
-                        pnl_pct=pnl_pct
+                        pnl_pct=pnl_pct,
+                        operator=resolve_user_operator_alias(user_id, sb),
+                        bot_name=bot_name
                     )
                 except Exception as e:
                     logger.warning(f"Error enviando alerta Telegram SELL: {e}")
@@ -686,7 +724,9 @@ def evaluate_active_grid_bot_tick(
                             side="BUY",
                             price=current_price,
                             amount_usd=round(allocation, 2),
-                            units=units
+                            units=units,
+                            operator=resolve_user_operator_alias(user_id, sb),
+                            bot_name=bot_name
                         )
                     except Exception as e:
                         logger.warning(f"Error enviando alerta Telegram BUY: {e}")
@@ -720,6 +760,7 @@ def evaluate_active_dca_bot_tick(
     bot_id = bot.get("id")
     user_id = bot.get("user_id")
     coin_id = str(bot.get("coin_id") or "bitcoin").lower()
+    bot_name = bot.get("name", f"DCA Bot {coin_id.upper()}")
     capital = float(bot.get("capital_allocated_usd") or 100.0)
 
     # 1. Parsear configuración del bot DCA
@@ -795,7 +836,9 @@ def evaluate_active_dca_bot_tick(
                             amount_usd=round(total_units * current_price, 2),
                             units=total_units,
                             pnl_usd=pnl_usd,
-                            pnl_pct=pnl_pct
+                            pnl_pct=pnl_pct,
+                            operator=resolve_user_operator_alias(user_id, sb),
+                            bot_name=bot_name
                         )
                     except Exception as e:
                         logger.warning(f"Error enviando alerta Telegram DCA SELL: {e}")
@@ -863,7 +906,9 @@ def evaluate_active_dca_bot_tick(
                         side="BUY",
                         price=current_price,
                         amount_usd=amount_per_trade,
-                        units=units
+                        units=units,
+                        operator=resolve_user_operator_alias(user_id, sb),
+                        bot_name=bot_name
                     )
                 except Exception as e:
                     logger.warning(f"Error enviando alerta Telegram DCA BUY: {e}")
