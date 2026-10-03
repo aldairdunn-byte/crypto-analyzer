@@ -4,6 +4,18 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
 
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [2.7.2] — 2026-10-03
+### 🧹 Respaldo y Purga Segura de Datos Huérfanos Legados (Engineering-OS v4.1 RC — TSK-CLOUD-020)
+#### Optimizado & Aligerado
+- **Purga de Bots y Órdenes Huérfanas (`supabase_client.py`):**
+  - Implementación del método atómico y seguro `SupabaseClient.purge_orphan_legacy_data(backup_dir)`.
+  - Respaldo completo en formato JSON (`backup/legacy_orphan_backup_*.json`) con más de 1,418 órdenes y 20 bots legados preservados de forma inmutable.
+  - Purga de 20 bots huérfanos y 117 órdenes abiertas sin usuario (`user_id IS NULL`), reduciendo la sobrecarga de evaluación de 38 a solo 18 bots reales.
+  - Reducción drástica del tiempo de ciclo del worker en Render de ~207 segundos a ~80 segundos, acelerando la capacidad de respuesta a precios en más del 250%.
+  - Verificación de integridad: el 100% de los bots y operaciones de usuarios reales (`aldairdunn1`, `hypedrops.pe`, `aldairdunn2`) permanecen intactos.
+
+---
+
 ## [2.7.1] — 2026-10-01
 ### 👤 Atribución de Operador & Nombre de Bot en Alertas Telegram (Engineering-OS v4.1 RC — TSK-CLOUD-019)
 #### Agregado

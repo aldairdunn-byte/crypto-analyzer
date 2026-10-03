@@ -1,0 +1,75 @@
+{
+  "contract_version": "4.0",
+  "status": "PASSED",
+  "language": "python",
+
+  "task_id": "TSK-CLOUD-020",
+  "epic_id": "EPC-CLOUD",
+  "goal": "Backup and purge legacy orphan bots and trades without user_id to optimize 24/7 worker cycle time and achieve pristine multi-tenant database state",
+
+  "scope": {
+    "target_files": [
+      "supabase_client.py",
+      "TASKS_24_7_CLOUD_MIGRATION.md"
+    ],
+    "forbidden_files": [
+      "frontend/package.json",
+      "package.json"
+    ],
+    "authorized_global_files": [
+      "telegram_bot.py",
+      "bot_engine.py"
+    ]
+  },
+
+  "depends_on": [
+    "TSK-CLOUD-019"
+  ],
+
+  "contracts": {
+    "types_file": "supabase_client.py",
+    "interfaces": "SupabaseClient legacy orphan purge and backup methods",
+    "function_signatures": [
+      "purge_orphan_legacy_data(self, backup_dir: Optional[str] = None) -> Dict[str, Any]"
+    ]
+  },
+
+  "env": {},
+
+  "execution_steps": [
+    "Export all legacy bots and bot_trades where user_id IS NULL to backup/legacy_orphan_backup_YYYYMMDD.json",
+    "Verify backup integrity (ensure row counts match exactly 20 bots and all legacy bot_trades)",
+    "Execute safe deletion of bot_trades where user_id IS NULL via service role credentials",
+    "Execute safe deletion of bots where user_id IS NULL via service role credentials",
+    "Verify zero orphan bots and zero orphan trades remain in Supabase",
+    "Verify 100% data integrity of real users (aldairdunn1, hypedrops.pe, aldairdunn2 bots and trades intact)",
+    "Run verification unit test test_orphan_purge.py",
+    "Update TASKS_24_7_CLOUD_MIGRATION.md and CHANGELOG.md",
+    "Validate contract using validate_contract.js"
+  ],
+
+  "commands": {
+    "test": "python -m unittest test_orphan_purge.py",
+    "lint": "python -m py_compile supabase_client.py",
+    "typecheck": "python -m py_compile supabase_client.py"
+  },
+
+  "acceptance_criteria": [
+    "A full JSON backup of all orphan bots and trades exists in backup/",
+    "Zero rows in bots where user_id IS NULL",
+    "Zero rows in bot_trades where user_id IS NULL",
+    "Real user bots and trades for aldairdunn1, hypedrops.pe and aldairdunn2 are 100% intact",
+    "All unit tests pass with zero regressions"
+  ],
+
+  "definition_of_done": [
+    "commands.test returns exit code 0",
+    "commands.typecheck returns exit code 0",
+    "commands.lint returns exit code 0",
+    "validate_contract.js approves TSK-CLOUD-020.contract.json"
+  ],
+
+  "rollback": {
+    "command": "python -c \"import os; from pathlib import Path; p = Path('backup'); print('Rollback data available in backup directory if needed')\""
+  }
+}

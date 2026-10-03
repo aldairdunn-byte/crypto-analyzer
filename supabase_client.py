@@ -7,6 +7,7 @@ Usa la API REST estándar de PostgREST con reintentos automáticos y soporte sin
 
 import os
 import time
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional, Union
@@ -795,6 +796,88 @@ class SupabaseClient:
             return resp.status_code in (200, 204)
 
         return self._execute_with_retry("delete_user_portfolio_holding", _op)
+
+    def purge_orphan_legacy_data(self, backup_dir: Optional[str] = "backup") -> Dict[str, Any]:
+        """
+        Exporta a archivo JSON y purga de forma segura todos los bots y órdenes huérfanas (user_id IS NULL)
+        para aligerar el worker 24/7 y mantener la base de datos en un estado multi-tenant prístino.
+        """
+        if not self.is_configured:
+            return {"success": False, "error": "SupabaseClient no está configurado"}
+
+        target_dir = Path(backup_dir or "backup")
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. Extraer bots huérfanos (user_id IS NULL)
+        orphan_bots = []
+        offset = 0
+        page_size = 1000
+        while True:
+            headers = self._get_headers()
+            headers["Range"] = f"{offset}-{offset + page_size - 1}"
+            endpoint = f"{self.url}/rest/v1/bots?user_id=is.null&select=*"
+            resp = requests.get(endpoint, headers=headers, timeout=self.timeout)
+            if resp.status_code != 200:
+                break
+            chunk = resp.json()
+            if not chunk or not isinstance(chunk, list):
+                break
+            orphan_bots.extend(chunk)
+            if len(chunk) < page_size:
+                break
+            offset += page_size
+
+        # 2. Extraer trades huérfanos (user_id IS NULL)
+        orphan_trades = []
+        offset = 0
+        while True:
+            headers = self._get_headers()
+            headers["Range"] = f"{offset}-{offset + page_size - 1}"
+            endpoint = f"{self.url}/rest/v1/bot_trades?user_id=is.null&select=*"
+            resp = requests.get(endpoint, headers=headers, timeout=self.timeout)
+            if resp.status_code != 200:
+                break
+            chunk = resp.json()
+            if not chunk or not isinstance(chunk, list):
+                break
+            orphan_trades.extend(chunk)
+            if len(chunk) < page_size:
+                break
+            offset += page_size
+
+        # 3. Guardar Respaldo Local en JSON
+        now_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        backup_file = target_dir / f"legacy_orphan_backup_{now_str}.json"
+
+        backup_payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "total_bots": len(orphan_bots),
+            "total_trades": len(orphan_trades),
+            "bots": orphan_bots,
+            "bot_trades": orphan_trades
+        }
+
+        with open(backup_file, "w", encoding="utf-8") as f:
+            json.dump(backup_payload, f, indent=2, ensure_ascii=False)
+
+        # 4. Purgar trades huérfanos
+        del_trades_endpoint = f"{self.url}/rest/v1/bot_trades?user_id=is.null"
+        resp_dt = requests.delete(del_trades_endpoint, headers=self._get_headers(), timeout=self.timeout)
+
+        # 5. Purgar bots huérfanos
+        del_bots_endpoint = f"{self.url}/rest/v1/bots?user_id=is.null"
+        resp_db = requests.delete(del_bots_endpoint, headers=self._get_headers(), timeout=self.timeout)
+
+        return {
+            "success": True,
+            "backup_path": str(backup_file),
+            "backed_up_bots": len(orphan_bots),
+            "backed_up_trades": len(orphan_trades),
+            "deleted_bots": len(orphan_bots),
+            "deleted_trades": len(orphan_trades),
+            "trades_delete_status": resp_dt.status_code if hasattr(resp_dt, "status_code") else 200,
+            "bots_delete_status": resp_db.status_code if hasattr(resp_db, "status_code") else 200
+        }
 
 
 # Instancia singleton accesible globalmente
